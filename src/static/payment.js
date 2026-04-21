@@ -41,6 +41,8 @@ const API_ERRORS = {
   10011: { en: 'Sub-order quantity exceeded',              zh: '子订单数量超限',          'zh-hk': '子訂單數量超限',         ja: 'サブ注文数が超過しました',              ko: '하위 주문 수량 초과',          ru: 'Превышено количество подзаказов' },
   10012: { en: 'Cannot switch network for sub-orders',     zh: '不能对子订单切换网络',    'zh-hk': '不能對子訂單切換網絡',   ja: 'サブ注文のネットワーク切替不可',        ko: '하위 주문에 네트워크 전환 불가', ru: 'Нельзя переключить сеть для подзаказов' },
   10013: { en: 'Order is not in pending payment status',   zh: '订单不是待支付状态',      'zh-hk': '訂單不是待支付狀態',     ja: '注文は支払い待ち状態ではありません',    ko: '주문이 결제 대기 상태가 아님', ru: 'Заказ не в статусе ожидания оплаты' },
+  10016: { en: 'Invalid wallet address',                   zh: '无效钱包地址',            'zh-hk': '無效錢包地址',           ja: '無効なウォレットアドレス',              ko: '유효하지 않은 지갑 주소',      ru: 'Недопустимый адрес кошелька' },
+  10017: { en: 'Payment method unavailable',               zh: '支付方式不可用',          'zh-hk': '支付方式不可用',         ja: '支払い方法は利用できません',            ko: '결제 수단을 사용할 수 없음',   ru: 'Способ оплаты недоступен' },
 };
 
 /**
@@ -77,9 +79,9 @@ async function apiFetch(url, opts = {}) {
   if (!fetchOpts.signal) fetchOpts.signal = AbortSignal.timeout(timeout);
   const res  = await fetch(url, fetchOpts);
   const resp = await res.json().catch(() => null);
-  if (!res.ok || (resp?.code != null && resp.code !== 200)) {
-    const code = resp?.code ? Number(resp.code) : res.status;
-    throw new ApiError(code, getApiErrorMsg(code) ?? resp?.msg ?? `HTTP ${res.status}`);
+  const code = resp?.status_code != null ? Number(resp.status_code) : res.status;
+  if (!res.ok || (resp?.status_code != null && Number(resp.status_code) !== 200)) {
+    throw new ApiError(code, getApiErrorMsg(code) ?? resp?.message ?? `HTTP ${res.status}`);
   }
   return resp?.data ?? resp;
 }
@@ -109,7 +111,13 @@ const CONFIG = {
   // ---- 后端接口 ----
   api: {
     // 获取支持的网络和币种
-    supportedAssets: () => '/payments/gmpay/v1/supported-assets',
+    supportedAssets: (currency, amount) => {
+      const qs = new URLSearchParams();
+      if (currency) qs.set('currency', currency);
+      if (amount) qs.set('amount', amount);
+      const query = qs.toString();
+      return query ? `/payments/gmpay/v1/supported-assets?${query}` : '/payments/gmpay/v1/supported-assets';
+    },
     // 切换网络接口：POST { trade_id, token, network }，返回完整订单对象
     selectMethod: () => '/pay/switch-network',
     // 轮询接口：GET，返回 { data: { status: number } }
@@ -639,20 +647,46 @@ function setStepBar(step) {
  */
 async function fetchSupportedAssets() {
   try {
-    const data = await apiFetch(CONFIG.api.supportedAssets());
+    const data = await apiFetch(CONFIG.api.supportedAssets(ORDER.currency, ORDER.amount));
     if (!data?.supports?.length) return null;
     return data.supports.flatMap(s => s.tokens.map(token => ({ token, network: s.network })));
   } catch (e) {
-    console.warn('[supportedAssets]', e);
     return null;
   }
+}
+
+function _normalizePaymentOptions(options) {
+  if (!Array.isArray(options)) return [];
+  const seen = new Set();
+  return options.reduce((rows, option) => {
+    const token = String(option?.token ?? '').trim().toUpperCase();
+    const network = String(option?.network ?? '').trim().toLowerCase();
+    if (!token || !network) return rows;
+    const key = `${network}:${token}`;
+    if (seen.has(key)) return rows;
+    seen.add(key);
+    rows.push({ token, network });
+    return rows;
+  }, []);
+}
+
+async function ensurePaymentOptions() {
+  let options = _normalizePaymentOptions(window.PAYMENT_OPTIONS);
+  if (options.length) return options;
+  options = _normalizePaymentOptions(await fetchSupportedAssets());
+  if (options.length) return options;
+  options = _normalizePaymentOptions([{ token: ORDER.token, network: ORDER.network }]);
+  return options;
 }
 
 let _step1Token = null;
 let _step1Opt   = null;
 
 function initStep1() {
-  _step1Opt   = PAYMENT_OPTIONS[0];
+  _step1Opt = PAYMENT_OPTIONS.find(o =>
+    o.network === String(ORDER.network || '').trim().toLowerCase() &&
+    o.token === String(ORDER.token || '').trim().toUpperCase()
+  ) ?? PAYMENT_OPTIONS[0];
   _step1Token = _step1Opt.token;
   _renderNetworkMenu();
   _renderTokenMenu();
@@ -947,8 +981,12 @@ function _enterTerminalState(panel, { clearTimer = true, disableBtn = true } = {
 }
 
 function onPaymentSuccess() {
+  showSuccess(true);
+}
+
+function showSuccess(redirect = false) {
   _enterTerminalState('success');
-  if (ORDER?.redirectUrl && !ORDER.redirectUrl.startsWith('{{')) {
+  if (redirect && ORDER?.redirectUrl && !ORDER.redirectUrl.startsWith('{{')) {
     setTimeout(() => { window.location.href = ORDER.redirectUrl; }, CONFIG.redirect.delay);
   }
 }
@@ -999,9 +1037,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     setText('display-amount', `${ORDER.amount} ${ORDER.currency || ''}`);
   }
 
-  // 从 API 获取支持的网络和币种
-  window.PAYMENT_OPTIONS = await fetchSupportedAssets();
-  if (!PAYMENT_OPTIONS?.length) return;
+  const status = Number(ORDER?.status || 0);
+  const { paid, expired } = CONFIG.api.statusMap;
+  if (status === paid) {
+    showSuccess(false);
+    return;
+  }
+  if (status === expired) {
+    showExpired();
+    return;
+  }
+
+  window.PAYMENT_OPTIONS = await ensurePaymentOptions();
+  if (!PAYMENT_OPTIONS?.length) {
+    showNotFound();
+    return;
+  }
 
   // isselect=true 时跳过 Step 1，直接进入支付面板
   const _isSelect = ORDER.is_selected && ORDER.is_selected !== 'false' && !ORDER.is_selected.startsWith('{{');

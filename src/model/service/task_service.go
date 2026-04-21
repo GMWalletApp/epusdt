@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/assimon/luuu/config"
 	tron "github.com/assimon/luuu/crypto"
@@ -27,6 +28,7 @@ import (
 )
 
 const TRC20_USDT_ID = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+const tronGridPageLimit = 100
 
 func Trc20CallBack(address string, wg *sync.WaitGroup) {
 	defer wg.Done()
@@ -43,6 +45,42 @@ func Trc20CallBack(address string, wg *sync.WaitGroup) {
 	innerWg.Wait()
 }
 
+func cloneQueryParams(src map[string]string) map[string]string {
+	dst := make(map[string]string, len(src)+1)
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func walkTronGridPages(fetchPage func(map[string]string) ([]byte, error), baseQuery map[string]string, visit func(gjson.Result) bool) error {
+	fingerprint := ""
+	for {
+		query := cloneQueryParams(baseQuery)
+		if fingerprint != "" {
+			query["fingerprint"] = fingerprint
+		}
+		body, err := fetchPage(query)
+		if err != nil {
+			return err
+		}
+		records := gjson.GetBytes(body, "data").Array()
+		if len(records) == 0 {
+			return nil
+		}
+		for _, record := range records {
+			if !visit(record) {
+				return nil
+			}
+		}
+		next := gjson.GetBytes(body, "meta.fingerprint").String()
+		if next == "" {
+			return nil
+		}
+		fingerprint = next
+	}
+}
+
 func checkTrxTransfers(address string, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer func() {
@@ -52,63 +90,58 @@ func checkTrxTransfers(address string, wg *sync.WaitGroup) {
 	}()
 
 	client := http_client.GetHttpClient()
-	startTime := carbon.Now().AddHours(-24).TimestampMilli()
+	startTime := time.Now().Add(-config.GetOrderExpirationTimeDuration() - 5*time.Minute).UnixMilli()
 	endTime := carbon.Now().TimestampMilli()
 	url := fmt.Sprintf("https://api.trongrid.io/v1/accounts/%s/transactions", address)
-
-	resp, err := client.R().SetQueryParams(map[string]string{
+	err := walkTronGridPages(func(query map[string]string) ([]byte, error) {
+		resp, err := client.R().SetQueryParams(query).SetHeader("TRON-PRO-API-KEY", config.TRON_GRID_API_KEY).Get(url)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode() != http.StatusOK {
+			return nil, fmt.Errorf("TRX API returned status %d", resp.StatusCode())
+		}
+		if !gjson.GetBytes(resp.Body(), "success").Bool() {
+			return nil, errors.New("TRX API response indicates failure")
+		}
+		return resp.Body(), nil
+	}, map[string]string{
 		"order_by":      "block_timestamp,desc",
-		"limit":         "100",
+		"limit":         stdutil.ToString(tronGridPageLimit),
 		"only_to":       "true",
 		"min_timestamp": stdutil.ToString(startTime),
 		"max_timestamp": stdutil.ToString(endTime),
-	}).SetHeader("TRON-PRO-API-KEY", config.TRON_GRID_API_KEY).Get(url)
-	if err != nil {
-		panic(err)
-	}
-	if resp.StatusCode() != http.StatusOK {
-		panic(fmt.Sprintf("TRX API returned status %d", resp.StatusCode()))
-	}
-
-	success := gjson.GetBytes(resp.Body(), "success").Bool()
-	if !success {
-		panic("TRX API response indicates failure")
-	}
-
-	transfers := gjson.GetBytes(resp.Body(), "data").Array()
-	if len(transfers) == 0 {
-		log.Sugar.Debugf("[TRX][%s] no transfer records found", address)
-		return
-	}
-	log.Sugar.Debugf("[TRX][%s] fetched %d transfer records", address, len(transfers))
-
-	for i, transfer := range transfers {
+	}, func(transfer gjson.Result) bool {
+		blockTimestamp := transfer.Get("block_timestamp").Int()
+		if blockTimestamp < startTime {
+			return false
+		}
 		if transfer.Get("raw_data.contract.0.type").String() != "TransferContract" {
-			continue
+			return true
 		}
 		if transfer.Get("ret.0.contractRet").String() != "SUCCESS" {
-			continue
+			return true
 		}
 
 		toAddressHex := transfer.Get("raw_data.contract.0.parameter.value.to_address").String()
 		toBytes, err := hex.DecodeString(toAddressHex)
 		if err != nil {
-			log.Sugar.Errorf("[TRX][%s] decode address failed on tx #%d: %v", address, i, err)
-			continue
+			log.Sugar.Errorf("[TRX][%s] decode address failed: %v", address, err)
+			return true
 		}
 		if tron.EncodeCheck(toBytes) != address {
-			continue
+			return true
 		}
 
 		rawAmount := transfer.Get("raw_data.contract.0.parameter.value.amount").String()
 		decimalQuant, err := decimal.NewFromString(rawAmount)
 		if err != nil {
-			log.Sugar.Errorf("[TRX][%s] parse amount failed on tx #%d: %v", address, i, err)
-			continue
+			log.Sugar.Errorf("[TRX][%s] parse amount failed: %v", address, err)
+			return true
 		}
 		amount := math.MustParsePrecFloat64(decimalQuant.Div(decimal.NewFromInt(1000000)).InexactFloat64(), 2)
 		if amount <= 0 {
-			continue
+			return true
 		}
 
 		txID := transfer.Get("txID").String()
@@ -118,7 +151,7 @@ func checkTrxTransfers(address string, wg *sync.WaitGroup) {
 		}
 		if tradeID == "" {
 			log.Sugar.Debugf("[TRX][%s] skip unmatched tx hash=%s amount=%.2f", address, txID, amount)
-			continue
+			return true
 		}
 		log.Sugar.Infof("[TRX][%s] matched trade_id=%s hash=%s amount=%.2f", address, tradeID, txID, amount)
 
@@ -126,11 +159,10 @@ func checkTrxTransfers(address string, wg *sync.WaitGroup) {
 		if err != nil {
 			panic(err)
 		}
-		blockTimestamp := transfer.Get("block_timestamp").Int()
 		createTime := order.CreatedAt.TimestampMilli()
 		if blockTimestamp < createTime {
 			log.Sugar.Warnf("[TRX][%s] skip tx %s because block time %d is before order create time %d", address, txID, blockTimestamp, createTime)
-			continue
+			return true
 		}
 
 		req := &request.OrderProcessingRequest{
@@ -145,13 +177,17 @@ func checkTrxTransfers(address string, wg *sync.WaitGroup) {
 		if err != nil {
 			if errors.Is(err, constant.OrderBlockAlreadyProcess) || errors.Is(err, constant.OrderStatusConflict) {
 				log.Sugar.Infof("[TRX][%s] skip resolved transfer trade_id=%s hash=%s err=%v", address, tradeID, txID, err)
-				continue
+				return true
 			}
 			panic(err)
 		}
 
 		sendPaymentNotification(order)
 		log.Sugar.Infof("[TRX][%s] payment processed trade_id=%s hash=%s", address, tradeID, txID)
+		return true
+	})
+	if err != nil {
+		panic(err)
 	}
 }
 
@@ -164,54 +200,49 @@ func checkTrc20Transfers(address string, wg *sync.WaitGroup) {
 	}()
 
 	client := http_client.GetHttpClient()
-	startTime := carbon.Now().AddHours(-24).TimestampMilli()
+	startTime := time.Now().Add(-config.GetOrderExpirationTimeDuration() - 5*time.Minute).UnixMilli()
 	endTime := carbon.Now().TimestampMilli()
 	url := fmt.Sprintf("https://api.trongrid.io/v1/accounts/%s/transactions/trc20", address)
-
-	resp, err := client.R().SetQueryParams(map[string]string{
+	err := walkTronGridPages(func(query map[string]string) ([]byte, error) {
+		resp, err := client.R().SetQueryParams(query).SetHeader("TRON-PRO-API-KEY", config.TRON_GRID_API_KEY).Get(url)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode() != http.StatusOK {
+			return nil, fmt.Errorf("TRC20 API returned status %d", resp.StatusCode())
+		}
+		if !gjson.GetBytes(resp.Body(), "success").Bool() {
+			return nil, errors.New("TRC20 API response indicates failure")
+		}
+		return resp.Body(), nil
+	}, map[string]string{
 		"order_by":      "block_timestamp,desc",
-		"limit":         "100",
+		"limit":         stdutil.ToString(tronGridPageLimit),
 		"only_to":       "true",
 		"min_timestamp": stdutil.ToString(startTime),
 		"max_timestamp": stdutil.ToString(endTime),
-	}).SetHeader("TRON-PRO-API-KEY", config.TRON_GRID_API_KEY).Get(url)
-	if err != nil {
-		panic(err)
-	}
-	if resp.StatusCode() != http.StatusOK {
-		panic(fmt.Sprintf("TRC20 API returned status %d", resp.StatusCode()))
-	}
-
-	success := gjson.GetBytes(resp.Body(), "success").Bool()
-	if !success {
-		panic("TRC20 API response indicates failure")
-	}
-
-	transfers := gjson.GetBytes(resp.Body(), "data").Array()
-	if len(transfers) == 0 {
-		log.Sugar.Debugf("[TRC20][%s] no transfer records found", address)
-		return
-	}
-	log.Sugar.Debugf("[TRC20][%s] fetched %d transfer records", address, len(transfers))
-
-	for i, transfer := range transfers {
+	}, func(transfer gjson.Result) bool {
+		blockTimestamp := transfer.Get("block_timestamp").Int()
+		if blockTimestamp < startTime {
+			return false
+		}
 		if transfer.Get("token_info.address").String() != TRC20_USDT_ID {
-			continue
+			return true
 		}
 		if transfer.Get("to").String() != address {
-			continue
+			return true
 		}
 
 		valueStr := transfer.Get("value").String()
 		decimalQuant, err := decimal.NewFromString(valueStr)
 		if err != nil {
-			log.Sugar.Errorf("[TRC20][%s] parse value failed on tx #%d: %v", address, i, err)
-			continue
+			log.Sugar.Errorf("[TRC20][%s] parse value failed: %v", address, err)
+			return true
 		}
 		tokenDecimals := transfer.Get("token_info.decimals").Int()
 		amount := math.MustParsePrecFloat64(decimalQuant.Div(decimal.New(1, int32(tokenDecimals))).InexactFloat64(), 2)
 		if amount <= 0 {
-			continue
+			return true
 		}
 
 		txID := transfer.Get("transaction_id").String()
@@ -221,7 +252,7 @@ func checkTrc20Transfers(address string, wg *sync.WaitGroup) {
 		}
 		if tradeID == "" {
 			log.Sugar.Debugf("[TRC20][%s] skip unmatched tx hash=%s amount=%.2f", address, txID, amount)
-			continue
+			return true
 		}
 		log.Sugar.Infof("[TRC20][%s] matched trade_id=%s hash=%s amount=%.2f", address, tradeID, txID, amount)
 
@@ -229,11 +260,10 @@ func checkTrc20Transfers(address string, wg *sync.WaitGroup) {
 		if err != nil {
 			panic(err)
 		}
-		blockTimestamp := transfer.Get("block_timestamp").Int()
 		createTime := order.CreatedAt.TimestampMilli()
 		if blockTimestamp < createTime {
 			log.Sugar.Warnf("[TRC20][%s] skip tx %s because block time %d is before order create time %d", address, txID, blockTimestamp, createTime)
-			continue
+			return true
 		}
 
 		req := &request.OrderProcessingRequest{
@@ -248,13 +278,17 @@ func checkTrc20Transfers(address string, wg *sync.WaitGroup) {
 		if err != nil {
 			if errors.Is(err, constant.OrderBlockAlreadyProcess) || errors.Is(err, constant.OrderStatusConflict) {
 				log.Sugar.Infof("[TRC20][%s] skip resolved transfer trade_id=%s hash=%s err=%v", address, tradeID, txID, err)
-				continue
+				return true
 			}
 			panic(err)
 		}
 
 		sendPaymentNotification(order)
 		log.Sugar.Infof("[TRC20][%s] payment processed trade_id=%s hash=%s", address, tradeID, txID)
+		return true
+	})
+	if err != nil {
+		panic(err)
 	}
 }
 
@@ -341,6 +375,11 @@ func TryProcessEvmERC20Transfer(chainNetwork string, contract common.Address, to
 	order, err := data.GetOrderInfoByTradeId(tradeID)
 	if err != nil {
 		log.Sugar.Warnf("[%s-%s][%s] load order: %v", net, tokenSym, walletAddr, err)
+		return
+	}
+	if blockTsMs > 0 && blockTsMs < order.CreatedAt.TimestampMilli() {
+		log.Sugar.Warnf("[%s-%s][%s] skip tx hash=%s because block time %d is before order create time %d",
+			net, tokenSym, walletAddr, txHash, blockTsMs, order.CreatedAt.TimestampMilli())
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(order.Network)) != chainNetwork {

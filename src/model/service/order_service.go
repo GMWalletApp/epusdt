@@ -63,6 +63,9 @@ func CreateTransaction(req *request.CreateTransactionRequest) (*response.CreateT
 	if exist.ID > 0 {
 		return nil, constant.OrderAlreadyExists
 	}
+	if err = ensurePaymentMethodAvailable(network, token); err != nil {
+		return nil, err
+	}
 
 	walletAddress, err := data.GetAvailableWalletAddressByNetwork(network)
 	if err != nil {
@@ -84,19 +87,21 @@ func CreateTransaction(req *request.CreateTransactionRequest) (*response.CreateT
 
 	tx := dao.Mdb.Begin()
 	order := &mdb.Orders{
-		TradeId:        tradeID,
-		OrderId:        req.OrderId,
-		Amount:         req.Amount,
-		Currency:       currency,
-		ActualAmount:   availableAmount,
-		ReceiveAddress: availableAddress,
-		Token:          token,
-		Network:        network,
-		Status:         mdb.StatusWaitPay,
-		NotifyUrl:      req.NotifyUrl,
-		RedirectUrl:    req.RedirectUrl,
-		Name:           req.Name,
-		PaymentType:    req.PaymentType,
+		TradeId:           tradeID,
+		OrderId:           req.OrderId,
+		Amount:            payAmount,
+		Currency:          currency,
+		ActualAmount:      availableAmount,
+		ReceiveAddress:    availableAddress,
+		Token:             token,
+		Network:           network,
+		Status:            mdb.StatusWaitPay,
+		NotifyUrl:         req.NotifyUrl,
+		RedirectUrl:       req.RedirectUrl,
+		Name:              req.Name,
+		PaymentType:       req.PaymentType,
+		PaymentChannel:    strings.TrimSpace(req.PaymentChannel),
+		PaymentMerchantId: strings.TrimSpace(req.PaymentMerchantId),
 	}
 	if err = data.CreateOrderWithTransaction(tx, order); err != nil {
 		tx.Rollback()
@@ -305,9 +310,18 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 
 	// 2. Same token+network as parent → mark selected and return
 	if strings.EqualFold(parent.Token, token) && strings.EqualFold(parent.Network, network) {
-		_ = data.MarkOrderSelected(parent.TradeId)
+		if err = data.SetSelectedOrder(parent.TradeId, parent.TradeId); err != nil {
+			return nil, err
+		}
+		if err = data.RefreshOrderFamilyExpiration(parent.TradeId, config.GetOrderExpirationTimeDuration()); err != nil {
+			return nil, err
+		}
+		parent, err = data.GetOrderInfoByTradeId(parent.TradeId)
+		if err != nil {
+			return nil, err
+		}
 		parent.IsSelected = true
-		return buildCheckoutResponse(parent), nil
+		return buildCheckoutResponse(parent)
 	}
 
 	// 3. Existing active sub-order for this token+network → return it
@@ -316,11 +330,18 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 		return nil, err
 	}
 	if existing.ID > 0 {
-		_ = data.MarkOrderSelected(parent.TradeId)
-		_ = data.MarkOrderSelected(existing.TradeId)
-		_ = data.RefreshOrderExpiration(parent.TradeId)
+		if err = data.SetSelectedOrder(parent.TradeId, existing.TradeId); err != nil {
+			return nil, err
+		}
+		if err = data.RefreshOrderFamilyExpiration(parent.TradeId, config.GetOrderExpirationTimeDuration()); err != nil {
+			return nil, err
+		}
+		existing, err = data.GetOrderInfoByTradeId(existing.TradeId)
+		if err != nil {
+			return nil, err
+		}
 		existing.IsSelected = true
-		return buildCheckoutResponse(existing), nil
+		return buildCheckoutResponse(existing)
 	}
 
 	// 4. Check sub-order limit
@@ -330,6 +351,9 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 	}
 	if count >= MaxSubOrders {
 		return nil, constant.SubOrderLimitExceeded
+	}
+	if err = ensurePaymentMethodAvailable(network, token); err != nil {
+		return nil, err
 	}
 
 	// 5. Calculate amount for the new network
@@ -365,22 +389,24 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 	// 7. Create sub-order
 	tx := dao.Mdb.Begin()
 	subOrder := &mdb.Orders{
-		TradeId:         subTradeID,
-		OrderId:         subTradeID, // sub-order uses its own trade_id as order_id (unique constraint)
-		ParentTradeId:   parent.TradeId,
-		Amount:          parent.Amount,
-		Currency:        parent.Currency,
-		ActualAmount:    availableAmount,
-		ReceiveAddress:  availableAddress,
-		Token:           token,
-		Network:         network,
-		Status:          mdb.StatusWaitPay,
-		IsSelected:      true,
-		NotifyUrl:       "",
-		RedirectUrl:     parent.RedirectUrl,
-		Name:            parent.Name,
-		CallBackConfirm: mdb.CallBackConfirmOk, // don't trigger callback on sub-order
-		PaymentType:     parent.PaymentType,
+		TradeId:           subTradeID,
+		OrderId:           subTradeID, // sub-order uses its own trade_id as order_id (unique constraint)
+		ParentTradeId:     parent.TradeId,
+		Amount:            parent.Amount,
+		Currency:          parent.Currency,
+		ActualAmount:      availableAmount,
+		ReceiveAddress:    availableAddress,
+		Token:             token,
+		Network:           network,
+		Status:            mdb.StatusWaitPay,
+		IsSelected:        true,
+		NotifyUrl:         "",
+		RedirectUrl:       parent.RedirectUrl,
+		Name:              parent.Name,
+		CallBackConfirm:   mdb.CallBackConfirmOk, // don't trigger callback on sub-order
+		PaymentType:       parent.PaymentType,
+		PaymentChannel:    parent.PaymentChannel,
+		PaymentMerchantId: parent.PaymentMerchantId,
 	}
 	if err = data.CreateOrderWithTransaction(tx, subOrder); err != nil {
 		tx.Rollback()
@@ -394,24 +420,19 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 	}
 
 	// Mark parent as selected and refresh its expiration to match the sub-order
-	_ = data.MarkOrderSelected(parent.TradeId)
-	_ = data.RefreshOrderExpiration(parent.TradeId)
-
-	return buildCheckoutResponse(subOrder), nil
-}
-
-func buildCheckoutResponse(order *mdb.Orders) *response.CheckoutCounterResponse {
-	return &response.CheckoutCounterResponse{
-		TradeId:        order.TradeId,
-		Amount:         order.Amount,
-		ActualAmount:   order.ActualAmount,
-		Token:          order.Token,
-		Currency:       order.Currency,
-		ReceiveAddress: order.ReceiveAddress,
-		Network:        order.Network,
-		ExpirationTime: order.CreatedAt.AddMinutes(config.GetOrderExpirationTime()).TimestampMilli(),
-		RedirectUrl:    order.RedirectUrl,
-		CreatedAt:      order.CreatedAt.TimestampMilli(),
-		IsSelected:     order.IsSelected,
+	if err = data.SetSelectedOrder(parent.TradeId, subOrder.TradeId); err != nil {
+		_ = data.UnLockTransactionByTradeId(subTradeID)
+		return nil, err
 	}
+	if err = data.RefreshOrderFamilyExpiration(parent.TradeId, config.GetOrderExpirationTimeDuration()); err != nil {
+		_ = data.UnLockTransactionByTradeId(subTradeID)
+		return nil, err
+	}
+	subOrder, err = data.GetOrderInfoByTradeId(subTradeID)
+	if err != nil {
+		_ = data.UnLockTransactionByTradeId(subTradeID)
+		return nil, err
+	}
+
+	return buildCheckoutResponse(subOrder)
 }

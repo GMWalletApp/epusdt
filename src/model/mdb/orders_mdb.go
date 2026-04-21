@@ -31,6 +31,8 @@ type Orders struct {
 	CallBackConfirm    int     `gorm:"column:callback_confirm;default:2" json:"callback_confirm"`
 	IsSelected         bool    `gorm:"column:is_selected;default:false" json:"is_selected"`
 	PaymentType        string  `gorm:"column:payment_type" json:"payment_type"`
+	PaymentChannel     string  `gorm:"column:payment_channel" json:"payment_channel"`
+	PaymentMerchantId  string  `gorm:"column:payment_merchant_id" json:"payment_merchant_id"`
 	BaseModel
 }
 

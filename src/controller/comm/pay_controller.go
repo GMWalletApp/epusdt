@@ -2,7 +2,6 @@ package comm
 
 import (
 	"encoding/json"
-	"fmt"
 	"html/template"
 	"net/http"
 	"path/filepath"
@@ -15,16 +14,33 @@ import (
 
 // CheckoutCounter 收银台
 func (c *BaseCommController) CheckoutCounter(ctx echo.Context) (err error) {
+	type pageData struct {
+		response.CheckoutCounterResponse
+		PaymentOptionsJSON template.JS
+	}
+
+	buildPageData := func(resp response.CheckoutCounterResponse) pageData {
+		paymentOptionsJSON := template.JS("[]")
+		if len(resp.PaymentOptions) > 0 {
+			if b, err := json.Marshal(resp.PaymentOptions); err == nil {
+				paymentOptionsJSON = template.JS(string(b))
+			}
+		}
+		return pageData{
+			CheckoutCounterResponse: resp,
+			PaymentOptionsJSON:      paymentOptionsJSON,
+		}
+	}
+
 	tradeId := ctx.Param("trade_id")
 	resp, err := service.GetCheckoutCounterByTradeId(tradeId)
 	if err != nil {
-		if err == service.ErrOrder {
+		if err == service.ErrOrderNotFound {
 			tmpl, err := template.ParseFiles(filepath.Join(config.StaticFilePath, "index.html"))
 			if err != nil {
 				return ctx.String(http.StatusOK, err.Error())
 			}
-			emptyResp := response.CheckoutCounterResponse{}
-			return tmpl.Execute(ctx.Response(), emptyResp)
+			return tmpl.Execute(ctx.Response(), buildPageData(response.CheckoutCounterResponse{}))
 		}
 		return ctx.String(http.StatusOK, err.Error())
 	}
@@ -33,13 +49,7 @@ func (c *BaseCommController) CheckoutCounter(ctx echo.Context) (err error) {
 		return ctx.String(http.StatusOK, err.Error())
 	}
 
-	jsonByte, err := json.MarshalIndent(resp, "", "  ")
-	if err != nil {
-		return ctx.String(http.StatusOK, err.Error())
-	}
-	fmt.Printf("%v\n", string(jsonByte))
-
-	return tmpl.Execute(ctx.Response(), resp)
+	return tmpl.Execute(ctx.Response(), buildPageData(*resp))
 }
 
 // CheckStatus 支付状态检测

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/assimon/luuu/config"
 	"github.com/assimon/luuu/controller/comm"
@@ -114,6 +115,19 @@ func RegisterRoute(e *echo.Echo) {
 			return s
 		}
 
+		pid := strings.TrimSpace(getString(params, "pid"))
+		if configuredPID := config.GetEpayPid(); configuredPID > 0 {
+			configured := strconv.Itoa(configuredPID)
+			if pid != "" && pid != configured {
+				return constant.SignatureErr
+			}
+			pid = configured
+		}
+		if pid == "" {
+			return constant.SignatureErr
+		}
+		params["pid"] = pid
+
 		signstr := getString(params, "sign")
 		if signstr == "" {
 			return constant.SignatureErr
@@ -122,10 +136,7 @@ func RegisterRoute(e *echo.Echo) {
 		delete(params, "sign")
 		delete(params, "sign_type")
 
-		// we need to add pid to params for signature verification
-		params["pid"] = config.GetEpayPid()
-
-		checkSignature, err := sign.Get(params, config.GetApiAuthToken())
+		checkSignature, err := sign.Get(params, config.GetEpaySignKey())
 		if err != nil {
 			return constant.SignatureErr
 		}
@@ -138,6 +149,19 @@ func RegisterRoute(e *echo.Echo) {
 		notifyURL := getString(params, "notify_url")
 		outTradeNo := getString(params, "out_trade_no")
 		returnURL := getString(params, "return_url")
+		token := strings.TrimSpace(getString(params, "token"))
+		if token == "" {
+			token = config.GetEpayDefaultToken()
+		}
+		currency := strings.TrimSpace(getString(params, "currency"))
+		if currency == "" {
+			currency = config.GetEpayDefaultCurrency()
+		}
+		network := strings.TrimSpace(getString(params, "network"))
+		if network == "" {
+			network = config.GetEpayDefaultNetwork()
+		}
+		paymentChannel := strings.TrimSpace(getString(params, "type"))
 
 		amountFloat, err := strconv.ParseFloat(money, 64)
 		if err != nil {
@@ -145,16 +169,18 @@ func RegisterRoute(e *echo.Echo) {
 		}
 
 		body := map[string]interface{}{
-			"token":        "usdt",
-			"currency":     "cny",
-			"network":      "tron",
-			"amount":       amountFloat,
-			"notify_url":   notifyURL,
-			"order_id":     outTradeNo,
-			"redirect_url": returnURL,
-			"signature":    signstr,
-			"name":         name,
-			"payment_type": mdb.PaymentTypeEpay,
+			"token":               token,
+			"currency":            currency,
+			"network":             network,
+			"amount":              amountFloat,
+			"notify_url":          notifyURL,
+			"order_id":            outTradeNo,
+			"redirect_url":        returnURL,
+			"signature":           signstr,
+			"name":                name,
+			"payment_type":        mdb.PaymentTypeEpay,
+			"payment_channel":     paymentChannel,
+			"payment_merchant_id": pid,
 		}
 
 		ctx.Set("request_body", body)

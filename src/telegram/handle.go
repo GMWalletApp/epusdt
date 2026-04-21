@@ -9,6 +9,7 @@ import (
 
 	"github.com/assimon/luuu/model/data"
 	"github.com/assimon/luuu/model/mdb"
+	"github.com/assimon/luuu/util/walletaddr"
 	"github.com/gookit/goutil/mathutil"
 	"github.com/gookit/goutil/strutil"
 	tb "gopkg.in/telebot.v3"
@@ -57,11 +58,11 @@ func OnTextMessageHandle(c tb.Context) error {
 	}
 
 	var err error
-	if !isValidAddressByNetwork(state.Network, msgText) {
+	if !walletaddr.Validate(state.Network, msgText) {
 		_ = c.Send(fmt.Sprintf("钱包 [%s] 添加失败：不是合法的 %s 地址", msgText, strings.ToUpper(state.Network)))
 		return nil
 	}
-	storeAddress := normalizeWalletAddressByNetwork(state.Network, msgText)
+	storeAddress := walletaddr.Normalize(state.Network, msgText)
 	_, err = data.AddWalletAddressWithNetwork(state.Network, storeAddress)
 	if err != nil {
 		return c.Send(err.Error())

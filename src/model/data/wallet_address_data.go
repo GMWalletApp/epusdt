@@ -1,11 +1,10 @@
 package data
 
 import (
-	"strings"
-
 	"github.com/assimon/luuu/model/dao"
 	"github.com/assimon/luuu/model/mdb"
 	"github.com/assimon/luuu/util/constant"
+	"github.com/assimon/luuu/util/walletaddr"
 )
 
 // AddWalletAddress 创建钱包 (默认 tron 网络，用于 Telegram 添加)
@@ -13,23 +12,12 @@ func AddWalletAddress(address string) (*mdb.WalletAddress, error) {
 	return AddWalletAddressWithNetwork(mdb.NetworkTron, address)
 }
 
-// isEVMNetwork 判断是否是 EVM 网络
-func isEVMNetwork(network string) bool {
-	switch network {
-	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma:
-		return true
-	}
-	return false
-}
-
 // AddWalletAddressWithNetwork 创建指定网络的钱包地址
 func AddWalletAddressWithNetwork(network, address string) (*mdb.WalletAddress, error) {
-	network = strings.ToLower(strings.TrimSpace(network))
-	address = strings.TrimSpace(address)
-
-	// evm 网络地址统一小写，tron 和 solana 保持原样
-	if isEVMNetwork(network) {
-		address = strings.ToLower(address)
+	network = walletaddr.NormalizeNetwork(network)
+	address = walletaddr.Normalize(network, address)
+	if !walletaddr.Validate(network, address) {
+		return nil, constant.InvalidWalletAddress
 	}
 
 	exist, err := GetWalletAddressByNetworkAndAddress(network, address)
@@ -50,6 +38,8 @@ func AddWalletAddressWithNetwork(network, address string) (*mdb.WalletAddress, e
 
 // GetWalletAddressByNetworkAndAddress 通过网络和地址查询
 func GetWalletAddressByNetworkAndAddress(network, address string) (*mdb.WalletAddress, error) {
+	network = walletaddr.NormalizeNetwork(network)
+	address = walletaddr.Normalize(network, address)
 	walletAddress := new(mdb.WalletAddress)
 	err := dao.Mdb.Model(walletAddress).
 		Where("network = ?", network).
@@ -87,6 +77,7 @@ func GetAvailableWalletAddress() ([]mdb.WalletAddress, error) {
 
 // GetAvailableWalletAddressByNetwork 获得指定网络的所有可用钱包地址
 func GetAvailableWalletAddressByNetwork(network string) ([]mdb.WalletAddress, error) {
+	network = walletaddr.NormalizeNetwork(network)
 	var list []mdb.WalletAddress
 	err := dao.Mdb.Model(list).
 		Where("status = ?", mdb.TokenStatusEnable).
@@ -104,6 +95,7 @@ func GetAllWalletAddress() ([]mdb.WalletAddress, error) {
 
 // GetAllWalletAddressByNetwork 获得指定网络的所有钱包地址
 func GetAllWalletAddressByNetwork(network string) ([]mdb.WalletAddress, error) {
+	network = walletaddr.NormalizeNetwork(network)
 	var list []mdb.WalletAddress
 	err := dao.Mdb.Model(list).Where("network = ?", network).Find(&list).Error
 	return list, err

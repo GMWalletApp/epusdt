@@ -62,7 +62,7 @@ func StartEthereumWebSocketListener() {
 		Topics: [][]common.Hash{},
 	}
 
-	runEvmWsLogListener("[ETH-WS]", wsURL, query, func(client *ethclient.Client, vLog types.Log) {
+	runEvmWsLogListener("[ETH-WS]", wsURL, query, evmBackfillLookbackBlocks(12*time.Second), func(client *ethclient.Client, vLog types.Log) {
 		if len(vLog.Topics) < 3 {
 			return
 		}

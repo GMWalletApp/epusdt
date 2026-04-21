@@ -60,7 +60,7 @@ func StartPolygonWebSocketListener() {
 		Topics: [][]common.Hash{},
 	}
 
-	runEvmWsLogListener("[POLYGON-WS]", wsURL, query, func(client *ethclient.Client, vLog types.Log) {
+	runEvmWsLogListener("[POLYGON-WS]", wsURL, query, evmBackfillLookbackBlocks(2*time.Second), func(client *ethclient.Client, vLog types.Log) {
 		if len(vLog.Topics) < 3 {
 			return
 		}

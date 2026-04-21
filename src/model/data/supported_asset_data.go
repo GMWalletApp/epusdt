@@ -121,3 +121,11 @@ func ListEnabledSupportedAssets() ([]mdb.SupportedAsset, error) {
 		Find(&list).Error
 	return list, err
 }
+
+func IsSupportedAssetEnabled(network, token string) (bool, error) {
+	asset, err := GetSupportedAssetByNetworkAndToken(network, token)
+	if err != nil {
+		return false, err
+	}
+	return asset.ID > 0 && asset.Status == mdb.TokenStatusEnable, nil
+}

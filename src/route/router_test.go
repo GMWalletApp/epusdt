@@ -7,9 +7,11 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/assimon/luuu/config"
 	"github.com/assimon/luuu/model/dao"
 	"github.com/assimon/luuu/model/mdb"
 	"github.com/assimon/luuu/util/log"
@@ -18,7 +20,16 @@ import (
 	"github.com/spf13/viper"
 )
 
-const testAPIToken = "test-secret-token"
+const (
+	testAPIToken  = "test-secret-token"
+	testEpayKey   = "test-epay-key"
+	testTronAddr1 = "TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7"
+	testTronAddr2 = "TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj"
+	testTronAddr3 = "TJRabPrwbZy45sbavfcjinPJC18kjpRTv8"
+	testSolAddr1  = "So11111111111111111111111111111111111111112"
+	testSolAddr2  = "11111111111111111111111111111111"
+	testEvmAddr1  = "0x08c34c4e8b99e2503017ae09287bd0019b7096c6"
+)
 
 func setupTestEnv(t *testing.T) *echo.Echo {
 	t.Helper()
@@ -29,6 +40,7 @@ func setupTestEnv(t *testing.T) *echo.Echo {
 	viper.Reset()
 	viper.Set("db_type", "sqlite")
 	viper.Set("api_auth_token", testAPIToken)
+	viper.Set("epay_key", testEpayKey)
 	viper.Set("epay_pid", 1)
 	viper.Set("app_uri", "http://localhost:8080")
 	viper.Set("order_expiration_time", 10)
@@ -40,6 +52,11 @@ func setupTestEnv(t *testing.T) *echo.Echo {
 	viper.Set("runtime_sqlite_filename", tmpDir+"/runtime.db")
 
 	log.Init()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	config.StaticFilePath = filepath.Join(wd, "..", "static")
 
 	// init config paths
 	os.Setenv("EPUSDT_CONFIG", tmpDir)
@@ -57,8 +74,8 @@ func setupTestEnv(t *testing.T) *echo.Echo {
 	dao.Mdb.AutoMigrate(&mdb.Orders{}, &mdb.WalletAddress{}, &mdb.SupportedAsset{})
 
 	// seed wallet addresses
-	dao.Mdb.Create(&mdb.WalletAddress{Network: mdb.NetworkTron, Address: "TTestTronAddress001", Status: mdb.TokenStatusEnable})
-	dao.Mdb.Create(&mdb.WalletAddress{Network: mdb.NetworkSolana, Address: "SolTestAddress001", Status: mdb.TokenStatusEnable})
+	dao.Mdb.Create(&mdb.WalletAddress{Network: mdb.NetworkTron, Address: testTronAddr1, Status: mdb.TokenStatusEnable})
+	dao.Mdb.Create(&mdb.WalletAddress{Network: mdb.NetworkSolana, Address: testSolAddr1, Status: mdb.TokenStatusEnable})
 	// seed supported assets if empty
 	var supportCnt int64
 	dao.Mdb.Model(&mdb.SupportedAsset{}).Count(&supportCnt)
@@ -107,7 +124,7 @@ func signEpayValues(values url.Values) url.Values {
 		}
 		signParams[key] = items[0]
 	}
-	sig, _ := sign.Get(signParams, testAPIToken)
+	sig, _ := sign.Get(signParams, testEpayKey)
 	values.Set("sign", sig)
 	values.Set("sign_type", "MD5")
 	return values
@@ -151,7 +168,7 @@ func TestCreateOrderEpusdtDefaultTron(t *testing.T) {
 	if data["trade_id"] == nil || data["trade_id"] == "" {
 		t.Error("expected trade_id in response")
 	}
-	if data["receive_address"] != "TTestTronAddress001" {
+	if data["receive_address"] != testTronAddr1 {
 		t.Errorf("expected tron address, got: %v", data["receive_address"])
 	}
 	t.Logf("Order created: trade_id=%v address=%v amount=%v", data["trade_id"], data["receive_address"], data["actual_amount"])
@@ -190,7 +207,7 @@ func TestCreateOrderGmpayV1Solana(t *testing.T) {
 	if data["trade_id"] == nil || data["trade_id"] == "" {
 		t.Error("expected trade_id in response")
 	}
-	if data["receive_address"] != "SolTestAddress001" {
+	if data["receive_address"] != testSolAddr1 {
 		t.Errorf("expected solana address, got: %v", data["receive_address"])
 	}
 	t.Logf("Order created: trade_id=%v address=%v amount=%v", data["trade_id"], data["receive_address"], data["actual_amount"])
@@ -366,7 +383,7 @@ func TestWalletAddAndList(t *testing.T) {
 	// Add a solana wallet
 	rec := doPostWithToken(e, "/payments/gmpay/v1/wallet/add", map[string]interface{}{
 		"network": "solana",
-		"address": "NewSolWallet001",
+		"address": testSolAddr2,
 	})
 	t.Logf("Add: %s", rec.Body.String())
 	resp := parseResp(t, rec)
@@ -377,7 +394,7 @@ func TestWalletAddAndList(t *testing.T) {
 	// Add a tron wallet
 	rec = doPostWithToken(e, "/payments/gmpay/v1/wallet/add", map[string]interface{}{
 		"network": "tron",
-		"address": "NewTronWallet001",
+		"address": testTronAddr2,
 	})
 	resp = parseResp(t, rec)
 	if resp["status_code"].(float64) != 200 {
@@ -413,7 +430,7 @@ func TestWalletAddAndList(t *testing.T) {
 func TestWalletDuplicateRejected(t *testing.T) {
 	e := setupTestEnv(t)
 
-	body := map[string]interface{}{"network": "solana", "address": "DupWallet001"}
+	body := map[string]interface{}{"network": "ethereum", "address": "0x08C34c4E8B99E2503017ae09287BD0019b7096C6"}
 	rec := doPostWithToken(e, "/payments/gmpay/v1/wallet/add", body)
 	resp := parseResp(t, rec)
 	if resp["status_code"].(float64) != 200 {
@@ -428,14 +445,29 @@ func TestWalletDuplicateRejected(t *testing.T) {
 	}
 	t.Logf("Duplicate rejected: %v", resp["message"])
 
-	// Same address, different network should succeed
 	rec = doPostWithToken(e, "/payments/gmpay/v1/wallet/add", map[string]interface{}{
-		"network": "tron",
-		"address": "DupWallet001",
+		"network": "ethereum",
+		"address": testEvmAddr1,
 	})
 	resp = parseResp(t, rec)
-	if resp["status_code"].(float64) != 200 {
-		t.Fatalf("same address on different network should succeed: %v", resp)
+	if resp["status_code"].(float64) == 200 {
+		t.Fatal("expected normalized EVM duplicate to be rejected")
+	}
+}
+
+func TestWalletInvalidAddressRejected(t *testing.T) {
+	e := setupTestEnv(t)
+
+	rec := doPostWithToken(e, "/payments/gmpay/v1/wallet/add", map[string]interface{}{
+		"network": "tron",
+		"address": "invalid-tron-address",
+	})
+	resp := parseResp(t, rec)
+	if resp["status_code"].(float64) == 200 {
+		t.Fatal("expected invalid wallet address to be rejected")
+	}
+	if resp["status_code"].(float64) != 10016 {
+		t.Fatalf("expected status_code=10016, got %v", resp["status_code"])
 	}
 }
 
@@ -445,8 +477,8 @@ func TestWalletStatusAndDelete(t *testing.T) {
 
 	// Add a wallet
 	rec := doPostWithToken(e, "/payments/gmpay/v1/wallet/add", map[string]interface{}{
-		"network": "solana",
-		"address": "StatusTestWallet",
+		"network": "ethereum",
+		"address": testEvmAddr1,
 	})
 	resp := parseResp(t, rec)
 	wallet := resp["data"].(map[string]interface{})
@@ -474,7 +506,7 @@ func TestWalletStatusAndDelete(t *testing.T) {
 	wallets := resp["data"].([]interface{})
 	for _, w := range wallets {
 		wm := w.(map[string]interface{})
-		if wm["address"] == "StatusTestWallet" && wm["status"].(float64) != 2 {
+		if wm["address"] == testEvmAddr1 && wm["status"].(float64) != 2 {
 			t.Error("wallet should be disabled")
 		}
 	}
@@ -546,11 +578,65 @@ func TestCreateOrderNetworkIsolation(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected data, got: %v", resp)
 	}
-	if data["receive_address"] == "TTestTronAddress001" {
+	if data["receive_address"] == testTronAddr1 {
 		t.Error("solana order should NOT get a tron address")
 	}
-	if data["receive_address"] != "SolTestAddress001" {
-		t.Errorf("expected SolTestAddress001, got %v", data["receive_address"])
+	if data["receive_address"] != testSolAddr1 {
+		t.Errorf("expected %s, got %v", testSolAddr1, data["receive_address"])
+	}
+}
+
+func TestCreateOrderRejectsDisabledSupportedAsset(t *testing.T) {
+	e := setupTestEnv(t)
+
+	if err := dao.Mdb.Model(&mdb.SupportedAsset{}).
+		Where("network = ? AND token = ?", mdb.NetworkTron, "USDT").
+		Update("status", mdb.TokenStatusDisable).Error; err != nil {
+		t.Fatalf("disable supported asset: %v", err)
+	}
+
+	rec := doPost(e, "/payments/gmpay/v1/order/create-transaction", signBody(map[string]interface{}{
+		"order_id":   "unsupported-tron-usdt",
+		"amount":     1.00,
+		"token":      "usdt",
+		"currency":   "cny",
+		"network":    "tron",
+		"notify_url": "http://localhost/notify",
+	}))
+	resp := parseResp(t, rec)
+	if resp["status_code"].(float64) != 10017 {
+		t.Fatalf("expected status_code=10017, got %v body=%v", resp["status_code"], resp)
+	}
+}
+
+func TestSwitchNetworkRejectsDisabledSupportedAsset(t *testing.T) {
+	e := setupTestEnv(t)
+
+	createResp := parseResp(t, doPost(e, "/payments/gmpay/v1/order/create-transaction", signBody(map[string]interface{}{
+		"order_id":   "switch-base-order",
+		"amount":     1.00,
+		"token":      "usdt",
+		"currency":   "cny",
+		"network":    "tron",
+		"notify_url": "http://localhost/notify",
+	})))
+	data := createResp["data"].(map[string]interface{})
+	tradeID := data["trade_id"].(string)
+
+	if err := dao.Mdb.Model(&mdb.SupportedAsset{}).
+		Where("network = ? AND token = ?", mdb.NetworkSolana, "USDT").
+		Update("status", mdb.TokenStatusDisable).Error; err != nil {
+		t.Fatalf("disable supported asset: %v", err)
+	}
+
+	rec := doPost(e, "/pay/switch-network", map[string]interface{}{
+		"trade_id": tradeID,
+		"token":    "usdt",
+		"network":  "solana",
+	})
+	resp := parseResp(t, rec)
+	if resp["status_code"].(float64) != 10017 {
+		t.Fatalf("expected status_code=10017, got %v body=%v", resp["status_code"], resp)
 	}
 }
 
@@ -579,6 +665,36 @@ func TestEpaySubmitPhpGetCompatible(t *testing.T) {
 	}
 }
 
+func TestCheckoutCounterInjectsPaymentOptions(t *testing.T) {
+	e := setupTestEnv(t)
+
+	createResp := parseResp(t, doPost(e, "/payments/gmpay/v1/order/create-transaction", signBody(map[string]interface{}{
+		"order_id":   "checkout-options-order",
+		"amount":     1.00,
+		"token":      "usdt",
+		"currency":   "cny",
+		"network":    "tron",
+		"notify_url": "http://localhost/notify",
+	})))
+	data := createResp["data"].(map[string]interface{})
+	tradeID := data["trade_id"].(string)
+
+	rec := doGet(e, "/pay/checkout-counter/"+tradeID)
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, body)
+	}
+	if !strings.Contains(body, "var PAYMENT_OPTIONS = [") {
+		t.Fatalf("expected PAYMENT_OPTIONS injection, got body=%s", body)
+	}
+	if !strings.Contains(body, `"network":"tron"`) {
+		t.Fatalf("expected tron option in checkout html, got body=%s", body)
+	}
+	if !strings.Contains(body, `"network":"solana"`) {
+		t.Fatalf("expected solana option in checkout html, got body=%s", body)
+	}
+}
+
 func TestEpaySubmitPhpPostFormCompatible(t *testing.T) {
 	e := setupTestEnv(t)
 
@@ -600,5 +716,154 @@ func TestEpaySubmitPhpPostFormCompatible(t *testing.T) {
 	}
 	if !strings.HasPrefix(rec.Header().Get("Location"), "/pay/checkout-counter/") {
 		t.Fatalf("expected checkout redirect, got %q", rec.Header().Get("Location"))
+	}
+}
+
+func TestEpaySubmitPhpUsesEpayKeyAndStoresOverrides(t *testing.T) {
+	e := setupTestEnv(t)
+
+	values := signEpayValues(url.Values{
+		"pid":          {"1"},
+		"name":         {"epay-override-001"},
+		"type":         {"wxpay"},
+		"money":        {"1.00"},
+		"token":        {"usdt"},
+		"currency":     {"usd"},
+		"network":      {"solana"},
+		"out_trade_no": {"epay-override-001"},
+		"notify_url":   {"http://localhost/notify"},
+		"return_url":   {"http://localhost/return"},
+	})
+
+	rec := doFormPost(e, "/payments/epay/v1/order/create-transaction/submit.php", values)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	order := new(mdb.Orders)
+	if err := dao.Mdb.Where("order_id = ?", "epay-override-001").Limit(1).Find(order).Error; err != nil {
+		t.Fatalf("load created epay order: %v", err)
+	}
+	if order.ID == 0 {
+		t.Fatal("expected epay order to be created")
+	}
+	if order.Network != mdb.NetworkSolana || order.Token != "USDT" || order.Currency != "USD" {
+		t.Fatalf("unexpected stored payment mapping: %+v", order)
+	}
+	if order.PaymentType != mdb.PaymentTypeEpay {
+		t.Fatalf("unexpected payment type: %+v", order)
+	}
+	if order.PaymentChannel != "wxpay" {
+		t.Fatalf("unexpected payment channel: %+v", order)
+	}
+	if order.PaymentMerchantId != "1" {
+		t.Fatalf("unexpected payment merchant id: %+v", order)
+	}
+}
+
+func TestSupportedAssetsFiltersByOrderContextAndValidWallets(t *testing.T) {
+	e := setupTestEnv(t)
+
+	if err := dao.Mdb.Create(&mdb.WalletAddress{
+		Network: mdb.NetworkBsc,
+		Address: "not-a-valid-evm-address",
+		Status:  mdb.TokenStatusEnable,
+	}).Error; err != nil {
+		t.Fatalf("create invalid bsc wallet: %v", err)
+	}
+
+	rec := doGet(e, "/payments/gmpay/v1/supported-assets?currency=cny&amount=1.00")
+	resp := parseResp(t, rec)
+	if resp["status_code"].(float64) != 200 {
+		t.Fatalf("supported assets request failed: %v", resp)
+	}
+
+	data := resp["data"].(map[string]interface{})
+	supports := data["supports"].([]interface{})
+	body, _ := json.Marshal(supports)
+	bodyText := string(body)
+	if strings.Contains(bodyText, `"TRX"`) {
+		t.Fatalf("expected TRX to be filtered by rate availability, got %s", bodyText)
+	}
+	if strings.Contains(bodyText, `"bsc"`) {
+		t.Fatalf("expected bsc to be filtered because wallet is invalid, got %s", bodyText)
+	}
+	if !strings.Contains(bodyText, `"tron"`) || !strings.Contains(bodyText, `"USDT"`) {
+		t.Fatalf("expected tron/usdt to remain available, got %s", bodyText)
+	}
+}
+
+func TestCreateTransactionAllowsMinimumAmount(t *testing.T) {
+	e := setupTestEnv(t)
+
+	rec := doPost(e, "/payments/gmpay/v1/order/create-transaction", signBody(map[string]interface{}{
+		"order_id":   "minimum-amount-order",
+		"amount":     0.01,
+		"token":      "usdt",
+		"currency":   "usd",
+		"network":    "tron",
+		"notify_url": "http://localhost/notify",
+	}))
+	resp := parseResp(t, rec)
+	if resp["status_code"].(float64) != 200 {
+		t.Fatalf("expected minimum amount to be accepted, got %v", resp)
+	}
+}
+
+func TestCreateTransactionNormalizesStoredAmount(t *testing.T) {
+	e := setupTestEnv(t)
+
+	rec := doPost(e, "/payments/gmpay/v1/order/create-transaction", signBody(map[string]interface{}{
+		"order_id":   "normalized-amount-order",
+		"amount":     1.239,
+		"token":      "usdt",
+		"currency":   "cny",
+		"network":    "tron",
+		"notify_url": "http://localhost/notify",
+	}))
+	resp := parseResp(t, rec)
+	if resp["status_code"].(float64) != 200 {
+		t.Fatalf("create transaction failed: %v", resp)
+	}
+	data := resp["data"].(map[string]interface{})
+	if data["amount"].(float64) != 1.24 {
+		t.Fatalf("expected normalized response amount 1.24, got %v", data["amount"])
+	}
+
+	order := new(mdb.Orders)
+	if err := dao.Mdb.Where("order_id = ?", "normalized-amount-order").Limit(1).Find(order).Error; err != nil {
+		t.Fatalf("load normalized order: %v", err)
+	}
+	if order.Amount != 1.24 {
+		t.Fatalf("expected normalized stored amount 1.24, got %+v", order)
+	}
+}
+
+func TestCheckoutCounterInjectsTerminalOrderStatus(t *testing.T) {
+	e := setupTestEnv(t)
+
+	createResp := parseResp(t, doPost(e, "/payments/gmpay/v1/order/create-transaction", signBody(map[string]interface{}{
+		"order_id":   "checkout-terminal-order",
+		"amount":     1.00,
+		"token":      "usdt",
+		"currency":   "cny",
+		"network":    "tron",
+		"notify_url": "http://localhost/notify",
+	})))
+	tradeID := createResp["data"].(map[string]interface{})["trade_id"].(string)
+
+	if err := dao.Mdb.Model(&mdb.Orders{}).
+		Where("trade_id = ?", tradeID).
+		Update("status", mdb.StatusPaySuccess).Error; err != nil {
+		t.Fatalf("mark order paid: %v", err)
+	}
+
+	rec := doGet(e, "/pay/checkout-counter/"+tradeID)
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, body)
+	}
+	if !strings.Contains(body, `status: "2"`) {
+		t.Fatalf("expected terminal order status injection, got body=%s", body)
 	}
 }

@@ -142,8 +142,7 @@ func GetSiblingSubOrders(parentTradeId string, excludeTradeId string) ([]mdb.Ord
 	return orders, err
 }
 
-// MarkParentOrderSuccess updates the parent order with the sub-order's payment details.
-// Token and network are NOT overwritten — the parent keeps its original values.
+// MarkParentOrderSuccess updates the parent order with the actual paid sub-order details.
 func MarkParentOrderSuccess(parentTradeId string, sub *mdb.Orders) (bool, error) {
 	result := dao.Mdb.Model(&mdb.Orders{}).
 		Where("trade_id = ?", parentTradeId).
@@ -154,23 +153,67 @@ func MarkParentOrderSuccess(parentTradeId string, sub *mdb.Orders) (bool, error)
 			"callback_confirm":     mdb.CallBackConfirmNo,
 			"actual_amount":        sub.ActualAmount,
 			"receive_address":      sub.ReceiveAddress,
+			"token":                sub.Token,
+			"network":              sub.Network,
 		})
 	return result.RowsAffected > 0, result.Error
 }
 
-// MarkOrderSelected sets is_selected=true for the given trade_id.
-func MarkOrderSelected(tradeId string) error {
-	return dao.Mdb.Model(&mdb.Orders{}).
-		Where("trade_id = ?", tradeId).
-		Update("is_selected", true).Error
+func SetSelectedOrder(rootTradeId string, selectedTradeId string) error {
+	return dao.Mdb.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&mdb.Orders{}).
+			Where("trade_id = ? OR parent_trade_id = ?", rootTradeId, rootTradeId).
+			Update("is_selected", false).Error; err != nil {
+			return err
+		}
+		return tx.Model(&mdb.Orders{}).
+			Where("trade_id = ?", selectedTradeId).
+			Update("is_selected", true).Error
+	})
 }
 
-// RefreshOrderExpiration resets created_at to now so the expiration timer restarts.
-// Called on the parent order when a sub-order is created or returned.
-func RefreshOrderExpiration(tradeId string) error {
-	return dao.Mdb.Model(&mdb.Orders{}).
-		Where("trade_id = ?", tradeId).
-		Update("created_at", time.Now()).Error
+func GetSelectedOrderInFamily(rootTradeId string) (*mdb.Orders, error) {
+	order := new(mdb.Orders)
+	err := dao.Mdb.Model(order).
+		Where("(trade_id = ? OR parent_trade_id = ?)", rootTradeId, rootTradeId).
+		Where("status = ?", mdb.StatusWaitPay).
+		Where("is_selected = ?", true).
+		Order("parent_trade_id asc, id asc").
+		Limit(1).
+		Find(order).Error
+	return order, err
+}
+
+func GetActiveOrdersInFamily(rootTradeId string) ([]mdb.Orders, error) {
+	var orders []mdb.Orders
+	err := dao.Mdb.Model(&mdb.Orders{}).
+		Where("(trade_id = ? OR parent_trade_id = ?)", rootTradeId, rootTradeId).
+		Where("status = ?", mdb.StatusWaitPay).
+		Find(&orders).Error
+	return orders, err
+}
+
+func RefreshOrderFamilyExpiration(rootTradeId string, expirationTime time.Duration) error {
+	now := time.Now()
+	orders, err := GetActiveOrdersInFamily(rootTradeId)
+	if err != nil {
+		return err
+	}
+	if len(orders) == 0 {
+		return nil
+	}
+	tradeIDs := make([]string, 0, len(orders))
+	for _, order := range orders {
+		tradeIDs = append(tradeIDs, order.TradeId)
+	}
+	if err = dao.Mdb.Model(&mdb.Orders{}).
+		Where("trade_id IN ?", tradeIDs).
+		Update("created_at", now).Error; err != nil {
+		return err
+	}
+	return dao.RuntimeDB.Model(&mdb.TransactionLock{}).
+		Where("trade_id IN ?", tradeIDs).
+		Update("expires_at", now.Add(expirationTime)).Error
 }
 
 // ResetCallbackConfirmOk sets callback_confirm back to Ok.

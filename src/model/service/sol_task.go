@@ -69,29 +69,18 @@ func SolCallBack(address string, wg *sync.WaitGroup) {
 		log.Sugar.Errorf("[SOL][%s] failed to derive USDC ATA: %v", address, err)
 	}
 
+	// 时间截止线：订单过期时间 + 5 分钟
+	cutoffTime := time.Now().Add(-config.GetOrderExpirationTimeDuration() - 5*time.Minute).Unix()
+
 	// 拉取签名并去重
 	seen := make(map[string]bool)
 	var result []solSignatureResult
 	for _, queryAddr := range queryAddrs {
-		respBody, err := SolGetSignaturesForAddress(queryAddr, limit, "", "")
+		batch, err := collectSolSignaturesForAddress(queryAddr, limit, cutoffTime)
 		if err != nil {
-			log.Sugar.Errorf("[SOL][%s] SolGetSignaturesForAddress(%s) failed: %v", address, queryAddr, err)
+			log.Sugar.Errorf("[SOL][%s] collect signatures for %s failed: %v", address, queryAddr, err)
 			continue
 		}
-
-		resultBody := gjson.GetBytes(respBody, "result")
-		if !resultBody.Exists() || !resultBody.IsArray() {
-			log.Sugar.Errorf("[SOL][%s] unexpected response format for %s: %s", address, queryAddr, string(respBody))
-			continue
-		}
-
-		var batch []solSignatureResult
-		err = json.Unmarshal([]byte(resultBody.Raw), &batch)
-		if err != nil {
-			log.Sugar.Errorf("[SOL][%s] failed to unmarshal signatures for %s: %v", address, queryAddr, err)
-			continue
-		}
-
 		for _, sig := range batch {
 			if !seen[sig.Signature] {
 				seen[sig.Signature] = true
@@ -115,9 +104,6 @@ func SolCallBack(address string, wg *sync.WaitGroup) {
 		}
 		return *result[i].BlockTime > *result[j].BlockTime
 	})
-
-	// 时间截止线：订单过期时间 + 5 分钟
-	cutoffTime := time.Now().Add(-config.GetOrderExpirationTimeDuration() - 5*time.Minute).Unix()
 
 	log.Sugar.Debugf("[SOL][%s] fetched %d unique signatures from %d addresses, cutoff=%d",
 		address, len(result), len(queryAddrs), cutoffTime)
@@ -254,6 +240,51 @@ type solSignatureResult struct {
 	Slot      uint64      `json:"slot"`
 	Err       interface{} `json:"err"`
 	BlockTime *int64      `json:"blockTime"`
+}
+
+func collectSolSignaturesForAddress(address string, limit int, cutoffTime int64) ([]solSignatureResult, error) {
+	return collectSolSignaturesForAddressWithFetcher(SolGetSignaturesForAddress, address, limit, cutoffTime)
+}
+
+func collectSolSignaturesForAddressWithFetcher(fetcher func(string, int, string, string) ([]byte, error), address string, limit int, cutoffTime int64) ([]solSignatureResult, error) {
+	beforeSig := ""
+	result := make([]solSignatureResult, 0, limit)
+	for {
+		respBody, err := fetcher(address, limit, "", beforeSig)
+		if err != nil {
+			return nil, err
+		}
+
+		resultBody := gjson.GetBytes(respBody, "result")
+		if !resultBody.Exists() || !resultBody.IsArray() {
+			return nil, fmt.Errorf("unexpected response format for %s: %s", address, string(respBody))
+		}
+
+		var batch []solSignatureResult
+		if err = json.Unmarshal([]byte(resultBody.Raw), &batch); err != nil {
+			return nil, err
+		}
+		if len(batch) == 0 {
+			return result, nil
+		}
+
+		stop := false
+		for _, sig := range batch {
+			if sig.BlockTime != nil && *sig.BlockTime < cutoffTime {
+				stop = true
+				break
+			}
+			result = append(result, sig)
+		}
+		if stop || len(batch) < limit {
+			return result, nil
+		}
+
+		beforeSig = batch[len(batch)-1].Signature
+		if beforeSig == "" {
+			return result, nil
+		}
+	}
 }
 
 // SolRetryClient 发送 Solana JSON-RPC 请求，自动重试
@@ -437,7 +468,6 @@ func ADJustAmount(amount uint64, decimals int) float64 {
 func MatchUsdtAtaAddress(address string, ataTo string) bool {
 	ata, err := FindATAAddress(address, USDT_Mint)
 	if err != nil {
-		fmt.Printf("FindATAAddress failed: %v\n", err)
 		return false
 	}
 
@@ -447,7 +477,6 @@ func MatchUsdtAtaAddress(address string, ataTo string) bool {
 func MatchUsdcAtaAddress(address string, ataTo string) bool {
 	ata, err := FindATAAddress(address, USDC_Mint)
 	if err != nil {
-		fmt.Printf("FindATAAddress failed: %v\n", err)
 		return false
 	}
 
@@ -457,7 +486,6 @@ func MatchUsdcAtaAddress(address string, ataTo string) bool {
 func MatchAtaAddress(address string, mint string, ataTo string) bool {
 	ata, err := FindATAAddress(address, mint)
 	if err != nil {
-		fmt.Printf("FindATAAddress failed: %v\n", err)
 		return false
 	}
 

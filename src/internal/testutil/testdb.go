@@ -28,6 +28,8 @@ func SetupTestDatabases(t testing.TB) func() {
 	viper.Set("queue_concurrency", 4)
 	viper.Set("queue_poll_interval_ms", 50)
 	viper.Set("api_auth_token", "test-token")
+	viper.Set("epay_key", "test-epay-key")
+	viper.Set("epay_pid", 1)
 
 	config.HTTPAccessLog = false
 	config.SQLDebug = false
@@ -38,11 +40,20 @@ func SetupTestDatabases(t testing.TB) func() {
 	mainDB := mustOpenSQLite(t, filepath.Join(t.TempDir(), "main.db"))
 	runtimeDB := mustOpenSQLite(t, filepath.Join(t.TempDir(), "runtime.db"))
 
-	mustMigrate(t, mainDB, &mdb.Orders{}, &mdb.WalletAddress{})
+	mustMigrate(t, mainDB, &mdb.Orders{}, &mdb.WalletAddress{}, &mdb.SupportedAsset{})
 	mustMigrate(t, runtimeDB, &mdb.TransactionLock{})
 
 	dao.Mdb = mainDB
 	dao.RuntimeDB = runtimeDB
+
+	if err := mainDB.Create(&[]mdb.SupportedAsset{
+		{Network: mdb.NetworkTron, Token: "USDT", Status: mdb.TokenStatusEnable},
+		{Network: mdb.NetworkTron, Token: "TRX", Status: mdb.TokenStatusEnable},
+		{Network: mdb.NetworkSolana, Token: "USDT", Status: mdb.TokenStatusEnable},
+		{Network: mdb.NetworkEthereum, Token: "USDT", Status: mdb.TokenStatusEnable},
+	}).Error; err != nil {
+		t.Fatalf("seed supported assets: %v", err)
+	}
 
 	return func() {
 		closeDB(t, runtimeDB)

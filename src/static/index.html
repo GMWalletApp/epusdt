@@ -531,14 +531,16 @@
       amount: "{{.Amount}}",
       actualAmount: "{{.ActualAmount}}",
       token: "{{.Token}}",
-      currency: "{{.Currency}}",
-      network: "{{.Network}}",
-      receiveAddress: "{{.ReceiveAddress}}",
-      expirationTime: "{{.ExpirationTime}}",
+	      currency: "{{.Currency}}",
+	      network: "{{.Network}}",
+	      status: "{{.Status}}",
+	      receiveAddress: "{{.ReceiveAddress}}",
+	      expirationTime: "{{.ExpirationTime}}",
       redirectUrl: "{{.RedirectUrl}}",
       createdAt: "{{.CreatedAt}}",
       is_selected: "{{.IsSelected}}"
     };
+    var PAYMENT_OPTIONS = {{.PaymentOptionsJSON}};
   </script>
   <script defer src="/static/payment.js"></script>
 </body>

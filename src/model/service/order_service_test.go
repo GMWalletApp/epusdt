@@ -13,6 +13,11 @@ import (
 	"github.com/assimon/luuu/util/constant"
 )
 
+const (
+	testServiceTronAddr1 = "TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7"
+	testServiceTronAddr2 = "TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj"
+)
+
 func newCreateTransactionRequest(orderID string, amount float64) *request.CreateTransactionRequest {
 	return &request.CreateTransactionRequest{
 		OrderId:   orderID,
@@ -28,7 +33,7 @@ func TestCreateTransactionAssignsIncrementedAmountsAndLocks(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testServiceTronAddr1); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -47,7 +52,7 @@ func TestCreateTransactionAssignsIncrementedAmountsAndLocks(t *testing.T) {
 	if got := fmt.Sprintf("%.2f", resp2.ActualAmount); got != "1.01" {
 		t.Fatalf("second actual amount = %s, want 1.01", got)
 	}
-	if resp1.ReceiveAddress != "wallet_1" || resp2.ReceiveAddress != "wallet_1" {
+	if resp1.ReceiveAddress != testServiceTronAddr1 || resp2.ReceiveAddress != testServiceTronAddr1 {
 		t.Fatalf("unexpected receive addresses: %s, %s", resp1.ReceiveAddress, resp2.ReceiveAddress)
 	}
 	if resp1.Token != "USDT" || resp2.Token != "USDT" {
@@ -75,7 +80,7 @@ func TestOrderProcessingMarksPaidAndReleasesLock(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testServiceTronAddr1); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -123,7 +128,7 @@ func TestOrderProcessingRejectsDuplicateBlockForSameOrder(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testServiceTronAddr1); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -165,7 +170,7 @@ func TestOrderProcessingDoesNotReviveExpiredOrder(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testServiceTronAddr1); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -208,10 +213,10 @@ func TestOrderProcessingOnlyOneOrderClaimsABlockTransaction(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testServiceTronAddr1); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
-	if _, err := data.AddWalletAddress("wallet_2"); err != nil {
+	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkTron, testServiceTronAddr2); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 

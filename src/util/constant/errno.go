@@ -18,26 +18,30 @@ var Errno = map[int]string{
 	10013: "order is not awaiting payment",
 	10014: "supported asset already exists",
 	10015: "supported asset not found",
+	10016: "invalid wallet address",
+	10017: "payment method unavailable",
 }
 
 var (
-	SystemErr                  = Err(400)
-	SignatureErr               = Err(401)
-	WalletAddressAlreadyExists = Err(10001)
-	OrderAlreadyExists         = Err(10002)
-	NotAvailableWalletAddress  = Err(10003)
-	PayAmountErr               = Err(10004)
-	NotAvailableAmountErr      = Err(10005)
-	RateAmountErr              = Err(10006)
-	OrderBlockAlreadyProcess   = Err(10007)
-	OrderNotExists             = Err(10008)
-	ParamsMarshalErr           = Err(10009)
-	OrderStatusConflict        = Err(10010)
-	SubOrderLimitExceeded      = Err(10011)
-	CannotSwitchSubOrder       = Err(10012)
-	OrderNotWaitPay            = Err(10013)
+	SystemErr                   = Err(400)
+	SignatureErr                = Err(401)
+	WalletAddressAlreadyExists  = Err(10001)
+	OrderAlreadyExists          = Err(10002)
+	NotAvailableWalletAddress   = Err(10003)
+	PayAmountErr                = Err(10004)
+	NotAvailableAmountErr       = Err(10005)
+	RateAmountErr               = Err(10006)
+	OrderBlockAlreadyProcess    = Err(10007)
+	OrderNotExists              = Err(10008)
+	ParamsMarshalErr            = Err(10009)
+	OrderStatusConflict         = Err(10010)
+	SubOrderLimitExceeded       = Err(10011)
+	CannotSwitchSubOrder        = Err(10012)
+	OrderNotWaitPay             = Err(10013)
 	SupportedAssetAlreadyExists = Err(10014)
 	SupportedAssetNotFound      = Err(10015)
+	InvalidWalletAddress        = Err(10016)
+	PaymentMethodUnavailable    = Err(10017)
 )
 
 type RspError struct {

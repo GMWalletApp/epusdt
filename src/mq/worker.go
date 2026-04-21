@@ -1,11 +1,11 @@
 package mq
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -165,27 +165,51 @@ func processCallback(tradeID string) {
 }
 
 func sendOrderCallback(order *mdb.Orders) error {
+	checkCallbackResponse := func(statusCode int, body []byte, successBodies ...string) error {
+		if statusCode != http.StatusOK {
+			return fmt.Errorf("unexpected callback status: %d", statusCode)
+		}
+		normalized := strings.ToLower(strings.TrimSpace(string(body)))
+		for _, successBody := range successBodies {
+			if normalized == strings.ToLower(strings.TrimSpace(successBody)) {
+				return nil
+			}
+		}
+		return fmt.Errorf("unexpected callback body: %s", strings.TrimSpace(string(body)))
+	}
 
 	switch order.PaymentType {
 	case mdb.PaymentTypeEpay:
-		// 构造 EPay 标准回调参数
+		paymentMerchantID := strings.TrimSpace(order.PaymentMerchantId)
+		if paymentMerchantID == "" && config.GetEpayPid() > 0 {
+			paymentMerchantID = strconv.Itoa(config.GetEpayPid())
+		}
+		if paymentMerchantID == "" {
+			return fmt.Errorf("missing epay pid for trade_id=%s", order.TradeId)
+		}
+		pid, err := strconv.Atoi(paymentMerchantID)
+		if err != nil {
+			return err
+		}
+		paymentChannel := strings.TrimSpace(order.PaymentChannel)
+		if paymentChannel == "" {
+			paymentChannel = "alipay"
+		}
 		notifyData := response.OrderNotifyResponseEpay{
-			PID:        config.GetEpayPid(),
-			TradeNo:    order.TradeId, // epusdt 订单号作为 EPay 平台订单号
-			OutTradeNo: order.OrderId, // 注意：EPay 回调要求商户订单号使用 out_trade_no 参数
-
-			Type:        "alipay",
+			PID:         pid,
+			TradeNo:     order.TradeId,
+			OutTradeNo:  order.OrderId,
+			Type:        paymentChannel,
 			Name:        order.Name,
 			Money:       fmt.Sprintf("%.4f", order.Amount),
 			TradeStatus: "TRADE_SUCCESS",
 		}
 
-		signstr2, err := sign.Get(notifyData, config.GetEpayKey())
+		signstr2, err := sign.Get(notifyData, config.GetEpaySignKey())
 		if err != nil {
 			return err
 		}
 
-		// 使用 form-encoded POST（EPay 标准协议格式）
 		formData := url.Values{
 			"pid":          {fmt.Sprintf("%d", notifyData.PID)},
 			"trade_no":     {notifyData.TradeNo},
@@ -208,8 +232,9 @@ func sendOrderCallback(order *mdb.Orders) error {
 		if err != nil {
 			return err
 		}
-
-		fmt.Printf("notify_url response status: %d, body: %s\n", resp.StatusCode, string(responseBody))
+		if err = checkCallbackResponse(resp.StatusCode, responseBody, "success", "ok"); err != nil {
+			return err
+		}
 
 	default:
 
@@ -221,6 +246,7 @@ func sendOrderCallback(order *mdb.Orders) error {
 			ActualAmount:       order.ActualAmount,
 			ReceiveAddress:     order.ReceiveAddress,
 			Token:              order.Token,
+			Network:            order.Network,
 			BlockTransactionId: order.BlockTransactionId,
 			Status:             mdb.StatusPaySuccess,
 		}
@@ -237,11 +263,8 @@ func sendOrderCallback(order *mdb.Orders) error {
 		if err != nil {
 			return err
 		}
-		if resp.StatusCode() != http.StatusOK {
-			return errors.New(resp.Status())
-		}
-		if string(resp.Body()) != "ok" {
-			return errors.New("not ok")
+		if err = checkCallbackResponse(resp.StatusCode(), resp.Body(), "ok"); err != nil {
+			return err
 		}
 	}
 

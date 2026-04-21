@@ -71,7 +71,7 @@ signature : 1cd4b52df5587cfb1968b0c0c6e156cd
 
 ## POST 创建交易
 
-POST /api/v1/order/create-transaction
+POST /payments/gmpay/v1/order/create-transaction
 
 > Body 请求参数
 
@@ -91,7 +91,7 @@ POST /api/v1/order/create-transaction
 |---|---|---|---|-----------|---------------|
 |body|body|object| 否 ||           |
 |» order_id|body|string| 是 | 请求支付订单号   |           |
-|» amount|body|number| 是 | 支付金额(CNY) | 小数点保留后2位，最少0.01 |
+|» amount|body|number| 是 | 支付金额 | 小数点保留后2位，且最少需能兑换 0.01 USDT；若使用 USD，则最少 0.01 |
 |» notify_url|body|string| 是 | 异步回调地址    |           |
 |» redirect_url|body|string| 否 | 同步跳转地址    ||
 |» signature|body|string| 是 | 签名        | 接口统一加密方式              |

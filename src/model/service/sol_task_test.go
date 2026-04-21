@@ -2,17 +2,26 @@ package service
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 
 	"github.com/tidwall/gjson"
 )
 
+func skipOnSolRPCError(t *testing.T, bodyData []byte, err error) {
+	t.Helper()
+
+	if err != nil {
+		t.Skipf("skip due to solana rpc request error: %v", err)
+	}
+
+	if rpcErr := gjson.GetBytes(bodyData, "error"); rpcErr.Exists() {
+		t.Skipf("skip due to solana rpc error: %s", rpcErr.Raw)
+	}
+}
+
 func TestSolClientHealthy(t *testing.T) {
 	bodyData, err := SolRetryClient("getHealth", nil)
-	if err != nil {
-		t.Fatalf("SolRetryClient failed: %v", err)
-	}
+	skipOnSolRPCError(t, bodyData, err)
 
 	var result map[string]interface{}
 	err = json.Unmarshal(bodyData, &result)
@@ -37,9 +46,7 @@ func TestSolClientGetSignaturesForAddress(t *testing.T) {
 	address := "2uFTf9TZ8gd7Kg6hkb79TxfaeNpaAgpJ8uVHguv2Yweu"
 
 	bodyData, err := SolRetryClient("getSignaturesForAddress", []interface{}{address, map[string]interface{}{"commitment": "finalized", "limit": 100}})
-	if err != nil {
-		t.Fatalf("SolRetryClient failed: %v", err)
-	}
+	skipOnSolRPCError(t, bodyData, err)
 
 	var result map[string]interface{}
 	err = json.Unmarshal(bodyData, &result)
@@ -61,10 +68,7 @@ func TestSolClientGetTransaction(t *testing.T) {
 	sig := "2aEoNykk4ZJ27C3y7EDJiQUc7GFnnsMe7ofFzB73swGL8kTxSBFCnwzWw3jzr3BND7k8hx15fZHUUAbG1XemNFe5"
 
 	txData, err := SolRetryClient("getTransaction", []interface{}{sig, map[string]interface{}{"encoding": "jsonParsed", "commitment": "finalized"}})
-	if err != nil {
-		t.Fatalf("SolRetryClient failed: %v", err)
-	}
-	fmt.Printf("%v\n", string(txData))
+	skipOnSolRPCError(t, txData, err)
 
 	var result map[string]interface{}
 	err = json.Unmarshal(txData, &result)
@@ -110,6 +114,40 @@ func TestFindATAAddress(t *testing.T) {
 				t.Errorf("Expected ATA %s, got %s", tt.want, ata)
 			}
 		})
+	}
+}
+
+func TestCollectSolSignaturesForAddressWithFetcherPaginates(t *testing.T) {
+	var calls int
+	results, err := collectSolSignaturesForAddressWithFetcher(func(address string, limit int, untilSig string, beforeSig string) ([]byte, error) {
+		calls++
+		switch calls {
+		case 1:
+			if beforeSig != "" {
+				t.Fatalf("unexpected first before signature: %q", beforeSig)
+			}
+			return []byte(`{"result":[{"signature":"sig-1","slot":1,"err":null,"blockTime":200},{"signature":"sig-2","slot":2,"err":null,"blockTime":190}]}`), nil
+		case 2:
+			if beforeSig != "sig-2" {
+				t.Fatalf("unexpected second before signature: %q", beforeSig)
+			}
+			return []byte(`{"result":[{"signature":"sig-3","slot":3,"err":null,"blockTime":180},{"signature":"sig-old","slot":4,"err":null,"blockTime":90}]}`), nil
+		default:
+			t.Fatalf("unexpected extra fetch call %d", calls)
+			return nil, nil
+		}
+	}, "test-address", 2, 100)
+	if err != nil {
+		t.Fatalf("collectSolSignaturesForAddressWithFetcher failed: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("expected 2 fetch calls, got %d", calls)
+	}
+	if len(results) != 3 {
+		t.Fatalf("expected 3 signatures before cutoff, got %+v", results)
+	}
+	if results[0].Signature != "sig-1" || results[1].Signature != "sig-2" || results[2].Signature != "sig-3" {
+		t.Fatalf("unexpected paginated signatures: %+v", results)
 	}
 }
 
@@ -226,9 +264,7 @@ func TestParseTransferInfoFromInstruction_SplTransfer(t *testing.T) {
 	// SPL Token "transfer" (no mint in instruction, must look up from postTokenBalances)
 	sig := "3tZTwLrvmiZ59h4UzyMHPd7DPux7t9eXZgkUvEfquaoSuERrPSRNzWuSHKQM2fbiCWFDGNqoLpu2kLZnfoegVpqN"
 	txData, err := SolGetTransaction(sig)
-	if err != nil {
-		t.Fatalf("SolGetTransaction failed: %v", err)
-	}
+	skipOnSolRPCError(t, txData, err)
 
 	instructions := gjson.GetBytes(txData, "result.transaction.message.instructions").Array()
 	var found bool
@@ -268,9 +304,7 @@ func TestParseTransferInfoFromInstruction_TransferChecked(t *testing.T) {
 	// SPL Token "transferChecked" (has mint and tokenAmount in instruction)
 	sig := "2aEoNykk4ZJ27C3y7EDJiQUc7GFnnsMe7ofFzB73swGL8kTxSBFCnwzWw3jzr3BND7k8hx15fZHUUAbG1XemNFe5"
 	txData, err := SolGetTransaction(sig)
-	if err != nil {
-		t.Fatalf("SolGetTransaction failed: %v", err)
-	}
+	skipOnSolRPCError(t, txData, err)
 
 	instructions := gjson.GetBytes(txData, "result.transaction.message.instructions").Array()
 	var found bool
@@ -313,9 +347,7 @@ func TestParseTransferInfoFromInstruction_SystemTransfer(t *testing.T) {
 	// System program SOL transfer
 	sig := "5pNMonUBvLVpxXTmyd5CGVBs49W6781g2ACnrCXhbmtz58KENYA7HSqu6hQkQweg3qQboRd8WAscphNAtiq9UtZZ"
 	txData, err := SolGetTransaction(sig)
-	if err != nil {
-		t.Fatalf("SolGetTransaction failed: %v", err)
-	}
+	skipOnSolRPCError(t, txData, err)
 
 	instructions := gjson.GetBytes(txData, "result.transaction.message.instructions").Array()
 	transferCount := 0

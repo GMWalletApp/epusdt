@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -187,6 +188,75 @@ func TestDispatchPendingCallbacksHonorsBackoffAndPersistsSuccess(t *testing.T) {
 	}
 }
 
+func TestSendOrderCallbackUsesActualPaidTokenAndNetwork(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	var callbackBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&callbackBody); err != nil {
+			t.Fatalf("decode callback body: %v", err)
+		}
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer server.Close()
+
+	parent := &mdb.Orders{
+		TradeId:         "trade_parent_actual",
+		OrderId:         "order_parent_actual",
+		Amount:          1.24,
+		Currency:        "CNY",
+		ActualAmount:    0.18,
+		ReceiveAddress:  "wallet_parent",
+		Token:           "USDT",
+		Network:         mdb.NetworkTron,
+		Status:          mdb.StatusWaitPay,
+		NotifyUrl:       server.URL,
+		CallBackConfirm: mdb.CallBackConfirmNo,
+	}
+	if err := dao.Mdb.Create(parent).Error; err != nil {
+		t.Fatalf("create parent order: %v", err)
+	}
+	sub := &mdb.Orders{
+		TradeId:            "trade_sub_actual",
+		OrderId:            "order_sub_actual",
+		ParentTradeId:      parent.TradeId,
+		Amount:             1.24,
+		Currency:           "CNY",
+		ActualAmount:       0.17,
+		ReceiveAddress:     "0x08c34c4e8b99e2503017ae09287bd0019b7096c6",
+		Token:              "USDC",
+		Network:            mdb.NetworkEthereum,
+		Status:             mdb.StatusPaySuccess,
+		BlockTransactionId: "block_sub_actual",
+		CallBackConfirm:    mdb.CallBackConfirmOk,
+	}
+	if err := dao.Mdb.Create(sub).Error; err != nil {
+		t.Fatalf("create sub-order: %v", err)
+	}
+	if _, err := data.MarkParentOrderSuccess(parent.TradeId, sub); err != nil {
+		t.Fatalf("mark parent success: %v", err)
+	}
+
+	parent, err := data.GetOrderInfoByTradeId(parent.TradeId)
+	if err != nil {
+		t.Fatalf("reload parent order: %v", err)
+	}
+	if err = sendOrderCallback(parent); err != nil {
+		t.Fatalf("send callback: %v", err)
+	}
+
+	if callbackBody["token"] != "USDC" {
+		t.Fatalf("expected callback token USDC, got %v", callbackBody["token"])
+	}
+	if callbackBody["network"] != mdb.NetworkEthereum {
+		t.Fatalf("expected callback network %s, got %v", mdb.NetworkEthereum, callbackBody["network"])
+	}
+	if callbackBody["receive_address"] != sub.ReceiveAddress {
+		t.Fatalf("expected callback receive address %s, got %v", sub.ReceiveAddress, callbackBody["receive_address"])
+	}
+}
+
 func TestDispatchPendingCallbacksResumesRetryAfterRestart(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
@@ -256,6 +326,108 @@ func TestDispatchPendingCallbacksResumesRetryAfterRestart(t *testing.T) {
 
 	if got := atomic.LoadInt32(&requestCount); got != 2 {
 		t.Fatalf("total callback request count = %d, want 2", got)
+	}
+}
+
+func TestDispatchPendingCallbacksEpayRequiresSuccessfulResponse(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	callbackLimiter = make(chan struct{}, 1)
+	callbackInflight = sync.Map{}
+
+	var callbackType atomic.Value
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		callbackType.Store(r.Form.Get("type"))
+		_, _ = io.WriteString(w, "fail")
+	}))
+	defer server.Close()
+
+	order := &mdb.Orders{
+		TradeId:         "trade_callback_epay_fail",
+		OrderId:         "order_callback_epay_fail",
+		Amount:          1,
+		Currency:        "USD",
+		ActualAmount:    1,
+		ReceiveAddress:  "wallet_epay_fail",
+		Token:           "USDT",
+		Status:          mdb.StatusPaySuccess,
+		NotifyUrl:       server.URL,
+		CallbackNum:     0,
+		CallBackConfirm: mdb.CallBackConfirmNo,
+		PaymentType:     mdb.PaymentTypeEpay,
+		PaymentChannel:  "wxpay",
+	}
+	if err := dao.Mdb.Create(order).Error; err != nil {
+		t.Fatalf("create epay callback order: %v", err)
+	}
+
+	dispatchPendingCallbacks()
+
+	waitFor(t, 3*time.Second, func() bool {
+		current, err := data.GetOrderInfoByTradeId(order.TradeId)
+		if err != nil || current.ID <= 0 {
+			return false
+		}
+		return current.CallBackConfirm == mdb.CallBackConfirmNo && current.CallbackNum == 1
+	})
+
+	if got, _ := callbackType.Load().(string); got != "wxpay" {
+		t.Fatalf("callback type = %q, want wxpay", got)
+	}
+}
+
+func TestDispatchPendingCallbacksEpayAcceptsSuccessResponse(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	callbackLimiter = make(chan struct{}, 1)
+	callbackInflight = sync.Map{}
+
+	var callbackType atomic.Value
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		callbackType.Store(r.Form.Get("type"))
+		_, _ = io.WriteString(w, "success")
+	}))
+	defer server.Close()
+
+	order := &mdb.Orders{
+		TradeId:         "trade_callback_epay_success",
+		OrderId:         "order_callback_epay_success",
+		Amount:          1,
+		Currency:        "USD",
+		ActualAmount:    1,
+		ReceiveAddress:  "wallet_epay_success",
+		Token:           "USDT",
+		Status:          mdb.StatusPaySuccess,
+		NotifyUrl:       server.URL,
+		CallbackNum:     0,
+		CallBackConfirm: mdb.CallBackConfirmNo,
+		PaymentType:     mdb.PaymentTypeEpay,
+		PaymentChannel:  "wxpay",
+	}
+	if err := dao.Mdb.Create(order).Error; err != nil {
+		t.Fatalf("create epay callback order: %v", err)
+	}
+
+	dispatchPendingCallbacks()
+
+	waitFor(t, 3*time.Second, func() bool {
+		current, err := data.GetOrderInfoByTradeId(order.TradeId)
+		if err != nil || current.ID <= 0 {
+			return false
+		}
+		return current.CallBackConfirm == mdb.CallBackConfirmOk && current.CallbackNum == 1
+	})
+
+	if got, _ := callbackType.Load().(string); got != "wxpay" {
+		t.Fatalf("callback type = %q, want wxpay", got)
 	}
 }
 

@@ -182,6 +182,14 @@ func GetApiAuthToken() string {
 	return viper.GetString("api_auth_token")
 }
 
+func GetEpaySignKey() string {
+	key := strings.TrimSpace(GetEpayKey())
+	if key != "" {
+		return key
+	}
+	return strings.TrimSpace(GetApiAuthToken())
+}
+
 func GetRateApiUrl() string {
 	rateURL := viper.GetString("api_rate_url")
 	if rateURL == "" {
@@ -347,4 +355,28 @@ func GetEpayPid() int {
 
 func GetEpayKey() string {
 	return viper.GetString("epay_key")
+}
+
+func GetEpayDefaultToken() string {
+	token := strings.TrimSpace(viper.GetString("epay_default_token"))
+	if token == "" {
+		return "usdt"
+	}
+	return strings.ToLower(token)
+}
+
+func GetEpayDefaultCurrency() string {
+	currency := strings.TrimSpace(viper.GetString("epay_default_currency"))
+	if currency == "" {
+		return "cny"
+	}
+	return strings.ToLower(currency)
+}
+
+func GetEpayDefaultNetwork() string {
+	network := strings.TrimSpace(viper.GetString("epay_default_network"))
+	if network == "" {
+		return "tron"
+	}
+	return strings.ToLower(network)
 }
