@@ -450,6 +450,18 @@ func TryProcessEvmERC20Transfer(chainNetwork string, contract common.Address, to
 }
 
 func sendPaymentNotification(order *mdb.Orders) {
+	if order == nil {
+		return
+	}
+	latest := order
+	if order.TradeId != "" {
+		refreshed, err := data.GetOrderInfoByTradeId(order.TradeId)
+		if err != nil {
+			log.Sugar.Warnf("[notify] reload order failed trade_id=%s err=%v", order.TradeId, err)
+		} else if refreshed != nil {
+			latest = refreshed
+		}
+	}
 	msg := fmt.Sprintf(
 		"🎉 <b>收款成功通知</b>\n\n"+
 			"💰 <b>金额信息</b>\n"+
@@ -463,16 +475,16 @@ func sendPaymentNotification(order *mdb.Orders) {
 			"⏰ <b>时间信息</b>\n"+
 			"├ 创建时间：%s\n"+
 			"└ 支付时间：%s",
-		order.Amount,
-		strings.ToUpper(order.Currency),
-		order.ActualAmount,
-		strings.ToUpper(order.Token),
-		order.TradeId,
-		order.OrderId,
-		networkDisplay(order.Network),
-		order.ReceiveAddress,
-		order.CreatedAt.ToDateTimeString(),
-		carbon.Now().ToDateTimeString(),
+		latest.Amount,
+		strings.ToUpper(latest.Currency),
+		latest.ActualAmount,
+		strings.ToUpper(latest.Token),
+		latest.TradeId,
+		latest.OrderId,
+		networkDisplay(latest.Network),
+		latest.ReceiveAddress,
+		latest.CreatedAt.ToDateTimeString(),
+		latest.UpdatedAt.ToDateTimeString(),
 	)
 	notify.Dispatch(mdb.NotifyEventPaySuccess, msg)
 }
