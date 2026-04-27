@@ -177,6 +177,44 @@ func TestResolveConfigFilePathPrefersExplicitOverEnv(t *testing.T) {
 	}
 }
 
+func TestInitUsesExecutableStaticDir(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	root := t.TempDir()
+	configPath := filepath.Join(root, ".env")
+	if err := os.WriteFile(configPath, []byte(strings.Join([]string{
+		"app_name=test",
+		"static_path=/static",
+		"runtime_root_path=./runtime",
+		"log_save_path=./logs",
+	}, "\n")+"\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	SetConfigPath(configPath)
+	t.Cleanup(func() {
+		SetConfigPath("")
+	})
+
+	exeDir, err := resolveExecutableDir()
+	if err != nil {
+		t.Fatalf("resolve executable dir: %v", err)
+	}
+
+	Init()
+
+	wantStaticFilePath := filepath.Join(exeDir, "static")
+	if StaticFilePath != wantStaticFilePath {
+		t.Fatalf("StaticFilePath = %s, want %s", StaticFilePath, wantStaticFilePath)
+	}
+
+	wantRuntimePath := filepath.Join(root, "runtime")
+	if RuntimePath != wantRuntimePath {
+		t.Fatalf("RuntimePath = %s, want %s", RuntimePath, wantRuntimePath)
+	}
+}
+
 func TestGetUsdtRatePrefersPositiveAdminOverride(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)

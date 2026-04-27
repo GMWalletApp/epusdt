@@ -41,6 +41,18 @@ var (
 	explicitConfigPath string
 )
 
+func resolveExecutableDir() (string, error) {
+	exePath, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	exePath, err = filepath.EvalSymlinks(exePath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(exePath), nil
+}
+
 func SetConfigPath(path string) {
 	explicitConfigPath = strings.TrimSpace(path)
 }
@@ -61,7 +73,11 @@ func Init() {
 	SQLDebug = viper.GetBool("sql_debug")
 	LogLevel = normalizeLogLevel(viper.GetString("log_level"))
 	StaticPath = normalizeStaticURLPath(viper.GetString("static_path"))
-	StaticFilePath = filepath.Join(configRootPath, strings.TrimPrefix(StaticPath, "/"))
+	exeDir, err := resolveExecutableDir()
+	if err != nil {
+		panic(err)
+	}
+	StaticFilePath = filepath.Join(exeDir, "static")
 	RuntimePath = resolvePathFromBase(configRootPath, viper.GetString("runtime_root_path"), filepath.Join(configRootPath, "runtime"))
 	LogSavePath = resolvePathFromBase(RuntimePath, viper.GetString("log_save_path"), filepath.Join(RuntimePath, "logs"))
 	mustMkdir(RuntimePath)
