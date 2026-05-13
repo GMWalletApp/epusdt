@@ -63,6 +63,7 @@ func seedChains() {
 		{Network: mdb.NetworkBsc, DisplayName: "BSC", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 5},
 		{Network: mdb.NetworkPolygon, DisplayName: "Polygon", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 5},
 		{Network: mdb.NetworkPlasma, DisplayName: "Plasma", Enabled: true, MinConfirmations: 1, ScanIntervalSec: 5},
+		{Network: mdb.NetworkTon, DisplayName: "TON", Enabled: true, MinConfirmations: 1, ScanIntervalSec: 5},
 	}
 	if err := Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&defaults).Error; err != nil {
 		color.Red.Printf("[store_db] seed chains err=%s\n", err)
@@ -97,6 +98,9 @@ func seedChainTokens() {
 		{Network: mdb.NetworkPolygon, Symbol: "USDC.e", ContractAddress: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174", Decimals: 6, Enabled: true},
 		// Plasma
 		{Network: mdb.NetworkPlasma, Symbol: "USDT", ContractAddress: "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb", Decimals: 6, Enabled: true},
+		// TON — USDT Jetton master (Tether-issued, 6 decimals) + native TON
+		{Network: mdb.NetworkTon, Symbol: "USDT", ContractAddress: "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs", Decimals: 6, Enabled: true},
+		{Network: mdb.NetworkTon, Symbol: "TON", ContractAddress: "", Decimals: 9, Enabled: true},
 	}
 	if err := Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&defaults).Error; err != nil {
 		color.Red.Printf("[store_db] seed chain_tokens err=%s\n", err)
@@ -113,6 +117,11 @@ func seedRpcNodes() {
 		{Network: mdb.NetworkBsc, Url: "wss://bsc.drpc.org", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkPolygon, Url: "wss://polygon-bor-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkPlasma, Url: "wss://rpc.plasma.to", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Status: mdb.RpcNodeStatusUnknown},
+		// TON — the URL is the path to global.config.json; tonutils-go
+		// fetches it once at startup and connects to the listed lite servers
+		// over ADNL/TCP. type=http reflects how this URL is fetched, not how
+		// transactions are then read.
+		{Network: mdb.NetworkTon, Url: "https://ton-blockchain.github.io/global.config.json", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Status: mdb.RpcNodeStatusUnknown},
 	}
 	for _, d := range defaults {
 		var count int64

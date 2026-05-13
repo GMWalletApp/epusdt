@@ -336,6 +336,8 @@ func networkDisplay(n string) string {
 		return "Polygon"
 	case mdb.NetworkPlasma:
 		return "Plasma"
+	case mdb.NetworkTon:
+		return "TON"
 	default:
 		if n == "" {
 			return "Tron"

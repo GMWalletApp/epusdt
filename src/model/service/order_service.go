@@ -27,6 +27,17 @@ const (
 	IncrementalMaximumNumber = 100
 )
 
+// Lock TTL = order_expiration + (TON only) the confirmation gate's
+// max wait, so a payment arriving near order expiry still has the
+// lock valid by the time the gate lets it through.
+func lockExpirationForNetwork(network string) time.Duration {
+	base := config.GetOrderExpirationTimeDuration()
+	if strings.ToLower(strings.TrimSpace(network)) == mdb.NetworkTon {
+		base += tonLockExpirationBuffer()
+	}
+	return base
+}
+
 var (
 	gCreateTransactionLock sync.Mutex
 	gOrderProcessingLock   sync.Mutex
@@ -281,11 +292,12 @@ func ReserveAvailableWalletAndAmount(tradeID string, network string, token strin
 	availableAddress := ""
 	availableAmount := amount
 	amountPrecision := data.GetAmountPrecision()
+	lockExpiration := lockExpirationForNetwork(network)
 
 	tryLockWalletFunc := func(targetAmount float64) (string, error) {
 		for _, address := range walletAddress {
 			normalizedAddress := normalizeOrderAddressByNetwork(network, address.Address)
-			err := data.LockTransaction(network, normalizedAddress, token, tradeID, targetAmount, config.GetOrderExpirationTimeDuration())
+			err := data.LockTransaction(network, normalizedAddress, token, tradeID, targetAmount, lockExpiration)
 			if err == nil {
 				return normalizedAddress, nil
 			}

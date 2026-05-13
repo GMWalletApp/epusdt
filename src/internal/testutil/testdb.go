@@ -66,6 +66,7 @@ func SetupTestDatabases(t testing.TB) func() {
 	for _, network := range []string{
 		mdb.NetworkTron, mdb.NetworkSolana, mdb.NetworkEthereum,
 		mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma,
+		mdb.NetworkTon,
 	} {
 		mainDB.Create(&mdb.Chain{Network: network, Enabled: true})
 	}

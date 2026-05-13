@@ -26,6 +26,15 @@ func Start() {
 
 	log.Sugar.Info("[task] ListenSolJob scheduled successfully (@every 5s)")
 
+	// TON polling — lite servers don't expose a transfer-event firehose,
+	// so we walk each owner's transaction history every tick.
+	_, err = c.AddJob("@every 5s", ListenTonJob{})
+	if err != nil {
+		log.Sugar.Errorf("[task] Failed to add ListenTonJob: %v", err)
+		return
+	}
+	log.Sugar.Info("[task] ListenTonJob scheduled successfully (@every 5s)")
+
 	// RPC node health checks
 	_, err = c.AddJob("@every 30s", RpcHealthJob{})
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/util/constant"
+	tonaddress "github.com/xssnick/tonutils-go/address"
 )
 
 // AddWalletAddress 创建钱包 (默认 tron 网络，用于 Telegram 添加)
@@ -26,10 +27,30 @@ func normalizeWalletNetwork(network string) string {
 	return strings.ToLower(strings.TrimSpace(network))
 }
 
+// normalizeTonAddress collapses TON's three surface forms — bounceable
+// (EQ…), non-bounceable (UQ…), and raw (0:hex…) — into a single canonical
+// bounceable user-friendly string. Same underlying wallet, one storage
+// key. Returns the input unchanged if it cannot be parsed so the caller
+// surfaces validation errors at the DB layer.
+func normalizeTonAddress(addr string) string {
+	parsed, err := tonaddress.ParseAddr(addr)
+	if err != nil {
+		parsed, err = tonaddress.ParseRawAddr(addr)
+		if err != nil {
+			return addr
+		}
+	}
+	return parsed.Bounce(true).String()
+}
+
 func normalizeWalletAddressByNetwork(network, address string) string {
 	address = strings.TrimSpace(address)
-	if isEVMNetwork(normalizeWalletNetwork(network)) {
+	net := normalizeWalletNetwork(network)
+	if isEVMNetwork(net) {
 		return strings.ToLower(address)
+	}
+	if net == mdb.NetworkTon {
+		return normalizeTonAddress(address)
 	}
 	return address
 }
@@ -127,6 +148,11 @@ func GetAvailableWalletAddressByNetwork(network string) ([]mdb.WalletAddress, er
 			list[i].Address = strings.ToLower(strings.TrimSpace(list[i].Address))
 		}
 	}
+	if network == mdb.NetworkTon {
+		for i := range list {
+			list[i].Address = normalizeTonAddress(list[i].Address)
+		}
+	}
 	return list, err
 }
 
@@ -148,6 +174,11 @@ func GetAllWalletAddressByNetwork(network string) ([]mdb.WalletAddress, error) {
 	if isEVMNetwork(network) {
 		for i := range list {
 			list[i].Address = strings.ToLower(strings.TrimSpace(list[i].Address))
+		}
+	}
+	if network == mdb.NetworkTon {
+		for i := range list {
+			list[i].Address = normalizeTonAddress(list[i].Address)
 		}
 	}
 	return list, err
