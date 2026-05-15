@@ -183,6 +183,8 @@ func evmChainLogLabel(chainNetwork string) string {
 		return "POLYGON"
 	case mdb.NetworkPlasma:
 		return "PLASMA"
+	case mdb.NetworkArc:
+		return "ARC"
 	default:
 		return "EVM"
 	}
@@ -205,9 +207,24 @@ func TryProcessEvmERC20Transfer(chainNetwork string, contract common.Address, to
 		log.Sugar.Warnf("[%s-WS] skip unconfigured contract %s", net, contract.Hex())
 		return
 	}
+	tryProcessConfiguredEvmERC20Transfer(chainNetwork, *tokenConfig, toAddr, rawValue, txHash, blockTsMs)
+}
+
+func TryProcessConfiguredEvmERC20Transfer(chainNetwork string, tokenConfig mdb.ChainToken, toAddr common.Address, rawValue *big.Int, txHash string, blockTsMs int64) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Sugar.Errorf("[%s-WS] TryProcessConfiguredEvmERC20Transfer panic: %v", evmChainLogLabel(chainNetwork), err)
+		}
+	}()
+
+	tryProcessConfiguredEvmERC20Transfer(chainNetwork, tokenConfig, toAddr, rawValue, txHash, blockTsMs)
+}
+
+func tryProcessConfiguredEvmERC20Transfer(chainNetwork string, tokenConfig mdb.ChainToken, toAddr common.Address, rawValue *big.Int, txHash string, blockTsMs int64) {
+	net := evmChainLogLabel(chainNetwork)
 	tokenSym := strings.ToUpper(strings.TrimSpace(tokenConfig.Symbol))
 	if tokenSym == "" {
-		log.Sugar.Warnf("[%s-WS] skip contract %s with empty token symbol", net, contract.Hex())
+		log.Sugar.Warnf("[%s-WS] skip transfer with empty token symbol")
 		return
 	}
 	walletAddr := strings.ToLower(toAddr.Hex())
@@ -255,6 +272,10 @@ func TryProcessEvmERC20Transfer(chainNetwork string, contract common.Address, to
 	}
 	if strings.ToUpper(strings.TrimSpace(order.Token)) != tokenSym {
 		log.Sugar.Warnf("[%s-%s][%s] skip trade_id=%s token mismatch order=%s", net, tokenSym, walletAddr, tradeID, order.Token)
+		return
+	}
+	if blockTsMs > 0 && blockTsMs < order.CreatedAt.TimestampMilli() {
+		log.Sugar.Warnf("[%s-%s][%s] skip tx %s because block time %d is before order create time %d", net, tokenSym, walletAddr, txHash, blockTsMs, order.CreatedAt.TimestampMilli())
 		return
 	}
 
@@ -336,6 +357,8 @@ func networkDisplay(n string) string {
 		return "Polygon"
 	case mdb.NetworkPlasma:
 		return "Plasma"
+	case mdb.NetworkArc:
+		return "Arc"
 	default:
 		if n == "" {
 			return "Tron"

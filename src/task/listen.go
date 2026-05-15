@@ -13,6 +13,7 @@ func Start() {
 	go StartBscWebSocketListener()
 	go StartPolygonWebSocketListener()
 	go StartPlasmaWebSocketListener()
+	go StartArcWebSocketListener()
 	go StartTronBlockScannerListener()
 
 	c := cron.New()

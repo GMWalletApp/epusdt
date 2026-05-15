@@ -36,6 +36,9 @@ func GetChainByNetwork(network string) (*mdb.Chain, error) {
 // missing row is treated as disabled — scanners must be able to
 // short-circuit even before the admin creates the chain entry.
 func IsChainEnabled(network string) bool {
+	if strings.ToLower(strings.TrimSpace(network)) == mdb.NetworkArc {
+		return true
+	}
 	row, err := GetChainByNetwork(network)
 	if err != nil || row.ID == 0 {
 		return false

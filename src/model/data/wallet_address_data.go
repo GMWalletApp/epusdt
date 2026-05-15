@@ -16,7 +16,7 @@ func AddWalletAddress(address string) (*mdb.WalletAddress, error) {
 // isEVMNetwork 判断是否是 EVM 网络
 func isEVMNetwork(network string) bool {
 	switch network {
-	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma:
+	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma, mdb.NetworkArc:
 		return true
 	}
 	return false
