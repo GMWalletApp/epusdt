@@ -12,7 +12,7 @@ const (
 	NetworkBsc      = "bsc"
 	NetworkPolygon  = "polygon"
 	NetworkPlasma   = "plasma"
-	NetworkArc      = "arc"
+	NetworkArc      = "arc-testnet"
 )
 
 const (

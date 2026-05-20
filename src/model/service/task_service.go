@@ -184,7 +184,7 @@ func evmChainLogLabel(chainNetwork string) string {
 	case mdb.NetworkPlasma:
 		return "PLASMA"
 	case mdb.NetworkArc:
-		return "ARC"
+		return "ARC-CHAIN"
 	default:
 		return "EVM"
 	}
@@ -358,7 +358,7 @@ func networkDisplay(n string) string {
 	case mdb.NetworkPlasma:
 		return "Plasma"
 	case mdb.NetworkArc:
-		return "Arc"
+		return "Arc-Chain"
 	default:
 		if n == "" {
 			return "Tron"

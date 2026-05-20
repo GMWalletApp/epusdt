@@ -1,0 +1,1 @@
+import{af as e,cf as t}from"./messages-BSgosaSa.js";import{n}from"./dist-BX7-FFVx.js";var r=t(e(),1),i=r.useId||(()=>void 0),a=0;function o(e){let[t,o]=r.useState(i());return n(()=>{e||o(e=>e??String(a++))},[e]),e||(t?`radix-${t}`:``)}function s(e){let t=r.useRef(e);return r.useEffect(()=>{t.current=e}),r.useMemo(()=>(...e)=>t.current?.(...e),[])}export{o as n,s as t};

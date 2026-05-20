@@ -59,6 +59,17 @@ func buildSupportedAssets() ([]response.NetworkTokenSupport, error) {
 		})
 	}
 
+	// ARC testnet tokens are hardcoded until the chain is formally added to
+	// the database. Show ARC in the list only if there is at least one active
+	// wallet address for the network.
+	arcWallets, err := data.GetAvailableWalletAddressByNetwork(mdb.NetworkArc)
+	if err == nil && len(arcWallets) > 0 {
+		supports = append(supports, response.NetworkTokenSupport{
+			Network: mdb.NetworkArc,
+			Tokens:  []string{"EURC", "USDC"},
+		})
+	}
+
 	return supports, nil
 }
 

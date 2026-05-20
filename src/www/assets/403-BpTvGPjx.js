@@ -1,0 +1,1 @@
+import{t as e}from"./forbidden-Dnfepx4V.js";var t=e;export{t as component};

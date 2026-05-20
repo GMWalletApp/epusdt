@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"math/big"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -24,7 +25,9 @@ const ArcEURCDecimals = 6
 const ArcUSDCERC20Address = "0x3600000000000000000000000000000000000000"
 const ArcUSDCSystemAddress = "0x1800000000000000000000000000000000000000"
 const ArcNativeUSDCDecimals = 18
-const ArcWs = "wss://rpc.testnet.arc.network"
+
+var ArcWs = "wss://rpc.testnet.arc.network"
+
 const ArcChainID = "5042002"
 
 type arcRecipientSnapshot struct {
@@ -51,7 +54,7 @@ func runArcListener() {
 
 	wallets, err := data.GetAvailableWalletAddressByNetwork(mdb.NetworkArc)
 	if err != nil {
-		log.Sugar.Errorf("[ARC-WS] Failed to get wallet addresses: %v", err)
+		log.Sugar.Errorf("[ARC-CHAIN-WS] Failed to get wallet addresses: %v", err)
 		return
 	}
 	storeArcRecipientsFromWallets(wallets)
@@ -65,7 +68,7 @@ func runArcListener() {
 			case <-ticker.C:
 				w, err := data.GetAvailableWalletAddressByNetwork(mdb.NetworkArc)
 				if err != nil {
-					log.Sugar.Warnf("[ARC-WS] refresh wallet addresses: %v", err)
+					log.Sugar.Warnf("[ARC-CHAIN-WS] refresh wallet addresses: %v", err)
 					continue
 				}
 				storeArcRecipientsFromWallets(w)
@@ -93,15 +96,20 @@ func runArcListener() {
 		Enabled:         true,
 	}
 
-	log.Sugar.Infof("[ARC-WS] connecting to %s chain_id=%s watching %d contract(s)", ArcWs, ArcChainID, len(contracts))
+	// ARC_WSS env var overrides the default testnet WebSocket URL.
+	if arcws := os.Getenv("ARC_WSS"); arcws != "" {
+		ArcWs = arcws
+	}
+
+	log.Sugar.Infof("[ARC-CHAIN-WS] connecting to %s chain_id=%s watching %d contract(s)", ArcWs, ArcChainID, len(contracts))
 
 	query := ethereum.FilterQuery{
 		Addresses: contracts,
 		Topics:    [][]common.Hash{{transferEventHash, arcNativeUSDCTransferEventHash}},
 	}
 
-	runEvmWsLogListener(ctx, "[ARC-WS]", ArcWs, query, func(client *ethclient.Client, vLog types.Log) {
-		handleArcTransferLog(client, tokenByContract, "[ARC-WS]", vLog)
+	runEvmWsLogListener(ctx, "[ARC-CHAIN-WS]", ArcWs, query, func(client *ethclient.Client, vLog types.Log) {
+		handleArcTransferLog(client, tokenByContract, "[ARC-CHAIN-WS]", vLog)
 	})
 }
 
