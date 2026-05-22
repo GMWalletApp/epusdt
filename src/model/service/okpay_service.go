@@ -268,10 +268,14 @@ func HandleOkPayNotify(form map[string]string, rawFormData string) error {
 		TradeId:            order.TradeId,
 		BlockTransactionId: payload.OrderID,
 	})
+	processed := err == nil
 	if err != nil && err != constant.OrderBlockAlreadyProcess {
 		return err
 	}
 
+	if processed {
+		sendPaymentNotification(order)
+	}
 	if err = data.MarkProviderOrderPaid(payload.UniqueID, order.PayProvider, payload.RawFormData); err != nil {
 		return err
 	}
