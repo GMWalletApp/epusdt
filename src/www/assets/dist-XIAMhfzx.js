@@ -1,0 +1,1 @@
+import{r as e}from"./chunk-DECur_0Z.js";import{t}from"./react-CO2uhaBc.js";import{Cf as n}from"./messages-CA0k74Lg.js";var r=e(t(),1),i=n(),a=r.createContext(void 0),o=e=>{let{dir:t,children:n}=e;return(0,i.jsx)(a.Provider,{value:t,children:n})};function s(e){let t=r.useContext(a);return e||t||`ltr`}export{s as n,o as t};

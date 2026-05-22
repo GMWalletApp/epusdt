@@ -18,17 +18,9 @@ func settingsRateApiUrl() string {
 	return SettingsGetString("rate.api_url")
 }
 
-func settingsForcedUsdtRate() float64 {
+func settingsForcedRateList() string {
 	if SettingsGetString == nil {
-		return 0
+		return ""
 	}
-	raw := SettingsGetString("rate.forced_usdt_rate")
-	if raw == "" {
-		return 0
-	}
-	f, err := parseFloat(raw)
-	if err != nil {
-		return 0
-	}
-	return f
+	return SettingsGetString("rate.forced_rate_list")
 }

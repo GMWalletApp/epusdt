@@ -167,8 +167,8 @@ func TestCreateTransactionUsesRateAPIWhenForcedSettingIsNotPositive(t *testing.T
 		}, nil
 	})
 
-	if err := data.SetSetting("rate", "rate.forced_usdt_rate", "0", "string"); err != nil {
-		t.Fatalf("set rate.forced_usdt_rate: %v", err)
+	if err := data.SetSetting("rate", "rate.forced_rate_list", `{"cny":{"usdt":0}}`, "json"); err != nil {
+		t.Fatalf("set rate.forced_rate_list: %v", err)
 	}
 	if err := data.SetSetting("rate", "rate.api_url", "https://rate.example.test", "string"); err != nil {
 		t.Fatalf("set rate.api_url: %v", err)
@@ -190,8 +190,8 @@ func TestCreateTransactionFailsWhenRateAPIUnavailableAndForcedSettingIsNotPositi
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if err := data.SetSetting("rate", "rate.forced_usdt_rate", "0", "string"); err != nil {
-		t.Fatalf("set rate.forced_usdt_rate: %v", err)
+	if err := data.SetSetting("rate", "rate.forced_rate_list", `{"cny":{"usdt":0}}`, "json"); err != nil {
+		t.Fatalf("set rate.forced_rate_list: %v", err)
 	}
 	if err := data.SetSetting("rate", "rate.api_url", "", "string"); err != nil {
 		t.Fatalf("clear rate.api_url: %v", err)

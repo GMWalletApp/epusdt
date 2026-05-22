@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
@@ -908,11 +909,62 @@ func TestAdminSettings_ListAndUpsert(t *testing.T) {
 	// Upsert a setting.
 	rec = doPutAdmin(e, "/admin/api/v1/settings", map[string]interface{}{
 		"items": []map[string]interface{}{
-			{"group": "rate", "key": "rate.forced_usdt_rate", "value": "7.5", "type": "string"},
+			{"group": "rate", "key": mdb.SettingKeyRateForcedRateList, "value": map[string]interface{}{
+				"cny": map[string]interface{}{"usdt": 0.14635},
+				"usd": map[string]interface{}{"usdt": 1},
+			}, "type": "json"},
 		},
 	}, token)
 	t.Logf("UpsertSettings: %s", rec.Body.String())
 	assertOK(t, rec)
+}
+
+func TestAdminSettings_ForcedRateListValidation(t *testing.T) {
+	e, token := setupAdminTestEnv(t)
+
+	rec := doPutAdmin(e, "/admin/api/v1/settings", map[string]interface{}{
+		"items": []map[string]interface{}{
+			{"group": "rate", "key": mdb.SettingKeyRateForcedRateList, "value": map[string]interface{}{
+				" CNY ": map[string]interface{}{" USDT ": 0.14635},
+			}, "type": "string"},
+			{"group": "rate", "key": mdb.SettingKeyRateForcedRateList, "value": `{"cny":`, "type": "json"},
+			{"group": "rate", "key": mdb.SettingKeyRateForcedRateList, "value": map[string]interface{}{
+				"CNY": map[string]interface{}{"USDT": 0.14635},
+				"cny": map[string]interface{}{"usdt": 0.14636},
+			}, "type": "json"},
+		},
+	}, token)
+	resp := assertOK(t, rec)
+	results, ok := resp["data"].([]interface{})
+	if !ok || len(results) != 3 {
+		t.Fatalf("expected three results, got %T %v", resp["data"], resp["data"])
+	}
+	first, _ := results[0].(map[string]interface{})
+	if first["ok"] != true {
+		t.Fatalf("valid forced rate list result = %v", first)
+	}
+	second, _ := results[1].(map[string]interface{})
+	if second["ok"] != false {
+		t.Fatalf("invalid forced rate list result = %v, want ok=false", second)
+	}
+	third, _ := results[2].(map[string]interface{})
+	if third["ok"] != false {
+		t.Fatalf("duplicate forced rate list result = %v, want ok=false", third)
+	}
+
+	if got := data.GetSettingString(mdb.SettingKeyRateForcedRateList, ""); got != `{"cny":{"usdt":0.14635}}` {
+		t.Fatalf("forced rate list value = %q", got)
+	}
+	if rate := config.GetRateForCoin("USDT", "CNY"); rate != 0.14635 {
+		t.Fatalf("GetRateForCoin(USDT, CNY) = %v, want 0.14635", rate)
+	}
+	var row mdb.Setting
+	if err := dao.Mdb.Where("`key` = ?", mdb.SettingKeyRateForcedRateList).Take(&row).Error; err != nil {
+		t.Fatalf("load forced rate list: %v", err)
+	}
+	if row.Type != mdb.SettingTypeJSON {
+		t.Fatalf("forced rate list type = %q, want %q", row.Type, mdb.SettingTypeJSON)
+	}
 }
 
 func TestAdminSettings_AmountPrecisionValidationAndListing(t *testing.T) {
@@ -1032,6 +1084,52 @@ func TestAdminSettings_DeleteThenReupsertRestoresSetting(t *testing.T) {
 	}
 	if restored.DeletedAt.Valid {
 		t.Fatalf("restored setting still has deleted_at=%v", restored.DeletedAt)
+	}
+}
+
+func TestAdminSettings_DeleteThenReupsertRestoresForcedRateList(t *testing.T) {
+	e, token := setupAdminTestEnv(t)
+
+	rec := doPutAdmin(e, "/admin/api/v1/settings", map[string]interface{}{
+		"items": []map[string]interface{}{
+			{"group": "rate", "key": mdb.SettingKeyRateForcedRateList, "value": map[string]interface{}{
+				"CNY": map[string]interface{}{"USDT": 0.14635},
+			}, "type": "json"},
+		},
+	}, token)
+	assertOK(t, rec)
+
+	rec = doDeleteAdmin(e, "/admin/api/v1/settings/"+mdb.SettingKeyRateForcedRateList, token)
+	assertOK(t, rec)
+	if got := data.GetSettingString(mdb.SettingKeyRateForcedRateList, "fallback"); got != "fallback" {
+		t.Fatalf("deleted forced rate list still in cache/read path: got %q", got)
+	}
+	if got := config.GetRateForCoin("USDT", "CNY"); got != 0 {
+		t.Fatalf("deleted forced rate list still used by rate lookup: got %v", got)
+	}
+
+	rec = doPutAdmin(e, "/admin/api/v1/settings", map[string]interface{}{
+		"items": []map[string]interface{}{
+			{"group": "rate", "key": mdb.SettingKeyRateForcedRateList, "value": map[string]interface{}{
+				"CNY": map[string]interface{}{"USDT": 0.15},
+			}, "type": "json"},
+		},
+	}, token)
+	assertOK(t, rec)
+
+	if got := data.GetSettingString(mdb.SettingKeyRateForcedRateList, ""); got != `{"cny":{"usdt":0.15}}` {
+		t.Fatalf("restored forced rate list = %q", got)
+	}
+	if got := config.GetRateForCoin("USDT", "CNY"); got != 0.15 {
+		t.Fatalf("restored forced rate list lookup = %v, want 0.15", got)
+	}
+
+	var restored mdb.Setting
+	if err := dao.Mdb.Unscoped().Where("`key` = ?", mdb.SettingKeyRateForcedRateList).Take(&restored).Error; err != nil {
+		t.Fatalf("load restored forced rate list unscoped: %v", err)
+	}
+	if restored.DeletedAt.Valid {
+		t.Fatalf("restored forced rate list still has deleted_at=%v", restored.DeletedAt)
 	}
 }
 

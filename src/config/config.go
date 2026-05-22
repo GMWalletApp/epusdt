@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -16,12 +15,6 @@ import (
 	"github.com/spf13/viper"
 	"github.com/tidwall/gjson"
 )
-
-// parseFloat is the minimal helper used by the settings bridge; kept
-// here so settings_bridge.go stays import-free.
-func parseFloat(s string) (float64, error) {
-	return strconv.ParseFloat(strings.TrimSpace(s), 64)
-}
 
 var (
 	HTTPAccessLog      bool
@@ -353,19 +346,23 @@ func GetRateForCoin(coin string, base string) float64 {
 	if coin == base {
 		return 1
 	}
-	if coin == "usdt" {
-		switch base {
-		case "usd":
-			return 1
-		case "cny":
-			usdtRate := GetUsdtRate()
-			if usdtRate > 0 {
-				return 1 / usdtRate
-			}
-			return 0
-		}
+	if forcedRate := getForcedRateForCoin(coin, base); forcedRate > 0 {
+		return forcedRate
+	}
+	if coin == "usdt" && base == "usd" {
+		return 1
 	}
 	return getRateForCoinFromAPI(coin, base)
+}
+
+func getForcedRateForCoin(coin string, base string) float64 {
+	raw := strings.TrimSpace(settingsForcedRateList())
+	if raw != "" {
+		if rate := gjson.Get(raw, base+"."+coin).Float(); rate > 0 {
+			return rate
+		}
+	}
+	return 0
 }
 
 func getRateForCoinFromAPI(coin string, base string) float64 {
@@ -401,17 +398,17 @@ func getRateForCoinFromAPI(coin string, base string) float64 {
 }
 
 func GetUsdtRate() float64 {
-	// Only the admin setting can force the USDT/CNY rate. When the
-	// setting is unset, zero, or negative, fall back to the rate API.
-	if forced := settingsForcedUsdtRate(); forced > 0 {
-		return forced
+	// rate.forced_rate_list stores token amount per one base currency unit.
+	// GetUsdtRate returns the inverse display value: CNY per USDT.
+	if forcedRate := getForcedRateForCoin("usdt", "cny"); forcedRate > 0 {
+		return 1 / forcedRate
 	}
 
 	apiRate := getRateForCoinFromAPI("usdt", "cny")
 	if apiRate > 0 {
 		return 1 / apiRate
 	}
-	log.Printf("usdt/cny rate unavailable: rate.forced_usdt_rate <= 0 and rate api returned no data")
+	log.Printf("usdt/cny rate unavailable: rate.forced_rate_list has no positive cny.usdt entry and rate api returned no data")
 	return 0
 }
 

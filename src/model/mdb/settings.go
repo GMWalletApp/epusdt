@@ -41,7 +41,7 @@ const (
 	SettingKeyBrandSupportUrl          = "brand.support_url"
 	SettingKeyBrandBackgroundColor     = "brand.background_color"
 	SettingKeyBrandBackgroundImageUrl  = "brand.background_image_url"
-	SettingKeyRateForcedUsdt           = "rate.forced_usdt_rate"
+	SettingKeyRateForcedRateList       = "rate.forced_rate_list"
 	SettingKeyRateAdjustPercent        = "rate.adjust_percent"
 	SettingKeyRateOkxC2cEnabled        = "rate.okx_c2c_enabled"
 	SettingKeyRateApiUrl               = "rate.api_url"
@@ -64,10 +64,10 @@ const (
 
 type Setting struct {
 	Group       string `gorm:"column:group;size:32;index:settings_group_index" json:"group" enums:"brand,rate,system,epay,okpay" example:"rate"`
-	Key         string `gorm:"column:key;uniqueIndex:settings_key_uindex;size:128" json:"key" example:"rate.forced_usdt_rate"`
-	Value       string `gorm:"column:value;type:text" json:"value" example:"7.2"`
-	Type        string `gorm:"column:type;size:16;default:string" json:"type" enums:"string,int,bool,json" example:"string"`
-	Description string `gorm:"column:description;size:255" json:"description" example:"强制USDT汇率"`
+	Key         string `gorm:"column:key;uniqueIndex:settings_key_uindex;size:128" json:"key" example:"rate.forced_rate_list"`
+	Value       string `gorm:"column:value;type:text" json:"value" example:"{\"cny\":{\"usdt\":0.14635}}"`
+	Type        string `gorm:"column:type;size:16;default:string" json:"type" enums:"string,int,bool,json" example:"json"`
+	Description string `gorm:"column:description;size:255" json:"description" example:"强制汇率列表"`
 	BaseModel
 }
 

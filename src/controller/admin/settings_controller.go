@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -16,8 +17,8 @@ import (
 // Supported groups and keys:
 //
 //   - group=rate:
-//     rate.forced_usdt_rate  (float)  — override USDT/CNY when > 0; <= 0 uses rate.api_url
-//     rate.api_url           (string) — external rate API URL used when rate.forced_usdt_rate <= 0
+//     rate.forced_rate_list  (json)   — override rate map, e.g. {"cny":{"usdt":0.14635}}; base/coin keys are normalized to lowercase
+//     rate.api_url           (string) — external rate API URL used when no positive forced rate exists
 //     rate.adjust_percent    (float)  — rate adjustment percentage
 //     rate.okx_c2c_enabled   (bool)   — use OKX C2C rate feed
 //
@@ -52,10 +53,10 @@ import (
 //     system.order_expiration_time (int) — order expiry in minutes
 //     system.amount_precision      (int) — payment amount precision, 2-6 decimals (default 2)
 type SettingUpsertItem struct {
-	Group string `json:"group" enums:"brand,rate,system,epay,okpay" example:"epay"`
-	Key   string `json:"key" example:"epay.default_network"`
-	Value string `json:"value" example:"tron"`
-	Type  string `json:"type" enums:"string,int,bool,json" example:"string"`
+	Group string      `json:"group" enums:"brand,rate,system,epay,okpay" example:"epay"`
+	Key   string      `json:"key" example:"epay.default_network"`
+	Value interface{} `json:"value"`
+	Type  string      `json:"type" enums:"string,int,bool,json" example:"string"`
 }
 
 // SettingsUpsertRequest is the payload for batch upserting settings.
@@ -92,7 +93,7 @@ func (c *BaseAdminController) ListSettings(ctx echo.Context) error {
 // @Description  Supported groups: brand, rate, system, epay, okpay.
 // @Description  epay group keys: epay.default_token (e.g. "usdt"), epay.default_currency (e.g. "cny"), epay.default_network (e.g. "tron").
 // @Description  okpay group keys: okpay.enabled, okpay.shop_id, okpay.shop_token, okpay.api_url, okpay.callback_url, okpay.return_url, okpay.timeout_seconds, okpay.allow_tokens.
-// @Description  rate group keys: rate.forced_usdt_rate (>0 overrides USDT/CNY; <=0 uses rate.api_url), rate.api_url, rate.adjust_percent, rate.okx_c2c_enabled.
+// @Description  rate group keys: rate.forced_rate_list (JSON map, e.g. {"cny":{"usdt":0.14635}}; base/coin keys are normalized to lowercase), rate.api_url, rate.adjust_percent, rate.okx_c2c_enabled.
 // @Description  brand group keys: brand.checkout_name, brand.logo_url, brand.site_title, brand.success_copy, brand.support_url, brand.background_color, brand.background_image_url. Legacy aliases brand.site_name, brand.page_title and brand.pay_success_text are also supported.
 // @Description  system group keys: system.order_expiration_time, system.amount_precision (int, 2-6, default 2).
 // @Tags         Admin Settings
@@ -123,7 +124,13 @@ func (c *BaseAdminController) UpsertSettings(ctx echo.Context) error {
 			out = append(out, result{Key: item.Key, OK: false, Error: "key required"})
 			continue
 		}
-		if err := validateSettingItem(item.Group, key, item.Value); err != nil {
+		value, err := normalizeSettingValue(item.Value)
+		if err != nil {
+			out = append(out, result{Key: key, OK: false, Error: err.Error()})
+			continue
+		}
+		value, err = normalizeAndValidateSettingItem(item.Group, key, value)
+		if err != nil {
 			out = append(out, result{Key: key, OK: false, Error: err.Error()})
 			continue
 		}
@@ -131,7 +138,11 @@ func (c *BaseAdminController) UpsertSettings(ctx echo.Context) error {
 			item.Group = mdb.SettingGroupSystem
 			item.Type = mdb.SettingTypeInt
 		}
-		if err := data.SetSetting(item.Group, key, item.Value, item.Type); err != nil {
+		if key == mdb.SettingKeyRateForcedRateList {
+			item.Group = mdb.SettingGroupRate
+			item.Type = mdb.SettingTypeJSON
+		}
+		if err := data.SetSetting(item.Group, key, value, item.Type); err != nil {
 			out = append(out, result{Key: key, OK: false, Error: err.Error()})
 			continue
 		}
@@ -159,21 +170,91 @@ func (c *BaseAdminController) UpsertSettings(ctx echo.Context) error {
 	return c.SucJson(ctx, out)
 }
 
-func validateSettingItem(group, key, value string) error {
+func normalizeSettingValue(value interface{}) (string, error) {
+	switch v := value.(type) {
+	case nil:
+		return "", nil
+	case string:
+		return v, nil
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return "", fmt.Errorf("value must be JSON serializable")
+		}
+		return string(b), nil
+	}
+}
+
+func normalizeAndValidateSettingItem(group, key, value string) (string, error) {
 	switch key {
 	case mdb.SettingKeyAmountPrecision:
 		if strings.ToLower(strings.TrimSpace(group)) != mdb.SettingGroupSystem {
-			return fmt.Errorf("%s must use group %s", key, mdb.SettingGroupSystem)
+			return value, fmt.Errorf("%s must use group %s", key, mdb.SettingGroupSystem)
 		}
 		precision, err := strconv.Atoi(strings.TrimSpace(value))
 		if err != nil {
-			return fmt.Errorf("%s must be an integer", key)
+			return value, fmt.Errorf("%s must be an integer", key)
 		}
 		if precision < data.MinAmountPrecision || precision > data.MaxAmountPrecision {
-			return fmt.Errorf("%s must be between %d and %d", key, data.MinAmountPrecision, data.MaxAmountPrecision)
+			return value, fmt.Errorf("%s must be between %d and %d", key, data.MinAmountPrecision, data.MaxAmountPrecision)
+		}
+	case mdb.SettingKeyRateForcedRateList:
+		normalized, err := normalizeForcedRateListSetting(group, key, value)
+		if err != nil {
+			return value, err
+		}
+		return normalized, nil
+	}
+	return value, nil
+}
+
+func normalizeForcedRateListSetting(group, key, value string) (string, error) {
+	if strings.ToLower(strings.TrimSpace(group)) != mdb.SettingGroupRate {
+		return value, fmt.Errorf("%s must use group %s", key, mdb.SettingGroupRate)
+	}
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+
+	var rates map[string]map[string]float64
+	if err := json.Unmarshal([]byte(value), &rates); err != nil {
+		return value, fmt.Errorf("%s must be valid JSON object", key)
+	}
+
+	normalized := make(map[string]map[string]float64, len(rates))
+	for base, coins := range rates {
+		normalizedBase := strings.ToLower(strings.TrimSpace(base))
+		if normalizedBase == "" {
+			return value, fmt.Errorf("%s base currency must not be empty", key)
+		}
+		if coins == nil {
+			return value, fmt.Errorf("%s.%s must be an object", key, base)
+		}
+		normalizedCoins, ok := normalized[normalizedBase]
+		if !ok {
+			normalizedCoins = make(map[string]float64, len(coins))
+			normalized[normalizedBase] = normalizedCoins
+		}
+		for coin, rate := range coins {
+			normalizedCoin := strings.ToLower(strings.TrimSpace(coin))
+			if normalizedCoin == "" {
+				return value, fmt.Errorf("%s coin must not be empty", key)
+			}
+			if rate < 0 {
+				return value, fmt.Errorf("%s.%s.%s must be >= 0", key, base, coin)
+			}
+			if _, exists := normalizedCoins[normalizedCoin]; exists {
+				return value, fmt.Errorf("%s.%s.%s is duplicated after normalization", key, normalizedBase, normalizedCoin)
+			}
+			normalizedCoins[normalizedCoin] = rate
 		}
 	}
-	return nil
+
+	normalizedValue, err := json.Marshal(normalized)
+	if err != nil {
+		return value, fmt.Errorf("%s must be JSON serializable", key)
+	}
+	return string(normalizedValue), nil
 }
 
 // DeleteSetting removes one row. The next read of that key will fall
@@ -197,7 +278,3 @@ func (c *BaseAdminController) DeleteSetting(ctx echo.Context) error {
 	}
 	return c.SucJson(ctx, nil)
 }
-
-// Public helper for the rate/usdt overrides — used by config package to
-// read settings-backed values without importing the controller package.
-var _ = mdb.SettingKeyRateForcedUsdt // ensure key constants remain referenced

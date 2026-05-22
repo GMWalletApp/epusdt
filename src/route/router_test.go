@@ -81,8 +81,8 @@ func setupTestEnv(t *testing.T) *echo.Echo {
 	t.Cleanup(func() {
 		config.SettingsGetString = nil
 	})
-	if err := data.SetSetting("rate", "rate.forced_usdt_rate", "7.0", "string"); err != nil {
-		t.Fatalf("seed rate.forced_usdt_rate: %v", err)
+	if err := data.SetSetting("rate", "rate.forced_rate_list", `{"cny":{"usdt":0.14285714285714285}}`, "json"); err != nil {
+		t.Fatalf("seed rate.forced_rate_list: %v", err)
 	}
 
 	// seed wallet addresses

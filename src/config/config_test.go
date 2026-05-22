@@ -231,7 +231,7 @@ func TestCopyMissingStaticFilesCopiesAssetsWithoutOverwriting(t *testing.T) {
 	}
 }
 
-func TestGetUsdtRatePrefersPositiveAdminOverride(t *testing.T) {
+func TestGetUsdtRatePrefersForcedRateList(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 	t.Setenv("API_RATE_URL", "")
@@ -249,16 +249,19 @@ func TestGetUsdtRatePrefersPositiveAdminOverride(t *testing.T) {
 	})
 
 	installSettingsGetter(t, map[string]string{
-		"rate.forced_usdt_rate": "7.25",
+		"rate.forced_rate_list": `{"cny":{"usdt":0.13793103448275862},"usd":{"trx":123.45}}`,
 		"rate.api_url":          "https://rate.example.test",
 	})
 
 	got := GetUsdtRate()
-	if got != 7.25 {
+	if math.Abs(got-7.25) > 1e-9 {
 		t.Fatalf("GetUsdtRate() = %v, want 7.25", got)
 	}
+	if rate := GetRateForCoin("trx", "usd"); rate != 123.45 {
+		t.Fatalf("GetRateForCoin(trx, usd) = %v, want 123.45", rate)
+	}
 	if apiCalled {
-		t.Fatalf("rate API should not be called when rate.forced_usdt_rate > 0")
+		t.Fatalf("rate API should not be called when rate.forced_rate_list has positive rate")
 	}
 }
 
@@ -281,7 +284,7 @@ func TestGetUsdtRateUsesAPIWhenAdminOverrideIsNotPositive(t *testing.T) {
 	})
 
 	installSettingsGetter(t, map[string]string{
-		"rate.forced_usdt_rate": "-1",
+		"rate.forced_rate_list": `{"cny":{"usdt":0}}`,
 		"rate.api_url":          "https://rate.example.test",
 	})
 
@@ -290,6 +293,35 @@ func TestGetUsdtRateUsesAPIWhenAdminOverrideIsNotPositive(t *testing.T) {
 	if math.Abs(got-want) > 1e-9 {
 		t.Fatalf("GetUsdtRate() = %v, want %v", got, want)
 	}
+
+	rate := GetRateForCoin("usdt", "cny")
+	if math.Abs(rate-0.14635) > 1e-9 {
+		t.Fatalf("GetRateForCoin(usdt, cny) = %v, want 0.14635", rate)
+	}
+}
+
+func TestGetRateForCoinUsesAPIWhenForcedPairMissing(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Setenv("API_RATE_URL", "")
+
+	installMockHTTPClient(t, func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/cny.json" {
+			t.Fatalf("rate api path = %s, want /cny.json", r.URL.Path)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"cny":{"usdt":0.14635}}`)),
+			Request:    r,
+		}, nil
+	})
+
+	installSettingsGetter(t, map[string]string{
+		"rate.forced_rate_list": `{"usd":{"trx":123.45}}`,
+		"rate.api_url":          "https://rate.example.test",
+	})
 
 	rate := GetRateForCoin("usdt", "cny")
 	if math.Abs(rate-0.14635) > 1e-9 {
@@ -313,7 +345,7 @@ func TestGetUsdtRateReturnsZeroWhenAPIUnavailableWithoutAdminOverride(t *testing
 	})
 
 	installSettingsGetter(t, map[string]string{
-		"rate.forced_usdt_rate": "0",
+		"rate.forced_rate_list": `{"cny":{"usdt":0}}`,
 		"rate.api_url":          "https://rate.example.test",
 	})
 
@@ -343,7 +375,7 @@ func TestGetRateForCoinCallsRateAPIOnceForUsdtCnyFailure(t *testing.T) {
 	})
 
 	installSettingsGetter(t, map[string]string{
-		"rate.forced_usdt_rate": "0",
+		"rate.forced_rate_list": `{"cny":{"usdt":0}}`,
 		"rate.api_url":          "https://rate.example.test",
 	})
 
