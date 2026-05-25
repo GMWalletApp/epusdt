@@ -39,8 +39,12 @@ func normalizeLockNetwork(network string) string {
 
 func normalizeLockAddress(network, address string) string {
 	address = strings.TrimSpace(address)
-	if isEVMNetwork(normalizeLockNetwork(network)) {
+	net := normalizeLockNetwork(network)
+	if isEVMNetwork(net) {
 		return strings.ToLower(address)
+	}
+	if net == mdb.NetworkTon {
+		return normalizeTonAddress(address)
 	}
 	return address
 }

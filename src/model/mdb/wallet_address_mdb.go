@@ -12,6 +12,7 @@ const (
 	NetworkBsc      = "binance"
 	NetworkPolygon  = "polygon"
 	NetworkPlasma   = "plasma"
+	NetworkTon      = "ton"
 )
 
 const (

@@ -7,6 +7,7 @@ import (
 	"github.com/GMWalletApp/epusdt/internal/testutil"
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/mdb"
+	tonaddress "github.com/xssnick/tonutils-go/address"
 )
 
 func TestAddWalletAddressWithNetworkNormalizesEvmAddressToLowercase(t *testing.T) {
@@ -79,5 +80,60 @@ func TestAddWalletAddressWithNetworkKeepsOriginalCaseForNonEvm(t *testing.T) {
 	}
 	if solRow.Address != solAddress {
 		t.Fatalf("solana wallet address = %q, want %q", solRow.Address, solAddress)
+	}
+}
+
+// TestNormalizeTonAddressCollapsesSurfaceForms confirms that the three
+// user-facing TON address forms — bounceable (EQ…), non-bounceable
+// (UQ…), and raw (workchain:hex) — collapse to one canonical storage
+// key so a lock written from a notification matches a wallet entered
+// from the admin UI.
+func TestNormalizeTonAddressCollapsesSurfaceForms(t *testing.T) {
+	bounceable := "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs"
+	parsed, err := tonaddress.ParseAddr(bounceable)
+	if err != nil {
+		t.Fatalf("parse seed bounceable: %v", err)
+	}
+	nonBounceable := parsed.Bounce(false).String()
+	raw := parsed.StringRaw()
+
+	canonical := normalizeTonAddress(bounceable)
+	if canonical != bounceable {
+		t.Fatalf("bounceable input should round-trip, got %q want %q", canonical, bounceable)
+	}
+	if got := normalizeTonAddress(nonBounceable); got != canonical {
+		t.Fatalf("non-bounceable did not normalize to canonical: got %q want %q", got, canonical)
+	}
+	if got := normalizeTonAddress(raw); got != canonical {
+		t.Fatalf("raw form did not normalize to canonical: got %q want %q", got, canonical)
+	}
+}
+
+func TestAddWalletAddressWithNetworkCanonicalizesTonAddress(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	bounceable := "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs"
+	parsed, err := tonaddress.ParseAddr(bounceable)
+	if err != nil {
+		t.Fatalf("parse seed bounceable: %v", err)
+	}
+	nonBounceable := parsed.Bounce(false).String()
+
+	row, err := AddWalletAddressWithNetwork(mdb.NetworkTon, nonBounceable)
+	if err != nil {
+		t.Fatalf("add ton wallet: %v", err)
+	}
+	if row.Address != bounceable {
+		t.Fatalf("stored TON address = %q, want canonical %q", row.Address, bounceable)
+	}
+
+	// Looking up the same wallet by either surface form must hit the row.
+	loaded, err := GetWalletAddressByNetworkAndAddress(mdb.NetworkTon, bounceable)
+	if err != nil {
+		t.Fatalf("load by bounceable: %v", err)
+	}
+	if loaded.ID == 0 {
+		t.Fatal("expected to find TON wallet by bounceable form")
 	}
 }

@@ -23,6 +23,7 @@ require (
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.20.1
 	github.com/tidwall/gjson v1.18.0
+	github.com/xssnick/tonutils-go v1.16.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.48.0
 	gopkg.in/telebot.v3 v3.0.0
