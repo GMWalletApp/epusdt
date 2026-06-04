@@ -82,7 +82,7 @@ func runEthereumListener(contracts []common.Address) {
 		Topics:    [][]common.Hash{},
 	}
 
-	runEvmWsLogListener(ctx, "[ETH-WS]", wsNode, query, func(client *ethclient.Client, vLog types.Log) {
+	runEvmWsLogListener(ctx, "[ETH-WS]", mdb.NetworkEthereum, wsNode, query, func(client *ethclient.Client, vLog types.Log) {
 		if len(vLog.Topics) < 3 {
 			return
 		}

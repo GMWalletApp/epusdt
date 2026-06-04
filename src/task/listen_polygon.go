@@ -76,7 +76,7 @@ func runPolygonListener(contracts []common.Address) {
 		Topics:    [][]common.Hash{},
 	}
 
-	runEvmWsLogListener(ctx, "[POLYGON-WS]", wsNode, query, func(client *ethclient.Client, vLog types.Log) {
+	runEvmWsLogListener(ctx, "[POLYGON-WS]", mdb.NetworkPolygon, wsNode, query, func(client *ethclient.Client, vLog types.Log) {
 		if len(vLog.Topics) < 3 {
 			return
 		}

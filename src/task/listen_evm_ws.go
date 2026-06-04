@@ -14,17 +14,27 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
+var (
+	evmDialClient = func(rawURL string) (*ethclient.Client, error) {
+		return ethclient.Dial(rawURL)
+	}
+	evmSubscribeLogs = func(ctx context.Context, client *ethclient.Client, query ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error) {
+		return client.SubscribeFilterLogs(ctx, query, ch)
+	}
+)
+
 // runEvmWsLogListener connects to node.Url, subscribes to Transfer logs,
 // and dispatches each log to handleLog. It retries on transient errors
 // with exponential backoff until the node reaches the failure threshold.
 // The ctx lets the caller trigger a clean exit — e.g. when admin disables
 // the chain, the caller cancels the context and the function returns.
-func runEvmWsLogListener(ctx context.Context, logPrefix string, node mdb.RpcNode, query ethereum.FilterQuery, handleLog func(*ethclient.Client, types.Log)) {
+func runEvmWsLogListener(ctx context.Context, logPrefix, network string, node mdb.RpcNode, query ethereum.FilterQuery, handleLog func(*ethclient.Client, types.Log)) {
 	const (
 		minBackoff       = 2 * time.Second
 		maxBackoff       = 60 * time.Second
 		rejoinWait       = 3 * time.Second
 		stableResetAfter = 60 * time.Second
+		logBufferSize    = 256
 	)
 	failWait := minBackoff
 	wsURL := node.Url
@@ -35,7 +45,7 @@ func runEvmWsLogListener(ctx context.Context, logPrefix string, node mdb.RpcNode
 			return
 		}
 
-		client, err := ethclient.Dial(wsURL)
+		client, err := evmDialClient(wsURL)
 		if err != nil {
 			log.Sugar.Warnf("%s dial: %v, retry in %s", logPrefix, err, failWait)
 			if recordEvmWsNodeFailure(logPrefix, node, "dial") {
@@ -48,8 +58,8 @@ func runEvmWsLogListener(ctx context.Context, logPrefix string, node mdb.RpcNode
 			continue
 		}
 
-		logsCh := make(chan types.Log)
-		sub, err := client.SubscribeFilterLogs(ctx, query, logsCh)
+		logsCh := make(chan types.Log, logBufferSize)
+		sub, err := evmSubscribeLogs(ctx, client, query, logsCh)
 		if err != nil {
 			client.Close()
 			log.Sugar.Warnf("%s subscribe: %v, retry in %s", logPrefix, err, failWait)
@@ -62,12 +72,41 @@ func runEvmWsLogListener(ctx context.Context, logPrefix string, node mdb.RpcNode
 			failWait = nextBackoff(failWait, maxBackoff)
 			continue
 		}
+
+		snapshotBlock, err := backfillEvmLogs(ctx, client, logPrefix, network, query, handleLog)
+		if err != nil {
+			sub.Unsubscribe()
+			client.Close()
+			log.Sugar.Warnf("%s backfill: %v, retry in %s", logPrefix, err, failWait)
+			if recordEvmWsNodeFailure(logPrefix, node, "backfill") {
+				return
+			}
+			if !sleepOrDone(ctx, failWait) {
+				return
+			}
+			failWait = nextBackoff(failWait, maxBackoff)
+			continue
+		}
 		failWait = minBackoff
 
-		log.Sugar.Infof("%s connected, subscribed to Transfer logs using WSS node %s", logPrefix, nodeLabel)
+		log.Sugar.Infof("%s connected, subscribed to Transfer logs using WSS node %s (backfilled to block %d)", logPrefix, nodeLabel, snapshotBlock)
 
 		connectedAt := time.Now()
-		recvErr := recvLoop(ctx, client, sub, logsCh, logPrefix, handleLog)
+		lastCursor := snapshotBlock
+		recvErr := recvLoop(ctx, client, sub, logsCh, logPrefix, func(client *ethclient.Client, vLog types.Log) {
+			if vLog.Removed {
+				return
+			}
+			handleLog(client, vLog)
+			if vLog.BlockNumber <= lastCursor {
+				return
+			}
+			if err := saveEvmBackfillCursor(network, vLog.BlockNumber); err != nil {
+				log.Sugar.Warnf("%s save backfill cursor block=%d: %v", logPrefix, vLog.BlockNumber, err)
+				return
+			}
+			lastCursor = vLog.BlockNumber
+		})
 
 		if ctx.Err() != nil {
 			return

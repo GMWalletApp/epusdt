@@ -76,7 +76,7 @@ func runPlasmaListener(contracts []common.Address) {
 		Topics:    [][]common.Hash{},
 	}
 
-	runEvmWsLogListener(ctx, "[PLASMA-WS]", wsNode, query, func(client *ethclient.Client, vLog types.Log) {
+	runEvmWsLogListener(ctx, "[PLASMA-WS]", mdb.NetworkPlasma, wsNode, query, func(client *ethclient.Client, vLog types.Log) {
 		if len(vLog.Topics) < 3 {
 			return
 		}

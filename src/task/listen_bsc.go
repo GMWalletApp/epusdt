@@ -77,7 +77,7 @@ func runBscListener(contracts []common.Address) {
 		Topics:    [][]common.Hash{},
 	}
 
-	runEvmWsLogListener(ctx, "[BSC-WS]", wsNode, query, func(client *ethclient.Client, vLog types.Log) {
+	runEvmWsLogListener(ctx, "[BSC-WS]", mdb.NetworkBsc, wsNode, query, func(client *ethclient.Client, vLog types.Log) {
 		if len(vLog.Topics) < 3 {
 			return
 		}
