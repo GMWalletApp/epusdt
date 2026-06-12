@@ -473,14 +473,17 @@ func (s *Scanner) recordRpcFailure(reason string) {
 
 func StartTronBlockScannerListener() {
 	for {
-		scanner := NewScanner()
-		if err := scanner.Init(); err != nil {
-			log.Sugar.Errorf("[TRON-BLOCK] init: %v, retrying...", err)
-			time.Sleep(10 * time.Second)
-			continue
+		if data.IsChainEnabled(mdb.NetworkTron) {
+			scanner := NewScanner()
+			if err := scanner.Init(); err != nil {
+				log.Sugar.Warnf("[TRON-BLOCK] init: %v, retrying...", err)
+				time.Sleep(10 * time.Second)
+				continue
+			}
+			scanner.Run()
+			log.Sugar.Warn("[TRON-BLOCK] scanner stopped, restarting...")
+			time.Sleep(3 * time.Second)
 		}
-		scanner.Run()
-		log.Sugar.Warn("[TRON-BLOCK] scanner stopped, restarting...")
-		time.Sleep(3 * time.Second)
+		time.Sleep(10 * time.Second)
 	}
 }
