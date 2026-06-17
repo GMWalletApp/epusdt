@@ -2,9 +2,7 @@ package mq
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +11,7 @@ import (
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/model/response"
+	"github.com/GMWalletApp/epusdt/model/service"
 	"github.com/GMWalletApp/epusdt/util/http_client"
 	"github.com/GMWalletApp/epusdt/util/log"
 	"github.com/GMWalletApp/epusdt/util/sign"
@@ -25,18 +24,12 @@ import (
 // other secret would produce a signature the merchant can't verify.
 // The admin can resend the callback after fixing the key.
 func resolveOrderApiKey(order *mdb.Orders) (*mdb.ApiKey, error) {
-	if order.ApiKeyID == 0 {
-		return nil, fmt.Errorf("order trade_id=%s has no api_key_id", order.TradeId)
-	}
-	row, err := data.GetApiKeyByID(order.ApiKeyID)
-	if err != nil {
-		return nil, fmt.Errorf("lookup api_key_id=%d: %w", order.ApiKeyID, err)
-	}
-	if row.ID == 0 {
-		return nil, fmt.Errorf("api_key_id=%d not found (deleted?)", order.ApiKeyID)
-	}
-	if row.Status != mdb.ApiKeyStatusEnable {
-		return nil, fmt.Errorf("api_key_id=%d is disabled", order.ApiKeyID)
+	row, err := service.ResolveOrderApiKey(order)
+	if err != nil || row == nil || row.ID == 0 {
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New("api key unavailable")
 	}
 	return row, nil
 }
@@ -207,36 +200,9 @@ func sendOrderCallback(order *mdb.Orders) error {
 
 	switch {
 	case strings.EqualFold(order.PaymentType, mdb.PaymentTypeEpay):
-		// EPAY uses pid (integer) and secret_key as "key".
-		pidInt, convErr := strconv.Atoi(apiKeyRow.Pid)
-		if convErr != nil {
-			return fmt.Errorf("epay pid not numeric: %s", apiKeyRow.Pid)
-		}
-		notifyData := response.OrderNotifyResponseEpay{
-			PID:         pidInt,
-			TradeNo:     order.TradeId,
-			OutTradeNo:  order.OrderId,
-			Type:        "alipay",
-			Name:        order.Name,
-			Money:       fmt.Sprintf("%.4f", order.Amount),
-			TradeStatus: "TRADE_SUCCESS",
-		}
-
-		signstr2, err := sign.Get(notifyData, apiKeyRow.SecretKey)
+		formData, err := service.BuildEPayResultParams(order, apiKeyRow)
 		if err != nil {
 			return err
-		}
-
-		formData := map[string]string{
-			"pid":          fmt.Sprintf("%d", notifyData.PID),
-			"trade_no":     notifyData.TradeNo,
-			"out_trade_no": notifyData.OutTradeNo,
-			"type":         notifyData.Type,
-			"name":         notifyData.Name,
-			"money":        notifyData.Money,
-			"trade_status": notifyData.TradeStatus,
-			"sign":         signstr2,
-			"sign_type":    "MD5",
 		}
 
 		epayResp, err := http_client.GetHttpClient().R().SetQueryParams(formData).Get(order.NotifyUrl)

@@ -1,1 +1,0 @@
-import{t as e}from"./general-error-CDe5w_m4.js";var t=e;export{t as component};

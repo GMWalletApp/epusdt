@@ -1,0 +1,1 @@
+import{t as e}from"./general-error-BoIfl_4Z.js";var t=e;export{t as component};

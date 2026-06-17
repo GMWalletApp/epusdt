@@ -706,7 +706,7 @@ func completeWaitSelectOrder(parent *mdb.Orders, token string, network string) (
 
 func buildCheckoutResponse(order *mdb.Orders) *response.CheckoutCounterResponse {
 	paymentType := mdb.PaymentTypeGmpay
-	if strings.EqualFold(order.PaymentType, mdb.PaymentTypeEpay) {
+	if isEPayOrder(order) {
 		paymentType = mdb.PaymentTypeEpay
 	}
 	return &response.CheckoutCounterResponse{
@@ -720,7 +720,7 @@ func buildCheckoutResponse(order *mdb.Orders) *response.CheckoutCounterResponse 
 		Status:         order.Status,
 		PaymentType:    strings.ToLower(paymentType),
 		ExpirationTime: order.CreatedAt.AddMinutes(config.GetOrderExpirationTime()).TimestampMilli(),
-		RedirectUrl:    order.RedirectUrl,
+		RedirectUrl:    buildPublicRedirectURL(order),
 		CreatedAt:      order.CreatedAt.TimestampMilli(),
 		IsSelected:     order.IsSelected,
 	}

@@ -224,6 +224,37 @@ func doFormPost(e *echo.Echo, path string, values url.Values) *httptest.Response
 	return rec
 }
 
+func mustCreateEPayOrder(t *testing.T, e *echo.Echo, orderID string, returnURL string, extra url.Values) string {
+	t.Helper()
+
+	values := url.Values{
+		"pid":          {"1"},
+		"name":         {orderID},
+		"type":         {"alipay"},
+		"money":        {"1.00"},
+		"out_trade_no": {orderID},
+		"notify_url":   {"https://93.184.216.34/notify"},
+		"return_url":   {returnURL},
+	}
+	for key, items := range extra {
+		clone := append([]string(nil), items...)
+		values[key] = clone
+	}
+	values = signEpayValues(values)
+
+	req := httptest.NewRequest(http.MethodGet, "/payments/epay/v1/order/create-transaction/submit.php?"+values.Encode(), nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("create epay order failed: %d %s", rec.Code, rec.Body.String())
+	}
+	location := rec.Header().Get("Location")
+	if !strings.HasPrefix(location, "/pay/checkout-counter/") {
+		t.Fatalf("expected checkout redirect, got %q", location)
+	}
+	return strings.TrimPrefix(location, "/pay/checkout-counter/")
+}
+
 func TestRootPostRoute(t *testing.T) {
 	e := setupTestEnv(t)
 
@@ -1245,6 +1276,12 @@ func TestEpaySubmitPhpGetCompatible(t *testing.T) {
 	if checkoutData["payment_type"] != "epay" {
 		t.Fatalf("epay checkout payment_type = %v, want epay", checkoutData["payment_type"])
 	}
+	if got, _ := checkoutData["redirect_url"].(string); got != "http://localhost:8080/pay/return/"+tradeID {
+		t.Fatalf("epay checkout redirect_url = %q, want internal return route", got)
+	}
+	if order.RedirectUrl != "http://localhost/return" {
+		t.Fatalf("stored redirect_url = %q, want merchant raw return_url", order.RedirectUrl)
+	}
 }
 
 func TestEpaySubmitPhpRequestTokenNetworkOverrideDefaults(t *testing.T) {
@@ -1523,6 +1560,234 @@ func TestSubmitTxHash_SuccessUpdatesCheckStatus(t *testing.T) {
 	}
 	if got := int(statusData["status"].(float64)); got != mdb.StatusPaySuccess {
 		t.Fatalf("check-status status = %d, want %d", got, mdb.StatusPaySuccess)
+	}
+}
+
+func TestPayReturn_NotFound(t *testing.T) {
+	e := setupTestEnv(t)
+	req := httptest.NewRequest(http.MethodGet, "/pay/return/nonexistent-trade-id", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	resp := parseResp(t, rec)
+	if got := int(resp["status_code"].(float64)); got != 10008 {
+		t.Fatalf("status_code = %d, want 10008; response=%v", got, resp)
+	}
+}
+
+func TestPayReturn_PaidEpayRedirectsToMerchantWithSignedParams(t *testing.T) {
+	e := setupTestEnv(t)
+	tradeID := mustCreateEPayOrder(t, e, "epay-return-paid-001", "https://merchant.example/return?from=merchant", url.Values{
+		"token":    {"usdt"},
+		"network":  {"tron"},
+		"currency": {"cny"},
+	})
+	if err := dao.Mdb.Model(&mdb.Orders{}).
+		Where("trade_id = ?", tradeID).
+		Update("status", mdb.StatusPaySuccess).Error; err != nil {
+		t.Fatalf("mark order paid: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/pay/return/"+tradeID, nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("cache-control = %q, want no-store", got)
+	}
+
+	location := rec.Header().Get("Location")
+	targetURL, err := url.Parse(location)
+	if err != nil {
+		t.Fatalf("parse redirect location: %v", err)
+	}
+	if targetURL.Scheme != "https" || targetURL.Host != "merchant.example" || targetURL.Path != "/return" {
+		t.Fatalf("unexpected redirect target: %q", location)
+	}
+
+	query := targetURL.Query()
+	if query.Get("from") != "merchant" {
+		t.Fatalf("preserved query = %q, want merchant", query.Get("from"))
+	}
+	if query.Get("pid") != "1" {
+		t.Fatalf("pid = %q, want 1", query.Get("pid"))
+	}
+	if query.Get("trade_no") != tradeID {
+		t.Fatalf("trade_no = %q, want %q", query.Get("trade_no"), tradeID)
+	}
+	if query.Get("out_trade_no") != "epay-return-paid-001" {
+		t.Fatalf("out_trade_no = %q", query.Get("out_trade_no"))
+	}
+	if query.Get("type") != "alipay" {
+		t.Fatalf("type = %q, want alipay", query.Get("type"))
+	}
+	if query.Get("name") != "epay-return-paid-001" {
+		t.Fatalf("name = %q", query.Get("name"))
+	}
+	if query.Get("money") != "1.0000" {
+		t.Fatalf("money = %q, want 1.0000", query.Get("money"))
+	}
+	if query.Get("trade_status") != "TRADE_SUCCESS" {
+		t.Fatalf("trade_status = %q, want TRADE_SUCCESS", query.Get("trade_status"))
+	}
+	if query.Get("sign_type") != "MD5" {
+		t.Fatalf("sign_type = %q, want MD5", query.Get("sign_type"))
+	}
+
+	signParams := map[string]interface{}{
+		"pid":          query.Get("pid"),
+		"trade_no":     query.Get("trade_no"),
+		"out_trade_no": query.Get("out_trade_no"),
+		"type":         query.Get("type"),
+		"name":         query.Get("name"),
+		"money":        query.Get("money"),
+		"trade_status": query.Get("trade_status"),
+	}
+	calcSig, err := sign.Get(signParams, testAPIToken)
+	if err != nil {
+		t.Fatalf("calc epay return signature: %v", err)
+	}
+	if got := query.Get("sign"); got != calcSig {
+		t.Fatalf("sign = %q, want %q", got, calcSig)
+	}
+}
+
+func TestPayReturn_UnpaidEpayRedirectsBackToCheckout(t *testing.T) {
+	e := setupTestEnv(t)
+	tradeID := mustCreateEPayOrder(t, e, "epay-return-unpaid-001", "https://merchant.example/return", url.Values{
+		"token":    {"usdt"},
+		"network":  {"tron"},
+		"currency": {"cny"},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/pay/return/"+tradeID, nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Location"); got != "/pay/checkout-counter/"+tradeID {
+		t.Fatalf("location = %q, want checkout counter", got)
+	}
+}
+
+func TestPayReturn_PaidNonEpayRedirectsBackToCheckout(t *testing.T) {
+	e := setupTestEnv(t)
+	tradeID := createCheckoutCounterRespTestOrder(t, e, "pay-return-gmpay-001")
+	if err := dao.Mdb.Model(&mdb.Orders{}).
+		Where("trade_id = ?", tradeID).
+		Update("status", mdb.StatusPaySuccess).Error; err != nil {
+		t.Fatalf("mark order paid: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/pay/return/"+tradeID, nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Location"); got != "/pay/checkout-counter/"+tradeID {
+		t.Fatalf("location = %q, want checkout counter", got)
+	}
+}
+
+func TestPayReturn_PaidEpayWithEmptyRedirectReturnsError(t *testing.T) {
+	e := setupTestEnv(t)
+	tradeID := mustCreateEPayOrder(t, e, "epay-return-empty-001", "https://merchant.example/return", url.Values{
+		"token":    {"usdt"},
+		"network":  {"tron"},
+		"currency": {"cny"},
+	})
+	if err := dao.Mdb.Model(&mdb.Orders{}).
+		Where("trade_id = ?", tradeID).
+		Updates(map[string]interface{}{
+			"status":       mdb.StatusPaySuccess,
+			"redirect_url": "",
+		}).Error; err != nil {
+		t.Fatalf("update order: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/pay/return/"+tradeID, nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	resp := parseResp(t, rec)
+	if got := int(resp["status_code"].(float64)); got != 10044 {
+		t.Fatalf("status_code = %d, want 10044; response=%v", got, resp)
+	}
+}
+
+func TestPayReturn_PaidEpayWithDisabledApiKeyReturnsError(t *testing.T) {
+	e := setupTestEnv(t)
+	tradeID := mustCreateEPayOrder(t, e, "epay-return-disabled-key-001", "https://merchant.example/return", url.Values{
+		"token":    {"usdt"},
+		"network":  {"tron"},
+		"currency": {"cny"},
+	})
+	order, err := data.GetOrderInfoByTradeId(tradeID)
+	if err != nil {
+		t.Fatalf("load order: %v", err)
+	}
+	if err := dao.Mdb.Model(&mdb.Orders{}).
+		Where("trade_id = ?", tradeID).
+		Update("status", mdb.StatusPaySuccess).Error; err != nil {
+		t.Fatalf("mark order paid: %v", err)
+	}
+	if err := dao.Mdb.Model(&mdb.ApiKey{}).
+		Where("id = ?", order.ApiKeyID).
+		Update("status", mdb.ApiKeyStatusDisable).Error; err != nil {
+		t.Fatalf("disable api key: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/pay/return/"+tradeID, nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	resp := parseResp(t, rec)
+	if got := int(resp["status_code"].(float64)); got != 10045 {
+		t.Fatalf("status_code = %d, want 10045; response=%v", got, resp)
+	}
+}
+
+func TestPayReturn_PaidEpayWithNonNumericPidReturnsSignatureError(t *testing.T) {
+	e := setupTestEnv(t)
+	tradeID := mustCreateEPayOrder(t, e, "epay-return-bad-pid-001", "https://merchant.example/return", url.Values{
+		"token":    {"usdt"},
+		"network":  {"tron"},
+		"currency": {"cny"},
+	})
+	order, err := data.GetOrderInfoByTradeId(tradeID)
+	if err != nil {
+		t.Fatalf("load order: %v", err)
+	}
+	if err := dao.Mdb.Model(&mdb.Orders{}).
+		Where("trade_id = ?", tradeID).
+		Update("status", mdb.StatusPaySuccess).Error; err != nil {
+		t.Fatalf("mark order paid: %v", err)
+	}
+	if err := dao.Mdb.Model(&mdb.ApiKey{}).
+		Where("id = ?", order.ApiKeyID).
+		Update("pid", "not-a-number").Error; err != nil {
+		t.Fatalf("break pid: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/pay/return/"+tradeID, nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	resp := parseResp(t, rec)
+	if got := int(resp["status_code"].(float64)); got != 10046 {
+		t.Fatalf("status_code = %d, want 10046; response=%v", got, resp)
 	}
 }
 
@@ -2225,6 +2490,9 @@ func TestSwitchNetwork_EpayPlaceholderCompletesChainInPlace(t *testing.T) {
 	if got, _ := respData["trade_id"].(string); got != tradeID {
 		t.Fatalf("switch trade_id = %q, want parent %q", got, tradeID)
 	}
+	if got, _ := respData["redirect_url"].(string); got != "http://localhost:8080/pay/return/"+tradeID {
+		t.Fatalf("switch redirect_url = %q, want internal return route", got)
+	}
 
 	parent, err := data.GetOrderInfoByTradeId(tradeID)
 	if err != nil {
@@ -2232,6 +2500,9 @@ func TestSwitchNetwork_EpayPlaceholderCompletesChainInPlace(t *testing.T) {
 	}
 	if parent.Status != mdb.StatusWaitPay || parent.PaymentType != mdb.PaymentTypeEpay || parent.Network != mdb.NetworkTron || parent.Token != "USDT" || parent.ReceiveAddress == "" {
 		t.Fatalf("parent fields = status %d payment_type %q network %q token %q address %q", parent.Status, parent.PaymentType, parent.Network, parent.Token, parent.ReceiveAddress)
+	}
+	if parent.RedirectUrl != "http://localhost/return" {
+		t.Fatalf("stored redirect_url = %q, want merchant raw return_url", parent.RedirectUrl)
 	}
 	count, err := data.CountActiveSubOrders(tradeID)
 	if err != nil {
@@ -2315,6 +2586,9 @@ func TestSwitchNetwork_OkPayFromEpayWaitSelectPlaceholder(t *testing.T) {
 	if respData["payment_url"] != "https://pay.okaypay.test/epay-placeholder" {
 		t.Fatalf("payment_url = %v, want okpay url", respData["payment_url"])
 	}
+	if got, _ := respData["redirect_url"].(string); got != "http://localhost:8080/pay/return/"+tradeID {
+		t.Fatalf("switch redirect_url = %q, want internal return route", got)
+	}
 
 	parent, err := data.GetOrderInfoByTradeId(tradeID)
 	if err != nil {
@@ -2322,6 +2596,9 @@ func TestSwitchNetwork_OkPayFromEpayWaitSelectPlaceholder(t *testing.T) {
 	}
 	if parent.PaymentType != mdb.PaymentTypeEpay || parent.PayProvider != mdb.PaymentProviderOkPay || parent.Network != mdb.PaymentProviderOkPay || parent.ReceiveAddress != "OKPAY" {
 		t.Fatalf("parent fields = payment_type %q provider %q network %q address %q", parent.PaymentType, parent.PayProvider, parent.Network, parent.ReceiveAddress)
+	}
+	if parent.RedirectUrl != "http://localhost/return" {
+		t.Fatalf("stored redirect_url = %q, want merchant raw return_url", parent.RedirectUrl)
 	}
 	count, err := data.CountActiveSubOrders(tradeID)
 	if err != nil {

@@ -65,6 +65,7 @@ func (c *BaseCommController) CreateTransaction(ctx echo.Context) (err error) {
 // @Description  Switch to a different payment target. A status=4 placeholder is completed in place and returns the same parent trade_id with is_selected=false; an already concrete status=1 parent creates or returns the only sub-order when switching to a different target.
 // @Description  Normal values such as ton/tron/solana/ethereum select on-chain payment; the special value okpay selects OkPay hosted payment.
 // @Description  For status=4 placeholders from GMPay or EPay submit.php, both on-chain targets and okpay complete the parent in place without creating a child order. Sub-orders cannot be switched again.
+// @Description  For EPay orders with a merchant return_url, the returned redirect_url is the internal /pay/return/{trade_id} hop rather than the raw merchant return_url.
 // @Tags         Payment
 // @Accept       json
 // @Produce      json

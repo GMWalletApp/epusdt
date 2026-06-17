@@ -47,6 +47,9 @@ var Errno = map[int]string{
 	10041: "invalid notify url",
 	10042: "payment provider order creation failed",
 	10043: "invalid setting item",
+	10044: "invalid order redirect url",
+	10045: "order api key unavailable",
+	10046: "failed to build epay return signature",
 }
 
 var (
@@ -94,6 +97,9 @@ var (
 	NotifyURLErr               = Err(10041)
 	PaymentProviderCreateErr   = Err(10042)
 	SettingItemErr             = Err(10043)
+	OrderRedirectURLErr        = Err(10044)
+	OrderApiKeyUnavailableErr  = Err(10045)
+	EPayReturnSignatureErr     = Err(10046)
 )
 
 type RspError struct {
