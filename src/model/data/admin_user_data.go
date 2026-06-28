@@ -106,7 +106,7 @@ func initAdminPasswordState(plain string) error {
 		{
 			Group: mdb.SettingGroupSystem, Key: mdb.SettingKeyInitAdminPasswordFetched,
 			Value: "false", Type: mdb.SettingTypeBool,
-			Description: "Whether initial admin password has been fetched",
+			Description: "Whether initial admin password plaintext has been cleared",
 		},
 		{
 			Group: mdb.SettingGroupSystem, Key: mdb.SettingKeyInitAdminPasswordChanged,
@@ -138,56 +138,51 @@ func upsertSettingRow(tx *gorm.DB, row mdb.Setting) error {
 	}).Create(&row).Error
 }
 
-// ConsumeInitialAdminPassword returns the one-time initial admin password.
-// After a successful read, the plaintext is deleted and cannot be fetched
-// again.
-func ConsumeInitialAdminPassword() (string, error) {
-	var password string
-	err := dao.Mdb.Transaction(func(tx *gorm.DB) error {
-		row := new(mdb.Setting)
-		if err := tx.Model(&mdb.Setting{}).
-			Where("`key` = ?", mdb.SettingKeyInitAdminPasswordPlain).
-			Limit(1).
-			Find(row).Error; err != nil {
-			return err
-		}
-		if row.ID == 0 || row.Value == "" {
-			var fetched mdb.Setting
-			if err := tx.Model(&mdb.Setting{}).
-				Where("`key` = ?", mdb.SettingKeyInitAdminPasswordFetched).
-				Limit(1).
-				Find(&fetched).Error; err != nil {
-				return err
-			}
-			if strings.EqualFold(strings.TrimSpace(fetched.Value), "true") {
-				return ErrInitAdminPasswordAlreadyFetched
-			}
-			return ErrInitAdminPasswordUnavailable
-		}
-		password = row.Value
-		res := tx.Unscoped().Where("`key` = ?", mdb.SettingKeyInitAdminPasswordPlain).Delete(&mdb.Setting{})
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			return ErrInitAdminPasswordAlreadyFetched
-		}
-		return upsertSettingRow(tx, mdb.Setting{
-			Group:       mdb.SettingGroupSystem,
-			Key:         mdb.SettingKeyInitAdminPasswordFetched,
-			Value:       "true",
-			Type:        mdb.SettingTypeBool,
-			Description: "Whether initial admin password has been fetched",
-		})
-	})
-	if err != nil {
+// GetInitialAdminPassword returns the initial admin password plaintext while
+// it is still available. The plaintext remains readable until the admin
+// password is changed, after which the stored plaintext is deleted.
+func GetInitialAdminPassword() (string, error) {
+	row := new(mdb.Setting)
+	if err := dao.Mdb.Model(&mdb.Setting{}).
+		Where("`key` = ?", mdb.SettingKeyInitAdminPasswordPlain).
+		Limit(1).
+		Find(row).Error; err != nil {
 		return "", err
 	}
-	settingsCacheMu.Lock()
-	delete(settingsCache, mdb.SettingKeyInitAdminPasswordPlain)
-	settingsCache[mdb.SettingKeyInitAdminPasswordFetched] = "true"
-	settingsCacheMu.Unlock()
-	return password, nil
+	if row.ID != 0 && row.Value != "" {
+		return row.Value, nil
+	}
+
+	var fetched mdb.Setting
+	if err := dao.Mdb.Model(&mdb.Setting{}).
+		Where("`key` = ?", mdb.SettingKeyInitAdminPasswordFetched).
+		Limit(1).
+		Find(&fetched).Error; err != nil {
+		return "", err
+	}
+	if strings.EqualFold(strings.TrimSpace(fetched.Value), "true") {
+		return "", ErrInitAdminPasswordAlreadyFetched
+	}
+	return "", ErrInitAdminPasswordUnavailable
+}
+
+func clearInitialAdminPasswordPlain(tx *gorm.DB) error {
+	res := tx.Unscoped().
+		Where("`key` = ?", mdb.SettingKeyInitAdminPasswordPlain).
+		Delete(&mdb.Setting{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if err := upsertSettingRow(tx, mdb.Setting{
+		Group:       mdb.SettingGroupSystem,
+		Key:         mdb.SettingKeyInitAdminPasswordFetched,
+		Value:       "true",
+		Type:        mdb.SettingTypeBool,
+		Description: "Whether initial admin password plaintext has been cleared",
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // GetInitialAdminPasswordHashInfo returns the initial-password fingerprint
@@ -250,7 +245,9 @@ func GetAdminUserByID(id uint64) (*mdb.AdminUser, error) {
 	return u, err
 }
 
-// UpdateAdminUserPassword rehashes and persists a new password.
+// UpdateAdminUserPassword rehashes and persists a new password. When the
+// change succeeds, the stored initial-password plaintext is deleted so it can
+// no longer be fetched from the public bootstrap route.
 func UpdateAdminUserPassword(id uint64, newPlain string) error {
 	hash, err := HashPassword(newPlain)
 	if err != nil {
@@ -293,6 +290,9 @@ func UpdateAdminUserPassword(id uint64, newPlain string) error {
 		}); err != nil {
 			return err
 		}
+		if err := clearInitialAdminPasswordPlain(tx); err != nil {
+			return err
+		}
 		changedCacheValue = changedValue
 		return nil
 	})
@@ -301,6 +301,8 @@ func UpdateAdminUserPassword(id uint64, newPlain string) error {
 	}
 	if changedCacheValue != "" {
 		settingsCacheMu.Lock()
+		delete(settingsCache, mdb.SettingKeyInitAdminPasswordPlain)
+		settingsCache[mdb.SettingKeyInitAdminPasswordFetched] = "true"
 		settingsCache[mdb.SettingKeyInitAdminPasswordChanged] = changedCacheValue
 		settingsCacheMu.Unlock()
 	}

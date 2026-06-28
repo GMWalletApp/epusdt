@@ -42,7 +42,7 @@ func TestUpsertSettingRowRestoresSoftDeletedSetting(t *testing.T) {
 	}
 }
 
-func TestConsumeInitialAdminPasswordHardDeletesPlaintext(t *testing.T) {
+func TestGetInitialAdminPasswordKeepsPlaintext(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
@@ -51,9 +51,9 @@ func TestConsumeInitialAdminPasswordHardDeletesPlaintext(t *testing.T) {
 		t.Fatalf("seed initial password state: %v", err)
 	}
 
-	got, err := ConsumeInitialAdminPassword()
+	got, err := GetInitialAdminPassword()
 	if err != nil {
-		t.Fatalf("consume initial password: %v", err)
+		t.Fatalf("get initial password: %v", err)
 	}
 	if got != password {
 		t.Fatalf("password = %q, want %q", got, password)
@@ -66,11 +66,55 @@ func TestConsumeInitialAdminPasswordHardDeletesPlaintext(t *testing.T) {
 		Count(&count).Error; err != nil {
 		t.Fatalf("count plaintext setting: %v", err)
 	}
+	if count != 1 {
+		t.Fatalf("plaintext setting rows after read = %d, want 1", count)
+	}
+	if GetSettingBool(mdb.SettingKeyInitAdminPasswordFetched, false) {
+		t.Fatal("expected fetched flag to stay false before password change")
+	}
+}
+
+func TestUpdateAdminUserPasswordHardDeletesInitialPasswordPlaintext(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	const (
+		oldPassword = "init-pass-plain"
+		newPassword = "new-password-123"
+	)
+	if err := initAdminPasswordState(oldPassword); err != nil {
+		t.Fatalf("seed initial password state: %v", err)
+	}
+
+	hash, err := HashPassword(oldPassword)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	user := &mdb.AdminUser{
+		Username:     defaultAdminUsername,
+		PasswordHash: hash,
+		Status:       mdb.AdminUserStatusEnable,
+	}
+	if err := dao.Mdb.Create(user).Error; err != nil {
+		t.Fatalf("seed admin user: %v", err)
+	}
+
+	if err := UpdateAdminUserPassword(uint64(user.ID), newPassword); err != nil {
+		t.Fatalf("update admin password: %v", err)
+	}
+
+	var count int64
+	if err := dao.Mdb.Unscoped().
+		Model(&mdb.Setting{}).
+		Where("`key` = ?", mdb.SettingKeyInitAdminPasswordPlain).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count plaintext setting: %v", err)
+	}
 	if count != 0 {
-		t.Fatalf("plaintext setting rows after consume = %d, want 0", count)
+		t.Fatalf("plaintext setting rows after password change = %d, want 0", count)
 	}
 	if !GetSettingBool(mdb.SettingKeyInitAdminPasswordFetched, false) {
-		t.Fatal("expected fetched flag to be true")
+		t.Fatal("expected fetched flag to be true after password change")
 	}
 }
 

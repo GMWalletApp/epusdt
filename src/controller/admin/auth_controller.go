@@ -35,7 +35,7 @@ type MeResponse struct {
 	PasswordIsDefault bool `json:"password_is_default" example:"true"`
 }
 
-// InitialPasswordResponse is returned by the one-time initial password API.
+// InitialPasswordResponse is returned by the initial password API.
 type InitialPasswordResponse struct {
 	Username string `json:"username" example:"admin"`
 	Password string `json:"password" example:"a1b2c3d4e5f6"`
@@ -84,16 +84,17 @@ func (c *BaseAdminController) Login(ctx echo.Context) error {
 	})
 }
 
-// GetInitialPassword returns the one-time initial admin password.
-// @Summary      Get initial admin password (one-time)
-// @Description  Returns the initial random admin password once, then invalidates it.
+// GetInitialPassword returns the initial admin password until it is cleared by
+// a successful password change.
+// @Summary      Get initial admin password
+// @Description  Returns the initial random admin password until the admin password is changed.
 // @Tags         Admin Auth
 // @Produce      json
 // @Success      200 {object} response.ApiResponse{data=admin.InitialPasswordResponse}
 // @Failure      400 {object} response.ApiResponse
 // @Router       /admin/api/v1/auth/init-password [get]
 func (c *BaseAdminController) GetInitialPassword(ctx echo.Context) error {
-	password, err := data.ConsumeInitialAdminPassword()
+	password, err := data.GetInitialAdminPassword()
 	if err != nil {
 		if errors.Is(err, data.ErrInitAdminPasswordAlreadyFetched) || errors.Is(err, data.ErrInitAdminPasswordUnavailable) {
 			return c.FailJson(ctx, constant.InitialAdminPasswordErr)
