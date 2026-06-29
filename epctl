@@ -127,6 +127,24 @@ trf() {
     zh:service_failed_active) template='服务 %s 未能成功进入 active 状态' ;;
     en:service_installed) template='installed %s to %s from %s' ;;
     zh:service_installed) template='已将 %s 安装到 %s，来源版本：%s' ;;
+    en:service_upgraded_restarted) template='updated %s in %s from %s and restarted the service' ;;
+    zh:service_upgraded_restarted) template='已将 %s 在 %s 升级到 %s，并完成服务重启' ;;
+    en:upgrade_existing_config_required) template='upgrade requires an existing config file at %s; run install first' ;;
+    zh:upgrade_existing_config_required) template='升级要求 %s 已存在；请先执行 install' ;;
+    en:upgrade_restart_flag_conflict) template='cannot combine --prompt-restart and --no-restart' ;;
+    zh:upgrade_restart_flag_conflict) template='--prompt-restart 和 --no-restart 不能同时使用' ;;
+    en:upgrade_deploy_failed_rollback_start) template='upgrading %s failed before restart; attempting to roll back the release files' ;;
+    zh:upgrade_deploy_failed_rollback_start) template='升级 %s 在重启前失败，正在尝试回滚 release 文件' ;;
+    en:upgrade_deploy_failed_rolled_back) template='upgrading %s to %s failed before restart; previous release files were restored' ;;
+    zh:upgrade_deploy_failed_rolled_back) template='升级 %s 到 %s 在重启前失败，已恢复到之前的 release 文件' ;;
+    en:upgrade_deploy_failed_rollback_failed) template='upgrading %s to %s failed before restart, and rollback also failed' ;;
+    zh:upgrade_deploy_failed_rollback_failed) template='升级 %s 到 %s 在重启前失败，且回滚也失败了' ;;
+    en:upgrade_restart_failed_rollback_start) template='restart failed after upgrading %s; attempting to roll back the release files' ;;
+    zh:upgrade_restart_failed_rollback_start) template='升级 %s 后重启失败，正在尝试回滚 release 文件' ;;
+    en:upgrade_restart_failed_rolled_back) template='restart failed after upgrading %s to %s; previous release files were restored' ;;
+    zh:upgrade_restart_failed_rolled_back) template='升级 %s 到 %s 后重启失败，已恢复到之前的 release 文件' ;;
+    en:upgrade_restart_failed_rollback_failed) template='restart failed after upgrading %s to %s, and rollback also failed' ;;
+    zh:upgrade_restart_failed_rollback_failed) template='升级 %s 到 %s 后重启失败，且回滚也失败了' ;;
     en:self_install_current) template='%s already points to the current script' ;;
     zh:self_install_current) template='%s 已经指向当前脚本，无需重复安装' ;;
     en:self_install_done) template='installed %s into /usr/local/bin' ;;
@@ -215,6 +233,8 @@ trf() {
     zh:menu_language_input) template='语言选择（Language selection）' ;;
     en:menu_confirm_prompt) template='Continue? / 是否继续？ [y/N] ' ;;
     zh:menu_confirm_prompt) template='是否继续？/ Continue? [y/N] ' ;;
+    en:upgrade_restart_prompt) template='Release files are updated. Restart %s now? [Y/n] ' ;;
+    zh:upgrade_restart_prompt) template='Release 文件已更新，是否立即重启 %s？[Y/n] ' ;;
     en:menu_cancelled_back) template='Cancelled and returned to the menu / 已取消，返回菜单' ;;
     zh:menu_cancelled_back) template='已取消，返回菜单 / Cancelled and returned to the menu' ;;
     en:language_switched) template='Language switched to %s / 语言已切换为 %s' ;;
@@ -239,8 +259,14 @@ trf() {
     zh:action_install_desc) template='此操作会把 epusdt 安装到 %s，创建或复用 %s，写入 %s，并通过 systemd 启用 %s。若已有 .env，则会保留。' ;;
     en:action_upgrade_title) template='Upgrade the service' ;;
     zh:action_upgrade_title) template='升级服务' ;;
-    en:action_upgrade_desc) template='This will download and install a newer release into %s, then restart %s. The existing .env configuration will be preserved.' ;;
-    zh:action_upgrade_desc) template='此操作会下载并安装较新的 release 到 %s，然后重启 %s。现有 .env 配置会被保留。' ;;
+    en:action_upgrade_desc) template='This will download and install a newer release into %s, keep the existing .env configuration, and then ask whether to restart %s. The direct CLI command restarts by default unless you pass --no-restart.' ;;
+    zh:action_upgrade_desc) template='此操作会下载并安装较新的 release 到 %s，保留现有 .env 配置，然后再询问是否重启 %s。直接执行 CLI 时默认会重启，除非显式传入 --no-restart。' ;;
+    en:action_upgrade_restart_notice) template='Restarting %s will briefly interrupt the service and switch the running process to the new binary.' ;;
+    zh:action_upgrade_restart_notice) template='重启 %s 会带来短暂服务中断，并让运行中的进程切换到新的二进制文件。' ;;
+    en:action_upgrade_restart_skipped) template='Release files for %s were updated, but the service was not restarted. Run `systemctl restart %s` manually to apply the new binary.' ;;
+    zh:action_upgrade_restart_skipped) template='已更新 %s 的 release 文件，但没有重启服务。请手动执行 `systemctl restart %s` 以应用新的二进制文件。' ;;
+    en:action_upgrade_restart_no_tty) template='--prompt-restart requires an interactive terminal. Re-run in a TTY, use plain `upgrade` to restart immediately, or pass `--no-restart` to skip the restart.' ;;
+    zh:action_upgrade_restart_no_tty) template='--prompt-restart 需要交互终端。请在 TTY 中重新执行，或直接使用默认 `upgrade` 立即重启，或传入 `--no-restart` 跳过重启。' ;;
     en:action_self_install_title) template='Install epctl into PATH' ;;
     zh:action_self_install_title) template='安装 epctl 到 PATH' ;;
     en:action_self_install_desc) template='This will install %s into /usr/local/bin so it can be called from anywhere. Use %s to force Chinese or %s to force English.' ;;
@@ -321,7 +347,7 @@ usage() {
   epctl [--lang zh|en] menu
   epctl [--lang zh|en] download [--tag <tag>]
   epctl [--lang zh|en] install [--tag <tag>] [--app-uri URL] [--listen ADDR:PORT]
-  epctl [--lang zh|en] upgrade [--tag <tag>]
+  epctl [--lang zh|en] upgrade [--tag <tag>] [--prompt-restart|--no-restart]
   epctl [--lang zh|en] self-install
   epctl [--lang zh|en] show-config
   epctl [--lang zh|en] init-password
@@ -337,7 +363,7 @@ usage() {
   menu            进入交互式菜单；直接执行 `epctl` 也会进入
   download        下载 GitHub Release 包到 /tmp/epusdt/<tag>/
   install         安装或刷新 /opt/epusdt，并注册 epusdt.service
-  upgrade         升级到新的 release，保留现有 .env
+  upgrade         升级到新的 release，保留现有 .env；默认直接重启，菜单会改为先询问
   self-install    安装 epctl 到 /usr/local/bin
   show-config     输出当前生效的 /opt/epusdt/.env
   init-password   通过本地 HTTP 路由请求初始化管理员密码
@@ -351,6 +377,10 @@ usage() {
   - 需要提权的命令会自动通过 sudo 重新执行
   - tag 需要是真实的 GitHub release tag，例如 v1.0.6
   - 未提供 --tag 时，会自动解析 latest，并要求二次确认
+  - upgrade 只接受已有安装；不会创建新的 .env
+  - upgrade 默认会在文件替换后立即重启服务
+  - upgrade --prompt-restart 会在交互终端下询问是否重启
+  - upgrade --no-restart 只替换文件，不重启服务
 EOF
   else
     cat <<'EOF'
@@ -361,7 +391,7 @@ Usage:
   epctl [--lang zh|en] menu
   epctl [--lang zh|en] download [--tag <tag>]
   epctl [--lang zh|en] install [--tag <tag>] [--app-uri URL] [--listen ADDR:PORT]
-  epctl [--lang zh|en] upgrade [--tag <tag>]
+  epctl [--lang zh|en] upgrade [--tag <tag>] [--prompt-restart|--no-restart]
   epctl [--lang zh|en] self-install
   epctl [--lang zh|en] show-config
   epctl [--lang zh|en] init-password
@@ -377,7 +407,7 @@ Command summary:
   menu            Open the interactive menu; `epctl` with no arguments does this too
   download        Download a GitHub release archive into /tmp/epusdt/<tag>/
   install         Install or refresh /opt/epusdt and register epusdt.service
-  upgrade         Upgrade to a newer release while keeping the existing .env
+  upgrade         Upgrade to a newer release while keeping the existing .env; direct CLI restarts by default, menu mode asks first
   self-install    Install epctl into /usr/local/bin
   show-config     Print the active /opt/epusdt/.env file
   init-password   Request the initial admin password from the local HTTP route
@@ -391,6 +421,10 @@ Notes:
   - privileged commands automatically re-exec through sudo
   - tags must match real GitHub release tags such as v1.0.6
   - if --tag is omitted, epctl resolves the latest release and asks for confirmation
+  - upgrade requires an existing install and does not create a new .env
+  - upgrade restarts the service by default after files are replaced
+  - upgrade --prompt-restart asks whether to restart in an interactive terminal
+  - upgrade --no-restart replaces files only and prints a manual restart warning
 EOF
   fi
 }
@@ -701,6 +735,152 @@ render_service_debug_info() {
   journalctl -u "${SERVICE_NAME}" --no-pager -n 100 || true
 }
 
+prepare_release_extract() {
+  local tag="$1"
+  local archive_path
+
+  archive_path="$(download_release "${tag}")"
+  extract_release_archive "${tag}" "${archive_path}"
+}
+
+deploy_release_payload() {
+  local extract_dir="$1"
+
+  ensure_system_user
+  install -d -m 0755 "${INSTALL_DIR}"
+  install -m 0755 "${extract_dir}/epusdt" "${BIN_PATH}"
+  install -m 0644 "${extract_dir}/.env.example" "${CONFIG_EXAMPLE_PATH}"
+}
+
+finalize_install_dir_ownership() {
+  chown -R "${SYSTEM_USER}:${SYSTEM_USER}" "${INSTALL_DIR}"
+}
+
+refresh_service_unit() {
+  write_systemd_unit
+  systemctl daemon-reload
+}
+
+ensure_existing_upgrade_config() {
+  [[ -f "${CONFIG_PATH}" ]] || die "$(trf upgrade_existing_config_required "${CONFIG_PATH}")"
+}
+
+create_upgrade_backup_dir() {
+  local tag="$1"
+  local backup_dir
+
+  backup_dir="$(cache_dir_for_tag "${tag}")/backup-current"
+  rm -rf "${backup_dir}"
+  mkdir -p "${backup_dir}"
+  printf '%s\n' "${backup_dir}"
+}
+
+backup_release_files() {
+  local backup_dir="$1"
+
+  [[ -f "${BIN_PATH}" ]] && cp -p "${BIN_PATH}" "${backup_dir}/epusdt"
+  [[ -f "${CONFIG_EXAMPLE_PATH}" ]] && cp -p "${CONFIG_EXAMPLE_PATH}" "${backup_dir}/.env.example"
+  [[ -f "${SYSTEMD_UNIT_PATH}" ]] && cp -p "${SYSTEMD_UNIT_PATH}" "${backup_dir}/${SERVICE_NAME}.service"
+}
+
+restore_release_files() {
+  local backup_dir="$1"
+
+  install -d -m 0755 "${INSTALL_DIR}"
+
+  if [[ -f "${backup_dir}/epusdt" ]]; then
+    install -m 0755 "${backup_dir}/epusdt" "${BIN_PATH}"
+  else
+    rm -f "${BIN_PATH}"
+  fi
+
+  if [[ -f "${backup_dir}/.env.example" ]]; then
+    install -m 0644 "${backup_dir}/.env.example" "${CONFIG_EXAMPLE_PATH}"
+  else
+    rm -f "${CONFIG_EXAMPLE_PATH}"
+  fi
+
+  if [[ -f "${backup_dir}/${SERVICE_NAME}.service" ]]; then
+    install -m 0644 "${backup_dir}/${SERVICE_NAME}.service" "${SYSTEMD_UNIT_PATH}"
+  else
+    rm -f "${SYSTEMD_UNIT_PATH}"
+  fi
+
+  finalize_install_dir_ownership
+  systemctl daemon-reload
+}
+
+apply_upgrade_release() {
+  local extract_dir="$1"
+
+  deploy_release_payload "${extract_dir}"
+  finalize_install_dir_ownership
+  refresh_service_unit
+}
+
+restart_service_and_verify() {
+  local tag="$1"
+  local backup_dir="${2:-}"
+
+  if systemctl restart "${SERVICE_NAME}" && systemctl is-active --quiet "${SERVICE_NAME}"; then
+    log "$(trf service_upgraded_restarted "${SERVICE_NAME}" "${INSTALL_DIR}" "${tag}")"
+    return 0
+  fi
+
+  render_service_debug_info
+
+  if [[ -n "${backup_dir}" ]]; then
+    warn "$(trf upgrade_restart_failed_rollback_start "${SERVICE_NAME}")"
+    if ! restore_release_files "${backup_dir}"; then
+      die "$(trf upgrade_restart_failed_rollback_failed "${SERVICE_NAME}" "${tag}")"
+    fi
+    if systemctl restart "${SERVICE_NAME}" && systemctl is-active --quiet "${SERVICE_NAME}"; then
+      die "$(trf upgrade_restart_failed_rolled_back "${SERVICE_NAME}" "${tag}")"
+    fi
+    render_service_debug_info
+    die "$(trf upgrade_restart_failed_rollback_failed "${SERVICE_NAME}" "${tag}")"
+  fi
+
+  die "$(trf service_failed_active "${SERVICE_NAME}")"
+}
+
+handle_upgrade_restart() {
+  local tag="$1"
+  local restart_mode="$2"
+  local backup_dir="$3"
+  local reply=""
+
+  case "${restart_mode}" in
+    restart)
+      restart_service_and_verify "${tag}" "${backup_dir}"
+      ;;
+    prompt)
+      if ! is_interactive_terminal; then
+        die "$(trf action_upgrade_restart_no_tty)"
+      fi
+
+      warn "$(trf action_upgrade_restart_notice "${SERVICE_NAME}")"
+      printf '%b[%s]%b %s' "${COLOR_BOLD}${COLOR_CYAN}" "${EPCTL_NAME}" "${COLOR_RESET}" "$(trf upgrade_restart_prompt "${SERVICE_NAME}")" >&2
+      if ! read -r reply; then
+        reply="n"
+      fi
+
+      if [[ -z "${reply}" ]] || is_affirmative_reply "${reply}"; then
+        restart_service_and_verify "${tag}" "${backup_dir}"
+        return 0
+      fi
+
+      warn "$(trf action_upgrade_restart_skipped "${SERVICE_NAME}" "${SERVICE_NAME}")"
+      ;;
+    skip)
+      warn "$(trf action_upgrade_restart_skipped "${SERVICE_NAME}" "${SERVICE_NAME}")"
+      ;;
+    *)
+      die "$(trf upgrade_restart_flag_conflict)"
+      ;;
+  esac
+}
+
 command_download() {
   local tag=""
   local effective_tag archive_path
@@ -736,7 +916,8 @@ command_install() {
   local app_uri="${DEFAULT_APP_URI}"
   local listen="${DEFAULT_LISTEN}"
   local original_args=("$@")
-  local effective_tag archive_path extract_dir
+  local effective_tag
+  local extract_dir
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -784,6 +965,7 @@ command_install() {
   require_command tar
   require_command install
   require_command systemctl
+  require_command cp
   require_command grep
   require_command sed
   require_command getent
@@ -792,18 +974,11 @@ command_install() {
   require_command chown
 
   effective_tag="$(resolve_effective_tag "${tag}")"
-  archive_path="$(download_release "${effective_tag}")"
-  extract_dir="$(extract_release_archive "${effective_tag}" "${archive_path}")"
-
-  ensure_system_user
-  install -d -m 0755 "${INSTALL_DIR}"
-  install -m 0755 "${extract_dir}/epusdt" "${BIN_PATH}"
-  install -m 0644 "${extract_dir}/.env.example" "${CONFIG_EXAMPLE_PATH}"
+  extract_dir="$(prepare_release_extract "${effective_tag}")"
+  deploy_release_payload "${extract_dir}"
   create_default_config_if_missing "${app_uri}" "${listen}"
-  chown -R "${SYSTEM_USER}:${SYSTEM_USER}" "${INSTALL_DIR}"
-
-  write_systemd_unit
-  systemctl daemon-reload
+  finalize_install_dir_ownership
+  refresh_service_unit
   systemctl enable --now "${SERVICE_NAME}"
 
   if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
@@ -845,15 +1020,31 @@ command_self_install() {
 }
 
 command_upgrade() {
+  local tag=""
+  local restart_mode="restart"
   local original_args=("$@")
+  local effective_tag
+  local extract_dir backup_dir
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --tag|--app-uri|--listen)
-        [[ $# -ge 2 ]] || die "$(trf arg_requires_value "$1")"
+      --tag)
+        [[ $# -ge 2 ]] || die "$(trf arg_requires_value "--tag")"
+        tag="$2"
         shift 2
         ;;
-      --tag=*|--app-uri=*|--listen=*)
+      --tag=*)
+        tag="${1#*=}"
+        shift
+        ;;
+      --prompt-restart)
+        [[ "${restart_mode}" == "restart" ]] || die "$(trf upgrade_restart_flag_conflict)"
+        restart_mode="prompt"
+        shift
+        ;;
+      --no-restart)
+        [[ "${restart_mode}" == "restart" ]] || die "$(trf upgrade_restart_flag_conflict)"
+        restart_mode="skip"
         shift
         ;;
       -h|--help)
@@ -867,7 +1058,33 @@ command_upgrade() {
   done
 
   ensure_root_via_sudo upgrade "${original_args[@]}"
-  command_install "${original_args[@]}"
+
+  require_root
+  require_linux
+  require_command tar
+  require_command install
+  require_command systemctl
+  require_command cp
+  require_command grep
+  require_command sed
+  require_command getent
+  require_command groupadd
+  require_command useradd
+  require_command chown
+
+  effective_tag="$(resolve_effective_tag "${tag}")"
+  ensure_existing_upgrade_config
+  extract_dir="$(prepare_release_extract "${effective_tag}")"
+  backup_dir="$(create_upgrade_backup_dir "${effective_tag}")"
+  backup_release_files "${backup_dir}"
+  if ! apply_upgrade_release "${extract_dir}"; then
+    warn "$(trf upgrade_deploy_failed_rollback_start "${SERVICE_NAME}")"
+    if restore_release_files "${backup_dir}"; then
+      die "$(trf upgrade_deploy_failed_rolled_back "${SERVICE_NAME}" "${effective_tag}")"
+    fi
+    die "$(trf upgrade_deploy_failed_rollback_failed "${SERVICE_NAME}" "${effective_tag}")"
+  fi
+  handle_upgrade_restart "${effective_tag}" "${restart_mode}" "${backup_dir}"
 }
 
 command_show_config() {
@@ -1280,9 +1497,9 @@ interactive_upgrade() {
 
   tag="$(prompt_input "$(trf input_upgrade_tag)")" || return 0
   if [[ -n "${tag}" ]]; then
-    run_menu_command upgrade --tag "${tag}"
+    run_menu_command upgrade --tag "${tag}" --prompt-restart
   else
-    run_menu_command upgrade
+    run_menu_command upgrade --prompt-restart
   fi
 }
 

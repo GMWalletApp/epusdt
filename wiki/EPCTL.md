@@ -86,6 +86,10 @@ epctl
 ./epctl upgrade --tag v1.0.9
 ```
 
+直接执行 `./epctl upgrade --tag ...` 时，脚本会在文件替换完成后默认立即执行 `systemctl restart epusdt`。
+如果你只想替换文件而不重启，请显式传入 `--no-restart`。
+如果你希望人工确认，再传 `--prompt-restart`；交互终端下提示为 `[Y/n]`，直接回车默认重启。
+
 查看配置、状态、日志：
 
 ```bash
@@ -136,6 +140,27 @@ EPCTL_ASSUME_YES=1 ./epctl download
 - `http_listen=<--listen，默认 127.0.0.1:8000>`
 
 如果 `/opt/epusdt/.env` 已存在，则安装和升级都会保留它，不会覆盖。
+`/opt/epusdt/.env.example` 则会在每次 install / upgrade 时按当前 release 重新刷新。
+
+## 升级时会发生什么
+
+执行 `upgrade` 时，脚本会：
+
+1. 按当前机器架构下载目标 GitHub Release 压缩包
+2. 解压到 `/tmp/epusdt/<tag>/extract/`
+3. 要求现有 `/opt/epusdt/.env` 已存在；若不存在会直接失败，并提示先执行 `install`
+4. 覆盖 `/opt/epusdt/epusdt`
+5. 覆盖 `/opt/epusdt/.env.example`
+6. 保留现有 `/opt/epusdt/.env`
+7. 刷新 `epusdt.service` 并执行 `systemctl daemon-reload`
+8. 默认立即执行 `systemctl restart epusdt`
+
+补充行为：
+
+- `upgrade` 不会再补写 `.env`，也不会再执行 `systemctl enable`
+- `upgrade --no-restart` 只替换文件，不重启服务，并输出手动 restart 提示
+- `upgrade --prompt-restart` 会在交互终端下询问是否重启
+- 如果升级后的重启失败，脚本会尝试回滚旧的二进制、`.env.example` 和 unit 文件
 
 ## systemd 服务说明
 
@@ -191,11 +216,12 @@ GET /admin/api/v1/auth/init-password
 
 它会在本机：
 
-- 构建 `ubuntu:24.04` + systemd 测试镜像
+- 直接从 `ubuntu:24.04` 启动容器，并在容器启动阶段安装 systemd 与测试依赖
 - 启动一个特权容器
 - 在容器内执行 `epctl self-install`
 - 下载真实 GitHub Release
 - 安装 `epusdt`
+- 若传入 `upgrade-tag`，验证 `upgrade --no-restart`、默认 `upgrade`、以及 `upgrade --prompt-restart` 的 `n/回车` 分支
 - 检查 `systemd` 服务、`www/index.html`、配置文件、日志、状态输出
 - 验证 `init-password` 首次成功、修改管理员密码后再次请求返回 `10040`
 
