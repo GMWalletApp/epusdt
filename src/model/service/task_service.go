@@ -193,6 +193,10 @@ func evmChainLogLabel(chainNetwork string) string {
 		return "POLYGON"
 	case mdb.NetworkPlasma:
 		return "PLASMA"
+	case mdb.NetworkBase:
+		return "BASE"
+	case mdb.NetworkArbitrum:
+		return "ARBITRUM"
 	default:
 		return "EVM"
 	}
@@ -350,6 +354,10 @@ func networkDisplay(n string) string {
 		return "Polygon"
 	case mdb.NetworkPlasma:
 		return "Plasma"
+	case mdb.NetworkBase:
+		return "Base"
+	case mdb.NetworkArbitrum:
+		return "Arbitrum One"
 	default:
 		if n == "" {
 			return "Tron"

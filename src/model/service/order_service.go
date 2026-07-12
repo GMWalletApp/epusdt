@@ -57,7 +57,7 @@ func normalizeOrderAddressByNetwork(network, address string) string {
 	network = strings.ToLower(strings.TrimSpace(network))
 	address = strings.TrimSpace(address)
 	switch network {
-	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma:
+	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma, mdb.NetworkBase, mdb.NetworkArbitrum:
 		return strings.ToLower(address)
 	case mdb.NetworkTon:
 		if normalized, err := addressutil.NormalizeTonAddress(address); err == nil {

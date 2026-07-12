@@ -10,6 +10,7 @@ import (
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	epLog "github.com/GMWalletApp/epusdt/util/log"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"go.uber.org/zap"
 )
@@ -210,5 +211,32 @@ func TestResolveChainWsURLDisabledRow(t *testing.T) {
 
 	if got, ok := resolveChainWsURL(mdb.NetworkEthereum, "[TEST]"); ok {
 		t.Fatalf("resolveChainWsURL() = (%q, true), want false", got)
+	}
+}
+
+func TestAddedEvmRecipientSnapshotsAreIsolated(t *testing.T) {
+	base := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	arbitrum := common.HexToAddress("0x2222222222222222222222222222222222222222")
+	storeAddedEvmRecipients(mdb.NetworkBase, []mdb.WalletAddress{{Address: base.Hex()}})
+	storeAddedEvmRecipients(mdb.NetworkArbitrum, []mdb.WalletAddress{{Address: arbitrum.Hex()}})
+	if !isWatchedAddedEvmRecipient(mdb.NetworkBase, base) || isWatchedAddedEvmRecipient(mdb.NetworkBase, arbitrum) {
+		t.Fatal("Base recipient snapshot is not isolated")
+	}
+	if !isWatchedAddedEvmRecipient(mdb.NetworkArbitrum, arbitrum) || isWatchedAddedEvmRecipient(mdb.NetworkArbitrum, base) {
+		t.Fatal("Arbitrum recipient snapshot is not isolated")
+	}
+}
+
+func TestLoadChainTokenContractsSkipsInvalidEvmContracts(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+	if err := dao.Mdb.Create(&mdb.ChainToken{Network: mdb.NetworkBase, Symbol: "BAD", ContractAddress: "not-an-address", Enabled: true}).Error; err != nil {
+		t.Fatalf("create invalid token: %v", err)
+	}
+	contracts := loadChainTokenContracts(mdb.NetworkBase, "[TEST]")
+	for _, contract := range contracts {
+		if contract == (common.Address{}) {
+			t.Fatal("invalid contract was converted to zero address")
+		}
 	}
 }

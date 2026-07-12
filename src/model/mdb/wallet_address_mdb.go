@@ -12,6 +12,8 @@ const (
 	NetworkBsc      = "binance"
 	NetworkPolygon  = "polygon"
 	NetworkPlasma   = "plasma"
+	NetworkBase     = "base"
+	NetworkArbitrum = "arbitrum"
 	NetworkTon      = "ton"
 	NetworkAptos    = "aptos"
 )

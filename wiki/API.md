@@ -262,6 +262,14 @@ function epaySign(array $params, string $secretKey): string
 }
 ```
 
+当前内置的新增 EVM 主网资产为：
+
+- Base（`base`，Chain ID `8453`）：Circle 原生 `USDC`。
+- Arbitrum One（`arbitrum`，Chain ID `42161`）：Circle 原生 `USDC`、`USDT`（同合约已升级为 USDT0）。
+- 首期不支持两条链的原生 ETH，也不默认接收 Base USDbC 或 Arbitrum USDC.e。
+
+链、代币合约、RPC 节点和钱包地址仍由后台数据库配置决定。Base 与 Arbitrum 都需要配置可用的 WebSocket RPC；手动补单需要额外配置 HTTP RPC（`purpose=manual_verify` 或 `both`）。
+
 `supported_assets` 只包含同时满足以下条件的组合：
 
 - 链已启用。

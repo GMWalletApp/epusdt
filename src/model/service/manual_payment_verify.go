@@ -91,7 +91,7 @@ func validateManualOrderPaymentDefault(order *mdb.Orders, blockTransactionID str
 		canonicalTxID, err = validateManualTonPayment(order, txID)
 	case mdb.NetworkAptos:
 		canonicalTxID, err = ValidateManualAptosPayment(order, txID)
-	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma:
+	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma, mdb.NetworkBase, mdb.NetworkArbitrum:
 		canonicalTxID, err = validateManualEvmPayment(order, txID)
 	default:
 		return "", fmt.Errorf("unsupported manual payment verification network: %s", order.Network)
@@ -125,7 +125,7 @@ func ensureManualBlockTransactionUnused(order *mdb.Orders, canonicalTxID string)
 
 func manualBlockTransactionIDIsHex(network string) bool {
 	switch strings.ToLower(strings.TrimSpace(network)) {
-	case mdb.NetworkTron, mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma, mdb.NetworkAptos:
+	case mdb.NetworkTron, mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma, mdb.NetworkBase, mdb.NetworkArbitrum, mdb.NetworkAptos:
 		return true
 	default:
 		return false
@@ -151,7 +151,7 @@ func equivalentManualBlockTransactionIDs(network, canonicalTxID string) []string
 
 	add(canonicalTxID)
 	switch network {
-	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma, mdb.NetworkAptos:
+	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma, mdb.NetworkBase, mdb.NetworkArbitrum, mdb.NetworkAptos:
 		body := strings.TrimPrefix(strings.TrimPrefix(canonicalTxID, "0x"), "0X")
 		body = strings.ToLower(body)
 		add("0x" + body)

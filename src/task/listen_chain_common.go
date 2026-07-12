@@ -84,6 +84,10 @@ func loadChainTokenContracts(network, logPrefix string) []common.Address {
 		if c == "" {
 			continue
 		}
+		if !common.IsHexAddress(c) {
+			log.Sugar.Warnf("%s skip invalid token contract network=%s symbol=%s contract=%q", logPrefix, network, t.Symbol, c)
+			continue
+		}
 		addrs = append(addrs, common.HexToAddress(c))
 	}
 	return addrs

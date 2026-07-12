@@ -149,6 +149,47 @@ func TestSeedChainTokensIncludesAptosAssets(t *testing.T) {
 	}
 }
 
+func TestSeedChainsAndTokensIncludeBaseAndArbitrum(t *testing.T) {
+	db := setupSeedTableTestDB(t, &mdb.Chain{}, &mdb.ChainToken{})
+	Mdb = db
+
+	seedChains()
+	seedChainTokens()
+
+	chains := map[string]struct {
+		name    string
+		chainID string
+	}{
+		mdb.NetworkBase:     {name: "Base", chainID: `"chain_id":8453`},
+		mdb.NetworkArbitrum: {name: "Arbitrum One", chainID: `"chain_id":42161`},
+	}
+	for network, want := range chains {
+		var row mdb.Chain
+		if err := Mdb.Where("network = ?", network).Take(&row).Error; err != nil {
+			t.Fatalf("load %s chain seed: %v", network, err)
+		}
+		if !row.Enabled || row.DisplayName != want.name || !strings.Contains(row.Extra, want.chainID) {
+			t.Fatalf("unexpected %s chain seed: %+v", network, row)
+		}
+	}
+
+	contracts := map[string]string{
+		mdb.NetworkBase + "/USDC":     "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+		mdb.NetworkArbitrum + "/USDC": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+		mdb.NetworkArbitrum + "/USDT": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+	}
+	for key, contract := range contracts {
+		parts := strings.Split(key, "/")
+		var row mdb.ChainToken
+		if err := Mdb.Where("network = ? AND symbol = ?", parts[0], parts[1]).Take(&row).Error; err != nil {
+			t.Fatalf("load token seed %s: %v", key, err)
+		}
+		if !row.Enabled || row.Decimals != 6 || !strings.EqualFold(row.ContractAddress, contract) {
+			t.Fatalf("unexpected token seed %s: %+v", key, row)
+		}
+	}
+}
+
 func TestSeedDefaultSettingsIncludesSystemLogLevel(t *testing.T) {
 	db := setupSeedSettingsTestDB(t)
 	Mdb = db

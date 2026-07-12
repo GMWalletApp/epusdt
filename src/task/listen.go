@@ -13,6 +13,8 @@ func Start() {
 	go StartBscWebSocketListener()
 	go StartPolygonWebSocketListener()
 	go StartPlasmaWebSocketListener()
+	go StartBaseWebSocketListener()
+	go StartArbitrumWebSocketListener()
 	go StartTronBlockScannerListener()
 	go StartTonBlockScannerListener()
 	go StartAptosLedgerScannerListener()

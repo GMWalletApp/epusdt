@@ -145,7 +145,7 @@ Epusdt
 
 ## 实现原理
 
-Epusdt 通过监听多条区块链网络（TRC20、ERC20、BEP20、Polygon 等）的 API 或 RPC 节点，实时捕获钱包地址的代币入账事件，利用**金额差异**与**时效性**精确匹配交易归属：
+Epusdt 通过监听多条区块链网络（TRON、Ethereum、BSC、Polygon、Base、Arbitrum、Solana、TON、Aptos 等）的 API 或 RPC 节点，实时捕获钱包地址的代币入账事件，利用**金额差异**与**时效性**精确匹配交易归属：
 
 ```text
 工作流程：
