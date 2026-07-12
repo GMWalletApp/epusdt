@@ -134,8 +134,24 @@ Epusdt 已完成第三方安全审计。
 
 仓库内还提供顶层脚本：
 
+- [`./build.sh`](./build.sh) 用于一键编译当前平台、指定平台或全部平台，产物输出到 `dist/`
 - [`./epctl`](./epctl) 用于 Linux 二进制安装、升级、查看配置、状态和初始化密码
 - [`./epctl-docker-test.sh`](./epctl-docker-test.sh) 用于在本机 Docker 里跑 Ubuntu + systemd 的真实安装验收
+
+一键编译当前平台：
+
+```bash
+./build.sh
+```
+
+编译 Linux AMD64 或全部支持平台：
+
+```bash
+./build.sh linux-amd64
+./build.sh all
+```
+
+脚本会自动写入版本号、Git 提交号和编译时间，并生成压缩包及 SHA-256 校验文件。可通过 `BUILD_VERSION=v1.2.3 ./build.sh linux-amd64` 指定版本号。
 
 ---
 
