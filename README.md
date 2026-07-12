@@ -36,19 +36,23 @@
 
 私有部署，按 HTTP API 接入，几分钟内就可以开始接收 **Crypto Payments**。
 
-### 已支持网络与代币
+### 默认内置网络与代币
 
 | 网络 | 代币 |
 |------|------|
 | **TRC20** (Tron) | USDT、TRX |
-| **ERC20** (Ethereum) | USDT、USDC、ETH |
-| **Solana** | USDT、USDC |
-| **BEP20** (BSC) | USDT、USDC、BNB |
-| **Polygon** | USDT、USDC |
+| **ERC20** (Ethereum) | USDT、USDC |
+| **Solana** | USDT、USDC、SOL |
+| **BEP20** (BSC) | USDT、USDC |
+| **Polygon** | USDT、USDC、USDC.e |
+| **Plasma** | USDT |
+| **Base** (Chain ID 8453) | USDC |
+| **Arbitrum One** (Chain ID 42161) | USDC、USDT（官方合约已升级为 USDT0） |
+| **TON** | TON、USDT |
 | **Aptos** | USDC、USDT |
 | **更多** | 持续扩展中… |
 
-> 具体支持的链与代币以 [最新版本](https://github.com/GMWalletApp/epusdt/releases) 及 [官方文档](https://epusdt.com) 为准。
+> Base 默认使用 Circle 原生 USDC，不包含 USDbC；Arbitrum One 默认使用 Circle 原生 USDC 和官方 USDT/USDT0 合约，暂不支持两条链的原生 ETH。实际可用资产还取决于后台是否启用对应链、代币，以及是否配置了该链钱包地址和可用 RPC 节点，可通过 `GET /payments/gmpay/v1/config` 查询。
 
 ---
 
@@ -75,7 +79,7 @@ Epusdt 已完成第三方安全审计。
 
 ## 核心特性
 
-- **多链多币种** — 支持 TRC20、ERC20、BEP20、Polygon、Aptos 等主流网络
+- **多链多币种** — 支持 TRON、Ethereum、Solana、BSC、Polygon、Plasma、Base、Arbitrum One、TON、Aptos 等网络
 - **私有化部署** — 资金完全自主掌控
 - **零依赖运行** — 单个二进制即可启动，低并发场景无需 MySQL + Redis
 - **跨平台** — 支持 x86 / ARM 架构的 Windows / Linux / Mac
@@ -99,11 +103,68 @@ Epusdt 已完成第三方安全审计。
 | [宝塔面板部署](https://epusdt.com/guide/installation/aapanel) | 适合宝塔用户 |
 | [手动部署](https://epusdt.com/guide/installation/manual.html) | 完全手动控制 |
 | [开发者 API 文档](https://epusdt.com/zh/guide/integration/gmpay.html) | 接口集成指南 |
+| [仓库内：完整 API 文档](wiki/API.md) | 当前代码路由、签名、请求参数、回调与示例 |
 
 仓库内还提供顶层脚本：
 
 - [`./epctl`](./epctl) 用于 Linux 二进制安装、升级、查看配置、状态和初始化密码
 - [`./epctl-docker-test.sh`](./epctl-docker-test.sh) 用于在本机 Docker 里跑 Ubuntu + systemd 的真实安装验收
+
+---
+
+## API 暴露与认证边界
+
+正常运行时，HTTP 端口同时承载收银台、商户支付接口和管理后台接口。部署时应通过 HTTPS 反向代理对外提供服务，并根据下表限制不需要公开的路径。
+
+### 公开及订单访问接口
+
+| 方法 | 路径 | 认证方式 | 用途 |
+|------|------|----------|------|
+| `POST` | `/` | 无 | 服务探测 |
+| `GET` | `/payments/gmpay/v1/config` | 无 | 获取公开站点配置及当前可用资产 |
+| `GET` | `/pay/checkout-counter/{trade_id}` | 无 | 跳转到收银台页面 |
+| `GET` | `/pay/checkout-counter-resp/{trade_id}` | 无 | 获取收银台订单数据 |
+| `GET` | `/pay/check-status/{trade_id}` | 无 | 查询订单状态 |
+| `GET` | `/pay/return/{trade_id}` | 无 | EPay 支付完成后的商户跳转 |
+| `POST` | `/pay/submit-tx-hash/{trade_id}` | `trade_id` 能力凭证 | 用户提交链上交易哈希进行补单验证 |
+| `POST` | `/pay/switch-network` | `trade_id` 能力凭证 | 为订单选择或切换支付网络/通道 |
+
+`trade_id` 可用于读取订单状态、切换支付目标或提交交易哈希，应当视为不可公开传播的能力凭证，不要写入公开日志、统计参数或第三方页面。
+
+### 商户及支付平台接口
+
+| 方法 | 路径 | 认证方式 |
+|------|------|----------|
+| `POST` | `/payments/gmpay/v1/order/create-transaction` | 商户 PID、API Key 签名及可选 IP 白名单 |
+| `GET/POST` | `/payments/epay/v1/order/create-transaction/submit.php` | EPay 签名及可选 IP 白名单 |
+| `POST` | `/payments/okpay/v1/notify` | OkPay 平台签名 |
+
+Base 与 Arbitrum One 复用上述通用接口，不提供单独的链专用 API：
+
+| 网络 | GMPay 参数 | EPay `type` 示例 |
+|------|------------|------------------|
+| Base | `network=base`、`token=USDC` | `USDC.base` |
+| Arbitrum One | `network=arbitrum`、`token=USDC` | `USDC.arbitrum` |
+| Arbitrum One | `network=arbitrum`、`token=USDT` | `USDT.arbitrum` |
+
+### 管理后台接口
+
+- `POST /admin/api/v1/auth/login` 和 `GET /admin/api/v1/auth/init-password-hash` 不要求 JWT。
+- 其余 `/admin/api/v1/*` 接口均要求管理员 JWT，覆盖 API Key、通知渠道、链与代币、RPC、钱包、订单、仪表盘和系统设置管理。
+- `GET /admin/api/v1/dashboard/rpc-stats` 是需要 JWT 的 SSE 长连接接口。
+
+### 首次安装接口
+
+当 `.env` 不存在或配置了 `install=true` 时，程序会先开放以下安装接口，完成安装后才启动正常业务 API：
+
+| 方法 | 路径 | 认证方式 |
+|------|------|----------|
+| `GET` | `/api/install/defaults` | 无 |
+| `POST` | `/api/install` | 无 |
+
+安装服务默认监听 `:8000`，`POST /api/install` 会初始化数据库并返回初始管理员密码。首次启动必须限制在本机或可信内网完成，不要在未安装状态下直接将 `8000` 端口暴露到公网。
+
+完整字段、签名算法、响应结构和回调示例请查看 [仓库内 API 文档](wiki/API.md)。
 
 ---
 
@@ -145,7 +206,7 @@ Epusdt
 
 ## 实现原理
 
-Epusdt 通过监听多条区块链网络（TRON、Ethereum、BSC、Polygon、Base、Arbitrum、Solana、TON、Aptos 等）的 API 或 RPC 节点，实时捕获钱包地址的代币入账事件，利用**金额差异**与**时效性**精确匹配交易归属：
+Epusdt 通过监听多条区块链网络（TRON、Ethereum、BSC、Polygon、Base、Arbitrum One、Solana、TON、Aptos 等）的 API 或 RPC 节点，实时捕获钱包地址的代币入账事件，利用**金额差异**与**时效性**精确匹配交易归属：
 
 ```text
 工作流程：
