@@ -54,6 +54,33 @@
 
 > Base 默认使用 Circle 原生 USDC，不包含 USDbC；Arbitrum One 默认使用 Circle 原生 USDC 和官方 USDT/USDT0 合约，暂不支持两条链的原生 ETH。实际可用资产还取决于后台是否启用对应链、代币，以及是否配置了该链钱包地址和可用 RPC 节点，可通过 `GET /payments/gmpay/v1/config` 查询。
 
+### 默认监控合约与资产标识
+
+以下地址是新数据库首次启动时写入的默认配置。EVM/TRON 使用代币合约地址，Solana 使用 Mint 地址，TON 使用 Jetton Master 地址，Aptos 使用 Fungible Asset Metadata 地址；原生资产没有合约地址。已有数据库中的同网络、同代币配置不会被启动过程覆盖，运行时应以管理后台和数据库中的 `chain_tokens` 实际记录为准。
+
+| 网络 | `network` 参数 | 代币 | 合约或资产标识 | 精度 |
+|------|-----------------|------|------------------|------|
+| TRON | `tron` | USDT | `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t` | 6 |
+| TRON | `tron` | TRX | 原生资产，无合约地址 | 6 |
+| Ethereum | `ethereum` | USDT | `0xdAC17F958D2ee523a2206206994597C13D831ec7` | 6 |
+| Ethereum | `ethereum` | USDC | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` | 6 |
+| Solana | `solana` | USDT | `Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB` | 6 |
+| Solana | `solana` | USDC | `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` | 6 |
+| Solana | `solana` | SOL | 原生资产，无合约地址 | 9 |
+| BSC | `binance` | USDT | `0x55d398326f99059fF775485246999027B3197955` | 18 |
+| BSC | `binance` | USDC | `0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d` | 18 |
+| Polygon | `polygon` | USDT | `0xc2132D05D31c914a87C6611C10748AEb04B58e8F` | 6 |
+| Polygon | `polygon` | USDC | `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` | 6 |
+| Polygon | `polygon` | USDC.e | `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174` | 6 |
+| Plasma | `plasma` | USDT | `0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb` | 6 |
+| Base | `base` | USDC | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | 6 |
+| Arbitrum One | `arbitrum` | USDC | `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` | 6 |
+| Arbitrum One | `arbitrum` | USDT | `0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9` | 6 |
+| TON | `ton` | TON | 原生资产，无合约地址 | 9 |
+| TON | `ton` | USDT | `0:b113a994b5024a16719f69139328eb759596c38a25f59028b146fecdc3621dfe` | 6 |
+| Aptos | `aptos` | USDC | `0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b` | 6 |
+| Aptos | `aptos` | USDT | `0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d6ffc9dc2b` | 6 |
+
 ---
 
 ## 安全审计
