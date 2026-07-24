@@ -1,6 +1,9 @@
 package telegram
 
-import tb "gopkg.in/telebot.v3"
+import (
+	"github.com/GMWalletApp/epusdt/lang"
+	tb "gopkg.in/telebot.v3"
+)
 
 const (
 	START_CMD = "/start"
@@ -9,6 +12,6 @@ const (
 var Cmds = []tb.Command{
 	{
 		Text:        START_CMD,
-		Description: "开始",
+		Description: lang.T("cmd_start_desc"),
 	},
 }

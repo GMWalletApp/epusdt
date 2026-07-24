@@ -9,6 +9,7 @@ package mdb
 // empty and fall back to hardcoded defaults until an admin sets them. The
 // system.jwt_secret key is auto-generated on first startup.
 const (
+	SettingGroupLang   = "lang"
 	SettingGroupBrand  = "brand"
 	SettingGroupRate   = "rate"
 	SettingGroupSystem = "system"
@@ -46,6 +47,7 @@ const (
 	SettingKeyRateAdjustPercent        = "rate.adjust_percent"
 	SettingKeyRateOkxC2cEnabled        = "rate.okx_c2c_enabled"
 	SettingKeyRateApiUrl               = "rate.api_url"
+	SettingKeyLanguage                 = "lang.language"
 	SettingKeyRateMode                 = "rate.mode"
 	SettingKeyRateCacheTTLSeconds      = "rate.cache_ttl_seconds"
 
@@ -73,7 +75,7 @@ const (
 )
 
 type Setting struct {
-	Group       string `gorm:"column:group;size:32;index:settings_group_index" json:"group" enums:"brand,rate,system,epay,okpay" example:"rate"`
+	Group       string `gorm:"column:group;size:32;index:settings_group_index" json:"group" enums:"lang,brand,rate,system,epay,okpay" example:"rate"`
 	Key         string `gorm:"column:key;uniqueIndex:settings_key_uindex;size:128" json:"key" example:"rate.forced_rate_list"`
 	Value       string `gorm:"column:value;type:text" json:"value" example:"{\"cny\":{\"usdt\":0.14635}}"`
 	Type        string `gorm:"column:type;size:16;default:string" json:"type" enums:"string,int,bool,json" example:"json"`

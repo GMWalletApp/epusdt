@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/GMWalletApp/epusdt/lang"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/gookit/goutil/mathutil"
@@ -15,8 +16,6 @@ import (
 )
 
 const (
-	ReplaySelectNetwork     = "请选择要添加的钱包网络"
-	ReplayAddWallet         = "请发送 %s 网络收款地址"
 	pendingWalletAddressTTL = 5 * time.Minute
 )
 
@@ -52,13 +51,13 @@ func OnTextMessageHandle(c tb.Context) error {
 	msgText := strings.TrimSpace(msg.Text)
 	state, _ := getPendingWalletAddressState(senderID)
 	if state.Network == "" {
-		_ = c.Send("请先选择网络，再发送地址。")
+		_ = c.Send(lang.T("select_network_first"))
 		return nil
 	}
 
 	var err error
 	if !isValidAddressByNetwork(state.Network, msgText) {
-		_ = c.Send(fmt.Sprintf("钱包 [%s] 添加失败：不是合法的 %s 地址", msgText, strings.ToUpper(state.Network)))
+		_ = c.Send(lang.TF("wallet_add_fail", msgText, strings.ToUpper(state.Network)))
 		return nil
 	}
 	storeAddress := normalizeWalletAddressByNetwork(state.Network, msgText)
@@ -68,7 +67,7 @@ func OnTextMessageHandle(c tb.Context) error {
 	}
 	pendingWalletAddressUsers.Delete(senderID)
 
-	_ = c.Send(fmt.Sprintf("钱包 [%s] 添加成功（%s）", storeAddress, strings.ToUpper(state.Network)))
+	_ = c.Send(lang.TF("wallet_add_success", storeAddress, strings.ToUpper(state.Network)))
 	return WalletList(c)
 }
 
@@ -80,9 +79,9 @@ func WalletList(c tb.Context) error {
 
 	var btnList [][]tb.InlineButton
 	for _, wallet := range wallets {
-		status := "已启用✅"
+		status := lang.T("status_enabled")
 		if wallet.Status == mdb.TokenStatusDisable {
-			status = "已禁用🚫"
+			status = lang.T("status_disabled")
 		}
 		net := wallet.Network
 		if net == "" {
@@ -98,14 +97,14 @@ func WalletList(c tb.Context) error {
 		btnList = append(btnList, []tb.InlineButton{btnInfo})
 	}
 
-	addBtn := tb.InlineButton{Text: "添加钱包地址", Unique: "AddWallet"}
+	addBtn := tb.InlineButton{Text: lang.T("btn_add_wallet"), Unique: "AddWallet"}
 	bots.Handle(&addBtn, func(c tb.Context) error {
 		chains, err := getEnabledSupportedNetworks()
 		if err != nil {
-			return c.Send("读取支持链失败：" + err.Error())
+			return c.Send(lang.T("read_chains_fail") + err.Error())
 		}
 		if len(chains) == 0 {
-			return c.Send("当前没有可用链，请先在后台配置 supported-assets。")
+			return c.Send(lang.T("no_available_chains"))
 		}
 
 		rows := make([][]tb.InlineButton, 0, len(chains))
@@ -118,15 +117,15 @@ func WalletList(c tb.Context) error {
 			bots.Handle(&btn, SelectWalletNetwork)
 			rows = append(rows, []tb.InlineButton{btn})
 		}
-		return c.EditOrSend(ReplaySelectNetwork, &tb.ReplyMarkup{
+		return c.EditOrSend(lang.T("select_network"), &tb.ReplyMarkup{
 			InlineKeyboard: rows,
 		})
 	})
-	refreshBtn := tb.InlineButton{Text: "刷新列表", Unique: "WalletRefresh"}
+	refreshBtn := tb.InlineButton{Text: lang.T("btn_refresh"), Unique: "WalletRefresh"}
 	bots.Handle(&refreshBtn, WalletList)
 	btnList = append(btnList, []tb.InlineButton{addBtn, refreshBtn})
 
-	return c.EditOrSend("请选择钱包继续操作", &tb.ReplyMarkup{
+	return c.EditOrSend(lang.T("select_wallet_prompt"), &tb.ReplyMarkup{
 		InlineKeyboard: btnList,
 	})
 }
@@ -134,7 +133,7 @@ func WalletList(c tb.Context) error {
 func SelectWalletNetwork(c tb.Context) error {
 	network := strings.ToLower(strings.TrimSpace(c.Data()))
 	if network == "" {
-		return c.Send("请选择有效网络")
+		return c.Send(lang.T("select_valid_network"))
 	}
 	if sender := c.Sender(); sender != nil {
 		pendingWalletAddressUsers.Store(sender.ID, pendingWalletAddressState{
@@ -142,7 +141,7 @@ func SelectWalletNetwork(c tb.Context) error {
 			Network:     network,
 		})
 	}
-	return c.Send(fmt.Sprintf(ReplayAddWallet, strings.ToUpper(network)), &tb.ReplyMarkup{
+	return c.Send(lang.TF("add_wallet", strings.ToUpper(network)), &tb.ReplyMarkup{
 		ForceReply: true,
 	})
 }
@@ -155,22 +154,22 @@ func WalletInfo(c tb.Context) error {
 	}
 
 	enableBtn := tb.InlineButton{
-		Text:   "启用",
+		Text:   lang.T("btn_enable"),
 		Unique: "enableBtn",
 		Data:   c.Data(),
 	}
 	disableBtn := tb.InlineButton{
-		Text:   "禁用",
+		Text:   lang.T("btn_disable"),
 		Unique: "disableBtn",
 		Data:   c.Data(),
 	}
 	delBtn := tb.InlineButton{
-		Text:   "删除",
+		Text:   lang.T("btn_delete"),
 		Unique: "delBtn",
 		Data:   c.Data(),
 	}
 	backBtn := tb.InlineButton{
-		Text:   "返回",
+		Text:   lang.T("btn_back"),
 		Unique: "WalletList",
 	}
 
@@ -183,7 +182,7 @@ func WalletInfo(c tb.Context) error {
 	if net == "" {
 		net = mdb.NetworkTron
 	}
-	detail := fmt.Sprintf("网络：%s\n地址：%s", net, tokenInfo.Address)
+	detail := lang.TF("wallet_detail", net, tokenInfo.Address)
 	return c.EditOrReply(detail, &tb.ReplyMarkup{InlineKeyboard: [][]tb.InlineButton{
 		{
 			enableBtn,
@@ -199,7 +198,7 @@ func WalletInfo(c tb.Context) error {
 func EnableWallet(c tb.Context) error {
 	id := mathutil.MustUint(c.Data())
 	if id <= 0 {
-		return c.Send("请求不合法！")
+		return c.Send(lang.T("invalid_request"))
 	}
 	err := data.ChangeWalletAddressStatus(id, mdb.TokenStatusEnable)
 	if err != nil {
@@ -211,7 +210,7 @@ func EnableWallet(c tb.Context) error {
 func DisableWallet(c tb.Context) error {
 	id := mathutil.MustUint(c.Data())
 	if id <= 0 {
-		return c.Send("请求不合法！")
+		return c.Send(lang.T("invalid_request"))
 	}
 	err := data.ChangeWalletAddressStatus(id, mdb.TokenStatusDisable)
 	if err != nil {
@@ -223,7 +222,7 @@ func DisableWallet(c tb.Context) error {
 func DelWallet(c tb.Context) error {
 	id := mathutil.MustUint(c.Data())
 	if id <= 0 {
-		return c.Send("请求不合法！")
+		return c.Send(lang.T("invalid_request"))
 	}
 	err := data.DeleteWalletAddressById(id)
 	if err != nil {

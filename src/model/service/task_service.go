@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/GMWalletApp/epusdt/config"
+	"github.com/GMWalletApp/epusdt/lang"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/model/request"
@@ -351,22 +352,9 @@ func sendPaymentNotification(order *mdb.Orders) {
 	precision := data.GetAmountPrecision()
 	amountFormat := fmt.Sprintf("%%.%df", precision)
 	msg := fmt.Sprintf(
-		"🎉 <b>收款成功通知</b>\n\n"+
-			"💰 <b>金额信息</b>\n"+
-			"├ 订单金额：<code>"+amountFormat+" %s</code>\n"+
-			"└ 实际到账：<code>"+amountFormat+" %s</code>\n\n"+
-			"📋 <b>订单信息</b>\n"+
-			"├ 交易号：<code>%s</code>\n"+
-			"├ 订单号：<code>%s</code>\n"+
-			"├ 网络：<code>%s</code>\n"+
-			"└ 钱包地址：<code>%s</code>\n\n"+
-			"⏰ <b>时间信息</b>\n"+
-			"├ 创建时间：%s\n"+
-			"└ 支付时间：%s",
-		order.Amount,
-		strings.ToUpper(order.Currency),
-		order.ActualAmount,
-		strings.ToUpper(order.Token),
+		lang.T("notify_template"),
+		amountFormat, order.Amount, strings.ToUpper(order.Currency),
+		amountFormat, order.ActualAmount, strings.ToUpper(order.Token),
 		order.TradeId,
 		order.OrderId,
 		networkDisplay(order.Network),
