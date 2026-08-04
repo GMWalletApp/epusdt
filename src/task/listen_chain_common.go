@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"math/big"
 	"sort"
 	"strings"
 	"time"
@@ -10,7 +11,9 @@ import (
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/util/log"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 const evmNodeDialTimeout = 10 * time.Second
@@ -145,6 +148,17 @@ func evmTransferTopics(recipientTopics []common.Hash) [][]common.Hash {
 		return [][]common.Hash{{transferEventHash}}
 	}
 	return [][]common.Hash{{transferEventHash}, nil, recipientTopics}
+}
+
+// evmLiveFilterQuery starts a WebSocket subscription at the current head.
+// go-ethereum otherwise serializes a nil FromBlock as 0x0, which makes public
+// RPC providers reject the subscription as an oversized historical range.
+func evmLiveFilterQuery(contracts []common.Address, recipientTopics []common.Hash) ethereum.FilterQuery {
+	return ethereum.FilterQuery{
+		FromBlock: big.NewInt(int64(rpc.LatestBlockNumber)),
+		Addresses: contracts,
+		Topics:    evmTransferTopics(recipientTopics),
+	}
 }
 
 // resolveChainWsURL picks a healthy WS endpoint from rpc_nodes for the
