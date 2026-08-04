@@ -27,14 +27,10 @@ func RuntimeInit() error {
 		return err
 	}
 
-	concurrency := config.GetQueueConcurrency()
-	if concurrency < 2 {
-		concurrency = 2
-	}
-	if concurrency > 16 {
-		concurrency = 16
-	}
-	if _, err = configureSQLite(RuntimeDB, concurrency); err != nil {
+	// The runtime database is write-heavy (transaction locks and scan cursors).
+	// Serialize those writes through one connection; queue_concurrency controls
+	// workers, not the number of concurrent SQLite writers.
+	if _, err = configureSQLite(RuntimeDB, 1); err != nil {
 		color.Red.Printf("[runtime_db] sqlite connDB err:%s", err.Error())
 		return err
 	}

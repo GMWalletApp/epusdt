@@ -12,7 +12,6 @@ import (
 	"github.com/GMWalletApp/epusdt/model/service"
 	"github.com/GMWalletApp/epusdt/util/log"
 
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -77,10 +76,7 @@ func runBscListener(contracts []common.Address) {
 	}
 	log.Sugar.Infof("[BSC-WS] connecting using WSS node %s watching %d contract(s)", data.RpcNodeLogLabel(wsNode), len(contracts))
 
-	query := ethereum.FilterQuery{
-		Addresses: contracts,
-		Topics:    evmTransferTopics(recipientTopics),
-	}
+	query := evmLiveFilterQuery(contracts, recipientTopics)
 
 	runEvmWsLogListener(ctx, mdb.NetworkBsc, "[BSC-WS]", wsNode, query, func(client *ethclient.Client, vLog types.Log) {
 		if len(vLog.Topics) < 3 {
