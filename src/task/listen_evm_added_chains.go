@@ -31,6 +31,32 @@ func StartArbitrumWebSocketListener() {
 	startAddedEvmWebSocketListener(mdb.NetworkArbitrum, "[ARBITRUM-WS]")
 }
 
+func StartBaseBackfillScannerListener() {
+	startEvmBackfillScanner(
+		mdb.NetworkBase,
+		"[BASE-BACKFILL]",
+		func(wallets []mdb.WalletAddress) int {
+			return storeAddedEvmRecipients(mdb.NetworkBase, wallets)
+		},
+		func(address common.Address) bool {
+			return isWatchedAddedEvmRecipient(mdb.NetworkBase, address)
+		},
+	)
+}
+
+func StartArbitrumBackfillScannerListener() {
+	startEvmBackfillScanner(
+		mdb.NetworkArbitrum,
+		"[ARBITRUM-BACKFILL]",
+		func(wallets []mdb.WalletAddress) int {
+			return storeAddedEvmRecipients(mdb.NetworkArbitrum, wallets)
+		},
+		func(address common.Address) bool {
+			return isWatchedAddedEvmRecipient(mdb.NetworkArbitrum, address)
+		},
+	)
+}
+
 func startAddedEvmWebSocketListener(network, logPrefix string) {
 	for {
 		if data.IsChainEnabled(network) {
@@ -51,6 +77,11 @@ func runAddedEvmListener(network, logPrefix string, contracts []common.Address) 
 		log.Sugar.Errorf("%s failed to get wallet addresses: %v", logPrefix, err)
 		return
 	}
+	recipientTopics := evmRecipientTopicsFromWallets(wallets)
+	if len(recipientTopics) == 0 {
+		log.Sugar.Warnf("%s no enabled wallet addresses, listener idle", logPrefix)
+		return
+	}
 	storeAddedEvmRecipients(network, wallets)
 	go refreshAddedEvmRecipients(ctx, network, logPrefix)
 
@@ -59,7 +90,10 @@ func runAddedEvmListener(network, logPrefix string, contracts []common.Address) 
 		return
 	}
 	log.Sugar.Infof("%s connecting using WSS node %s watching %d contract(s)", logPrefix, data.RpcNodeLogLabel(wsNode), len(contracts))
-	query := ethereum.FilterQuery{Addresses: contracts, Topics: [][]common.Hash{}}
+	query := ethereum.FilterQuery{
+		Addresses: contracts,
+		Topics:    evmTransferTopics(recipientTopics),
+	}
 	runEvmWsLogListener(ctx, network, logPrefix, wsNode, query, func(client *ethclient.Client, vLog types.Log) {
 		processAddedEvmLog(client, network, logPrefix, vLog)
 	})

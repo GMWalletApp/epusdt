@@ -1179,6 +1179,71 @@ func TestOrderProcessingRejectsDuplicateBlockForSameOrder(t *testing.T) {
 	}
 }
 
+func TestOrderProcessingDuplicateBlockResumesSubOrderFinalization(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	if _, err := data.AddWalletAddress("TResumeParentWallet001"); err != nil {
+		t.Fatalf("添加父单钱包失败: %v", err)
+	}
+	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkEthereum, "0xD1B2c3D4e5F60718293aBcDeF001122334455667"); err != nil {
+		t.Fatalf("添加子单钱包失败: %v", err)
+	}
+
+	parentReq := newCreateTransactionRequest("order_resume_finalize", 1)
+	parentReq.Network = mdb.NetworkTron
+	parentResp, err := CreateTransaction(parentReq, nil)
+	if err != nil {
+		t.Fatalf("创建父单失败: %v", err)
+	}
+	subResp, err := SwitchNetwork(&request.SwitchNetworkRequest{
+		TradeId: parentResp.TradeId,
+		Token:   "usdt",
+		Network: mdb.NetworkEthereum,
+	})
+	if err != nil {
+		t.Fatalf("创建子单失败: %v", err)
+	}
+
+	const blockID = "block_resume_finalize"
+	if err = dao.Mdb.Model(&mdb.Orders{}).
+		Where("trade_id = ?", subResp.TradeId).
+		Updates(map[string]interface{}{
+			"status":               mdb.StatusPaySuccess,
+			"block_transaction_id": blockID,
+			"callback_confirm":     mdb.CallBackConfirmNo,
+		}).Error; err != nil {
+		t.Fatalf("模拟子单提交成功失败: %v", err)
+	}
+
+	err = OrderProcessing(&request.OrderProcessingRequest{
+		ReceiveAddress:     subResp.ReceiveAddress,
+		Token:              strings.ToUpper(subResp.Token),
+		Network:            strings.ToLower(subResp.Network),
+		TradeId:            subResp.TradeId,
+		Amount:             subResp.ActualAmount,
+		BlockTransactionId: blockID,
+	})
+	if err != constant.OrderBlockAlreadyProcess {
+		t.Fatalf("重复区块处理结果 = %v, want %v", err, constant.OrderBlockAlreadyProcess)
+	}
+
+	sub, err := data.GetOrderInfoByTradeId(subResp.TradeId)
+	if err != nil {
+		t.Fatalf("读取子单失败: %v", err)
+	}
+	parent, err := data.GetOrderInfoByTradeId(parentResp.TradeId)
+	if err != nil {
+		t.Fatalf("读取父单失败: %v", err)
+	}
+	if parent.Status != mdb.StatusPaySuccess || parent.PayBySubId != sub.ID {
+		t.Fatalf("父单未完成收尾: status=%d pay_by_sub_id=%d want_sub_id=%d", parent.Status, parent.PayBySubId, sub.ID)
+	}
+	if sub.CallBackConfirm != mdb.CallBackConfirmOk {
+		t.Fatalf("子单 callback_confirm = %d, want %d", sub.CallBackConfirm, mdb.CallBackConfirmOk)
+	}
+}
+
 func TestOrderProcessingDoesNotReviveExpiredOrder(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()

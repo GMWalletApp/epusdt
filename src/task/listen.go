@@ -19,6 +19,8 @@ func Start() {
 	go StartBscBackfillScannerListener()
 	go StartPolygonBackfillScannerListener()
 	go StartPlasmaBackfillScannerListener()
+	go StartBaseBackfillScannerListener()
+	go StartArbitrumBackfillScannerListener()
 	go StartTronBlockScannerListener()
 	go StartTonBlockScannerListener()
 	go StartAptosLedgerScannerListener()
