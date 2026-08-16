@@ -15,25 +15,24 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// Context keys populated by CheckApiSign after successful verification.
-// Handlers (pay/order creation) pull ApiKeyIDKey to stamp order.api_key_id.
+// 以下上下文键由 CheckApiSign 在 GMPay 验签成功后写入。
+// 创建订单处理器使用 API Key 信息和本次实际命中的算法固化订单签名语义。
 const (
 	ApiKeyIDKey      = "api_key_id"
 	ApiKeyRowKey     = "api_key_row"
 	SignAlgorithmKey = "gmpay_sign_algorithm"
 )
 
-// CheckApiSign validates the body signature against the secret_key of
-// the api_keys row matching the submitted "pid" field. A single row is
-// valid for all gateway flows — identification is always by pid.
+// CheckApiSign 使用请求 pid 对应 API Key 的 secret_key 校验 GMPay 签名。
+// 该中间件不处理 EPay；EPay 路由始终执行独立的 MD5 验签。
 //
-// Flow:
-//  1. Extract the pid from the request body.
-//  2. Look up the enabled row by pid; if missing, return signature error.
-//  3. Verify signature == lowercase hex HMAC-SHA256(sorted_params, secret_key).
-//  4. Enforce IP whitelist (empty = allow any).
-//  5. Bump call_count / last_used_at (best-effort).
-//  6. Stash api_key_id + row in context and rewind the body.
+// 流程：
+//  1. 读取并回填原始请求体，解析 pid 和 signature。
+//  2. 按 pid 查询启用的 API Key，缺失时返回签名错误。
+//  3. 按 gmpay_sign_mode 校验 HMAC-SHA256、旧版 MD5 或双兼容模式。
+//  4. 校验 IP 白名单，空白名单表示不限制来源。
+//  5. 尝试更新调用次数和最后使用时间，不让统计失败中断交易。
+//  6. 将 API Key 与实际命中的算法写入上下文，供订单固化后续回调算法。
 func CheckApiSign() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(ctx echo.Context) error {

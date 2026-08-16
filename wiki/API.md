@@ -63,12 +63,14 @@
 | `md5` | 仅接受旧版 `MD5(待签名字符串 + secret_key)`。 |
 | `dual` | 先校验 HMAC-SHA256，失败后再校验旧版 MD5；已有 API Key 升级后的默认值。 |
 
-管理员可通过 `PATCH /admin/api/v1/api-keys/{id}` 设置模式，例如 `{"gmpay_sign_mode":"dual"}`。算法由服务端配置决定，客户端不能通过额外请求字段选择算法；额外字段反而会参与签名并导致校验失败。
+管理员可通过 `PATCH /admin/api/v1/api-keys/{id}` 设置模式，例如 `{"gmpay_sign_mode":"dual"}`。算法由服务端配置决定，客户端不能通过额外请求字段选择算法。原始请求中除 `signature` 外的非空字符串或数字字段都会进入签名串，包括服务端业务模型不认识的额外字段：客户端将它们一并签名时可以通过验签，但这些未知字段不会因此写入订单；漏签、布尔值、对象或数组等不支持的值会导致 HTTP 401。
+
+`gmpay_sign_mode` 仅控制 GMPay 入站验签。EPay 接口始终使用独立的 MD5 规则，不读取该模式；反过来，GMPay 请求携带 `sign` 或 `sign_type` 也不会切换到 EPay 协议，这些非空字段只会作为 GMPay 的额外签名参数处理。
 
 注意：
 
 - `pid` 必须参与签名。
-- GMPay 的 `payment_type` 不是必填；如果请求里传了非空 `payment_type`，它和其他非空参数一样必须参与签名。
+- GMPay 的 `payment_type` 不是必填；如果请求里传了非空 `payment_type`，它和其他非空参数一样必须参与签名。即使值为 `Epay`，也只切换订单的回调格式，本次入站请求仍按 GMPay 规则验签。
 - 空字符串和 `null` 不参与签名。
 - 参数名区分大小写。
 - JSON 数字会按服务端数字格式参与签名，例如 `100.00` 会被解析为 `100`；如果需要保留字符串格式，可使用 `application/x-www-form-urlencoded`。
@@ -216,7 +218,7 @@ curl -X POST 'https://pay.example.com/payments/gmpay/v1/order/create-transaction
 | `order_id` | string | 是 | 商户订单号，最长 32 字符，不能重复。 |
 | `currency` | string | 是 | 法币币种，如 `cny`、`usd`。 |
 | `token` | string | 条件必填 | 收款币种，如 `usdt`、`trx`、`usdc`、`sol`、`ton`。GMPay 可与 `network` 同时省略以创建状态 `4` 占位订单。 |
-| `network` | string | 条件必填 | 收款网络，如 `tron`、`solana`、`ton`、`aptos`、`ethereum`、`bsc`、`polygon`、`plasma`、`base`、`arbitrum`。GMPay 可与 `token` 同时省略以创建状态 `4` 占位订单。 |
+| `network` | string | 条件必填 | 收款网络，如 `tron`、`solana`、`ton`、`aptos`、`ethereum`、`binance`、`polygon`、`plasma`、`base`、`arbitrum`。GMPay 可与 `token` 同时省略以创建状态 `4` 占位订单；BSC 的接口标识为 `binance`。 |
 | `amount` | number | 是 | 法币金额，请求值必须大于 `0.01`；保存和返回时会按 `system.amount_precision` 归一化。 |
 | `notify_url` | string | 是 | 支付成功异步回调地址。必须是可解析到公网地址的 HTTP/HTTPS URL。 |
 | `redirect_url` | string | 否 | 支付完成后的同步跳转地址。 |
@@ -385,13 +387,14 @@ curl 'https://pay.example.com/payments/gmpay/v1/config'
     "redirect_url": "https://merchant.example/return",
     "payment_url": "",
     "created_at": 1779530212000,
+    "server_time": 1779530312000,
     "is_selected": false
   },
   "request_id": "b1344d70-ff19-4543-b601-37abfb3b3686"
 }
 ```
 
-注意：该接口的 `expiration_time` 和 `created_at` 是毫秒级时间戳。
+注意：该接口的 `expiration_time`、`created_at` 和 `server_time` 都是毫秒级 Unix 时间戳。前端应以 `server_time` 校准倒计时，不要把它当作秒级时间戳再次乘以 `1000`。
 
 如果订单是状态 `4` 占位订单，返回的仍是同一个父订单 `trade_id`，但链上支付字段尚未生成。该状态可能来自 GMPay 空 token/network 创建，也可能来自 EPay submit.php 在请求和数据库默认值都没有完整 token/network 时创建：
 
@@ -413,6 +416,7 @@ curl 'https://pay.example.com/payments/gmpay/v1/config'
     "redirect_url": "https://merchant.example/return",
     "payment_url": "",
     "created_at": 1779530212000,
+    "server_time": 1779530312000,
     "is_selected": false
   },
   "request_id": "b1344d70-ff19-4543-b601-37abfb3b3686"
@@ -475,7 +479,7 @@ curl -X POST 'https://pay.example.com/pay/submit-tx-hash/20260523171652123456001
 | `trade_id` | path | string | 是 | 要补单的 Epusdt 交易号。 |
 | `block_transaction_id` | JSON body | string | 是 | 用户已支付交易的链上交易哈希或交易引用。 |
 
-当前支持人工验证的网络包括 `tron`、`solana`、`ton`、`aptos`、`ethereum`、`bsc`、`polygon`、`plasma`、`base` 和 `arbitrum`。
+当前支持人工验证的网络包括 `tron`、`solana`、`ton`、`aptos`、`ethereum`、`binance`、`polygon`、`plasma`、`base` 和 `arbitrum`。其中 BSC 的接口标识为 `binance`。
 
 TON 支持以下三种交易引用格式：
 
@@ -581,6 +585,8 @@ curl -X POST 'https://pay.example.com/pay/switch-network' \
 /pay/checkout-counter/{trade_id}
 ```
 
+EPay 认证必须提供 `pid` 和 `sign`。本接口始终使用 EPay MD5，与 API Key 的 `gmpay_sign_mode` 相互独立；`sign_type` 仅为兼容字段，不参与签名。缺少认证参数、API Key 不可用、IP 不在白名单或签名错误时返回 HTTP 401。
+
 ### 请求参数
 
 | 字段 | 位置 | 类型 | 必填 | 说明 |
@@ -602,7 +608,7 @@ curl -X POST 'https://pay.example.com/pay/switch-network' \
 
 - 使用 `pid` 对应的 `secret_key`。
 - 排除 `sign` 和 `sign_type`。
-- 其他非空参数按 ASCII 字典序拼接后追加 `secret_key` 并 MD5；如果接入插件额外传了 `sitename` 等字段，也要一起参与签名。
+- 其他非空参数按 ASCII 字典序拼接后追加 `secret_key` 并 MD5；如果接入插件额外传了 `sitename` 等字段，也要一起参与签名。未知字段可以通过验签但不会写入订单，不能用额外字段切换到 GMPay 或改变业务参数解析。
 
 示例待签名字符串：
 
@@ -640,7 +646,7 @@ EPay 接口解析 `type/token/network/currency` 的规则：
 - `currency` 解析不受 selector 影响：请求参数 `currency` > 数据库 `epay.default_currency` > `cny`。
 - 最终解析结果里，`token/network` 同时有值时创建具体链上订单；同时为空时创建状态 `4` 占位订单；最终只缺一个时返回参数错误。
 - 这意味着“请求里只传了一个值”不一定报错；如果另一个值能被 default 补齐，仍会成功。只有最终解析后仍然只剩一个值，才返回 `10009`。
-- 服务端会在 EPay 签名校验通过后内部注入 `payment_type=Epay`，该字段不参与 EPay 入站签名；但请求里显式传入的 `type/token/network/currency` 仍属于原始 EPay 参数，必须参与签名。
+- 服务端会在 EPay 签名校验通过后内部注入 `payment_type=Epay`，该字段不参与 EPay 入站签名；但请求里显式传入的 `type/token/network/currency` 仍属于原始 EPay 参数，必须参与签名。客户端不要发送 GMPay 的 `signature` 来代替 EPay 的 `sign`。
 
 后台默认配置可通过 `/payments/gmpay/v1/config` 的 `epay` 字段查看；新安装默认只预置 `epay.default_currency=cny`，`epay.default_token` 和 `epay.default_network` 为空，因此 EPay 未显式传 token/network 时会创建状态 `4` 占位订单。已有数据库的配置不会被 seed 覆盖，删除或置空 `epay.default_token` 和 `epay.default_network` 后，这两个字段会返回空字符串。
 
@@ -714,7 +720,7 @@ GMPay 回调使用订单创建时实际通过的算法，不受之后修改 API 
 
 ### EPay 兼容回调
 
-通过 EPay 兼容接口创建的订单，会使用 GET 请求回调 `notify_url`，参数如下：
+通过 EPay 兼容接口创建，或经 GMPay 接口显式传入 `payment_type=Epay` 的订单，会使用 GET 请求回调 `notify_url`，参数如下：
 
 > EPay 回调会把 `pid` 输出为数字；使用 EPay 兼容接口或 `payment_type=Epay` 时，请确保 API Key 的 PID 是数字。
 >
@@ -732,7 +738,7 @@ sign=a1b2c3d4...
 sign_type=MD5
 ```
 
-验签时排除 `sign` 和 `sign_type`，其余非空参数按 ASCII 字典序拼接后追加 `secret_key` 并 MD5。
+验签时排除 `sign` 和 `sign_type`，其余非空参数按 ASCII 字典序拼接后追加 `secret_key` 并 MD5。该出站规则始终为 EPay MD5，不受 API Key 当前 `gmpay_sign_mode` 影响。
 
 ## OkPay 平台回调
 
