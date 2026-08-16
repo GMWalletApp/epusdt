@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"time"
 
+	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/model/request"
@@ -248,27 +250,21 @@ func TryProcessEvmERC20Transfer(chainNetwork string, contract common.Address, to
 
 	log.Sugar.Debugf("[%s-%s][%s] processing transfer hash=%s amount=%.2f", net, tokenSym, walletAddr, txHash, amount)
 
-	tradeID, err := data.GetTradeIdByWalletAddressAndAmountAndToken(chainNetwork, walletAddr, tokenSym, amount)
+	order, fromLock, err := resolveEvmTransferOrder(chainNetwork, walletAddr, tokenSym, amount, blockTsMs)
 	if err != nil {
-		log.Sugar.Warnf("[%s-%s][%s] lock lookup: %v", net, tokenSym, walletAddr, err)
+		log.Sugar.Warnf("[%s-%s][%s] load order candidate: %v", net, tokenSym, walletAddr, err)
 		return
 	}
-	if tradeID == "" {
+	if order == nil || order.ID == 0 {
 		log.Sugar.Warnf("[%s-%s][%s] skip unmatched tx hash=%s amount=%.2f", net, tokenSym, walletAddr, txHash, amount)
 		return
 	}
-
-	order, err := data.GetOrderInfoByTradeId(tradeID)
-	if err != nil {
-		log.Sugar.Warnf("[%s-%s][%s] load order: %v", net, tokenSym, walletAddr, err)
-		return
-	}
 	if strings.ToLower(strings.TrimSpace(order.Network)) != chainNetwork {
-		log.Sugar.Warnf("[%s-%s][%s] skip trade_id=%s network=%q", net, tokenSym, walletAddr, tradeID, order.Network)
+		log.Sugar.Warnf("[%s-%s][%s] skip trade_id=%s network=%q", net, tokenSym, walletAddr, order.TradeId, order.Network)
 		return
 	}
 	if strings.ToUpper(strings.TrimSpace(order.Token)) != tokenSym {
-		log.Sugar.Warnf("[%s-%s][%s] skip trade_id=%s token mismatch order=%s", net, tokenSym, walletAddr, tradeID, order.Token)
+		log.Sugar.Warnf("[%s-%s][%s] skip trade_id=%s token mismatch order=%s", net, tokenSym, walletAddr, order.TradeId, order.Token)
 		return
 	}
 	if blockTsMs > 0 && blockTsMs < order.CreatedAt.TimestampMilli() {
@@ -276,18 +272,34 @@ func TryProcessEvmERC20Transfer(chainNetwork string, contract common.Address, to
 		return
 	}
 
+	allowedStatuses := []int{mdb.StatusWaitPay}
+	if order.Status == mdb.StatusExpired {
+		expirationTs := order.CreatedAt.AddMinutes(config.GetOrderExpirationTime()).TimestampMilli()
+		if blockTsMs <= 0 || blockTsMs > expirationTs {
+			log.Sugar.Warnf("[%s-%s][%s] skip expired trade_id=%s because block time %d is after expiration %d", net, tokenSym, walletAddr, order.TradeId, blockTsMs, expirationTs)
+			return
+		}
+		allowedStatuses = []int{mdb.StatusWaitPay, mdb.StatusExpired}
+	}
+
+	if fromLock {
+		log.Sugar.Debugf("[%s-%s][%s] lock matched trade_id=%s", net, tokenSym, walletAddr, order.TradeId)
+	} else {
+		log.Sugar.Infof("[%s-%s][%s] recovered order from orders table trade_id=%s status=%d", net, tokenSym, walletAddr, order.TradeId, order.Status)
+	}
+
 	req := &request.OrderProcessingRequest{
 		ReceiveAddress:     walletAddr,
 		Token:              tokenSym,
 		Network:            chainNetwork,
-		TradeId:            tradeID,
+		TradeId:            order.TradeId,
 		Amount:             amount,
 		BlockTransactionId: txHash,
 	}
-	err = OrderProcessing(req)
+	err = orderProcessingWithAllowedStatuses(req, allowedStatuses)
 	if err != nil {
 		if errors.Is(err, constant.OrderBlockAlreadyProcess) || errors.Is(err, constant.OrderStatusConflict) {
-			log.Sugar.Infof("[%s-%s][%s] skip resolved trade_id=%s hash=%s err=%v", net, tokenSym, walletAddr, tradeID, txHash, err)
+			log.Sugar.Infof("[%s-%s][%s] skip resolved trade_id=%s hash=%s err=%v", net, tokenSym, walletAddr, order.TradeId, txHash, err)
 			return
 		}
 		log.Sugar.Errorf("[%s-%s][%s] OrderProcessing: %v", net, tokenSym, walletAddr, err)
@@ -295,7 +307,36 @@ func TryProcessEvmERC20Transfer(chainNetwork string, contract common.Address, to
 	}
 
 	sendPaymentNotification(order)
-	log.Sugar.Infof("[%s-%s][%s] payment processed trade_id=%s hash=%s", net, tokenSym, walletAddr, tradeID, txHash)
+	log.Sugar.Infof("[%s-%s][%s] payment processed trade_id=%s hash=%s", net, tokenSym, walletAddr, order.TradeId, txHash)
+}
+
+func resolveEvmTransferOrder(chainNetwork string, walletAddr string, tokenSym string, amount float64, blockTsMs int64) (*mdb.Orders, bool, error) {
+	tradeID, err := data.GetTradeIdByWalletAddressAndAmountAndToken(chainNetwork, walletAddr, tokenSym, amount)
+	if err != nil {
+		return nil, false, err
+	}
+	if tradeID != "" {
+		order, err := data.GetOrderInfoByTradeId(tradeID)
+		if err != nil {
+			return nil, false, err
+		}
+		if order != nil && order.ID > 0 {
+			return order, true, nil
+		}
+	}
+
+	before := time.Now()
+	if blockTsMs > 0 {
+		before = time.UnixMilli(blockTsMs)
+	}
+	order, err := data.GetOnChainOrderByWalletAddressAndAmountAndTokenBeforeTime(chainNetwork, walletAddr, tokenSym, amount, before)
+	if err != nil {
+		return nil, false, err
+	}
+	if order == nil || order.ID == 0 {
+		return nil, false, nil
+	}
+	return order, false, nil
 }
 
 func sendPaymentNotification(order *mdb.Orders) {

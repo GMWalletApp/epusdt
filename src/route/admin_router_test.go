@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -19,7 +20,9 @@ import (
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/model/service"
 	"github.com/GMWalletApp/epusdt/util/constant"
+	"github.com/GMWalletApp/epusdt/util/http_client"
 	appLog "github.com/GMWalletApp/epusdt/util/log"
+	"github.com/go-resty/resty/v2"
 	"github.com/labstack/echo/v4"
 )
 
@@ -236,6 +239,7 @@ func TestAdminProtectedRoute_NoToken(t *testing.T) {
 		"/admin/api/v1/dashboard/overview",
 		"/admin/api/v1/dashboard/rpc-stats",
 		"/admin/api/v1/settings",
+		"/admin/api/v1/settings/rate/status",
 		"/admin/api/v1/rpc-nodes",
 		"/admin/api/v1/notification-channels",
 	}
@@ -246,6 +250,11 @@ func TestAdminProtectedRoute_NoToken(t *testing.T) {
 		t.Logf("GET %s → %d", path, rec.Code)
 		assertUnauthorized(t, rec)
 	}
+	req := httptest.NewRequest(http.MethodPost, "/admin/api/v1/settings/rate/refresh", strings.NewReader(`{}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assertUnauthorized(t, rec)
 }
 
 // TestAdminMe verifies the /auth/me route returns current user info.
@@ -1564,6 +1573,157 @@ func TestAdminSettings_ForcedRateListValidation(t *testing.T) {
 	}
 	if row.Type != mdb.SettingTypeJSON {
 		t.Fatalf("forced rate list type = %q, want %q", row.Type, mdb.SettingTypeJSON)
+	}
+}
+
+func TestAdminSettings_RateModeAndTTLValidation(t *testing.T) {
+	e, token := setupAdminTestEnv(t)
+	rec := doPutAdmin(e, "/admin/api/v1/settings", map[string]interface{}{
+		"items": []map[string]interface{}{
+			{"group": "rate", "key": mdb.SettingKeyRateMode, "value": " AUTO ", "type": "int"},
+			{"group": "rate", "key": mdb.SettingKeyRateCacheTTLSeconds, "value": 600, "type": "string"},
+			{"group": "rate", "key": mdb.SettingKeyRateMode, "value": "dynamic", "type": "string"},
+			{"group": "rate", "key": mdb.SettingKeyRateCacheTTLSeconds, "value": 9, "type": "int"},
+		},
+	}, token)
+	resp := assertOK(t, rec)
+	results := resp["data"].([]interface{})
+	if results[0].(map[string]interface{})["ok"] != true || results[1].(map[string]interface{})["ok"] != true {
+		t.Fatalf("valid rate settings rejected: %v", results)
+	}
+	if results[2].(map[string]interface{})["ok"] != false || results[3].(map[string]interface{})["ok"] != false {
+		t.Fatalf("invalid rate settings accepted: %v", results)
+	}
+	if got := data.GetSettingString(mdb.SettingKeyRateMode, ""); got != config.RateModeAuto {
+		t.Fatalf("rate.mode = %q, want auto", got)
+	}
+	if got := data.GetSettingInt(mdb.SettingKeyRateCacheTTLSeconds, 0); got != 600 {
+		t.Fatalf("rate.cache_ttl_seconds = %d, want 600", got)
+	}
+}
+
+func TestAdminSettings_RateRefreshAndStatusPreserveLastSuccess(t *testing.T) {
+	e, token := setupAdminTestEnv(t)
+	if err := data.SetSetting(mdb.SettingGroupRate, mdb.SettingKeyRateMode, config.RateModeAuto, mdb.SettingTypeString); err != nil {
+		t.Fatalf("set rate mode: %v", err)
+	}
+	if err := data.SetSetting(mdb.SettingGroupRate, mdb.SettingKeyRateApiUrl, "https://rate.example.test", mdb.SettingTypeString); err != nil {
+		t.Fatalf("set rate API URL: %v", err)
+	}
+
+	originalFactory := http_client.ClientFactory
+	t.Cleanup(func() { http_client.ClientFactory = originalFactory })
+	failing := false
+	http_client.ClientFactory = func() *resty.Client {
+		return resty.NewWithClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			status := http.StatusOK
+			body := `{"cny":{"usdt":0.14635,"usdc":0.1463}}`
+			if failing {
+				status = http.StatusBadGateway
+				body = ""
+			}
+			return &http.Response{
+				StatusCode: status,
+				Status:     fmt.Sprintf("%d %s", status, http.StatusText(status)),
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Request:    r,
+			}, nil
+		})})
+	}
+
+	rec := doPostAdmin(e, "/admin/api/v1/settings/rate/refresh", map[string]interface{}{
+		"bases": []string{" CNY ", "cny"},
+	}, token)
+	resp := assertOK(t, rec)
+	results := resp["data"].([]interface{})
+	if len(results) != 1 || results[0].(map[string]interface{})["ok"] != true {
+		t.Fatalf("refresh results = %v", results)
+	}
+
+	rec = doGetAdmin(e, "/admin/api/v1/settings/rate/status", token)
+	resp = assertOK(t, rec)
+	status := resp["data"].(map[string]interface{})
+	if status["mode"] != config.RateModeAuto || int(status["cache_ttl_seconds"].(float64)) != config.DefaultRateCacheTTL {
+		t.Fatalf("rate status config = %v", status)
+	}
+	bases := status["bases"].([]interface{})
+	if len(bases) != 1 || bases[0].(map[string]interface{})["last_refresh_ok"] != true {
+		t.Fatalf("rate status bases = %v", bases)
+	}
+
+	failing = true
+	rec = doPostAdmin(e, "/admin/api/v1/settings/rate/refresh", map[string]interface{}{
+		"bases": []string{"cny"},
+	}, token)
+	resp = assertOK(t, rec)
+	results = resp["data"].([]interface{})
+	if results[0].(map[string]interface{})["ok"] != false {
+		t.Fatalf("failed refresh result = %v", results[0])
+	}
+
+	rec = doGetAdmin(e, "/admin/api/v1/settings/rate/status", token)
+	resp = assertOK(t, rec)
+	bases = resp["data"].(map[string]interface{})["bases"].([]interface{})
+	base := bases[0].(map[string]interface{})
+	rates := base["rates"].(map[string]interface{})
+	if rates["usdt"].(float64) != 0.14635 || base["last_refresh_ok"] != false || base["last_error"] == "" {
+		t.Fatalf("failed refresh did not preserve cache/status: %v", base)
+	}
+}
+
+func TestAdminSettings_DefaultRateRefreshReturnsPerBaseResults(t *testing.T) {
+	e, token := setupAdminTestEnv(t)
+	if err := data.SetSetting(mdb.SettingGroupRate, mdb.SettingKeyRateApiUrl, "https://rate.example.test", mdb.SettingTypeString); err != nil {
+		t.Fatalf("set rate API URL: %v", err)
+	}
+	if err := data.SetSetting(mdb.SettingGroupRate, mdb.SettingKeyRateForcedRateList, `{"cny":{"usdt":0.14},"usd":{"usdt":1}}`, mdb.SettingTypeJSON); err != nil {
+		t.Fatalf("set known rate bases: %v", err)
+	}
+
+	originalFactory := http_client.ClientFactory
+	t.Cleanup(func() { http_client.ClientFactory = originalFactory })
+	http_client.ClientFactory = func() *resty.Client {
+		return resty.NewWithClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			status := http.StatusOK
+			body := `{"cny":{"usdt":0.15}}`
+			if r.URL.Path == "/usd.json" {
+				status = http.StatusBadGateway
+				body = ""
+			}
+			return &http.Response{
+				StatusCode: status,
+				Status:     fmt.Sprintf("%d %s", status, http.StatusText(status)),
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Request:    r,
+			}, nil
+		})})
+	}
+
+	rec := doPostAdmin(e, "/admin/api/v1/settings/rate/refresh", map[string]interface{}{}, token)
+	resp := assertOK(t, rec)
+	results := resp["data"].([]interface{})
+	if len(results) != 2 {
+		t.Fatalf("default refresh results = %v", results)
+	}
+	byBase := make(map[string]map[string]interface{}, len(results))
+	for _, raw := range results {
+		result := raw.(map[string]interface{})
+		byBase[result["base"].(string)] = result
+	}
+	if byBase["cny"]["ok"] != true || byBase["usd"]["ok"] != false {
+		t.Fatalf("per-base refresh results = %v", byBase)
+	}
+	var cny, usd mdb.RateCache
+	if err := dao.Mdb.Where("base = ?", "cny").Take(&cny).Error; err != nil {
+		t.Fatalf("load CNY cache: %v", err)
+	}
+	if err := dao.Mdb.Where("base = ?", "usd").Take(&usd).Error; err != nil {
+		t.Fatalf("load USD refresh status: %v", err)
+	}
+	if !cny.LastRefreshOK || usd.LastRefreshOK || usd.LastError == "" {
+		t.Fatalf("persisted per-base states: cny=%#v usd=%#v", cny, usd)
 	}
 }
 

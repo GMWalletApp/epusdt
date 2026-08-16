@@ -52,8 +52,10 @@
 1. 将所有非空参数按参数名 ASCII 字典序升序排序。
 2. 使用 `key=value` 形式以 `&` 拼接。
 3. 不参与签名的字段：`signature`。
-4. 在拼接字符串末尾直接追加 `secret_key`。
-5. 对最终字符串做 MD5，结果转小写，作为 `signature`。
+4. 使用 `secret_key` 作为 HMAC 密钥，对拼接字符串计算 HMAC-SHA256。
+5. 将结果编码为 64 位小写十六进制字符串，作为 `signature`。
+
+> GMPay 已硬切至 HMAC-SHA256，不再接受旧版 MD5 签名，也不提供算法协商或回退。
 
 注意：
 
@@ -82,13 +84,13 @@ name=VIP
 待签名字符串：
 
 ```text
-amount=100&currency=cny&name=VIP&network=tron&notify_url=https://merchant.example/notify&order_id=ORD202605230001&pid=1000&redirect_url=https://merchant.example/return&token=usdtepusdt_secret_key
+amount=100&currency=cny&name=VIP&network=tron&notify_url=https://merchant.example/notify&order_id=ORD202605230001&pid=1000&redirect_url=https://merchant.example/return&token=usdt
 ```
 
 得到：
 
 ```text
-signature=476412c422f4dd75c3d533f5c47a9cac
+signature=6f874b1919d95081835e2809b620e354a5866f5a6dbb2e432d1627f1eb10059d
 ```
 
 ### PHP 签名示例
@@ -109,7 +111,7 @@ function gmpaySign(array $params, string $secretKey): string
         $pairs[] = $key . '=' . $value;
     }
 
-    return strtolower(md5(implode('&', $pairs) . $secretKey));
+    return hash_hmac('sha256', implode('&', $pairs), $secretKey);
 }
 ```
 
@@ -155,7 +157,7 @@ function epaySign(array $params, string $secretKey): string
   "notify_url": "https://merchant.example/notify",
   "redirect_url": "https://merchant.example/return",
   "name": "VIP",
-  "signature": "476412c422f4dd75c3d533f5c47a9cac"
+  "signature": "6f874b1919d95081835e2809b620e354a5866f5a6dbb2e432d1627f1eb10059d"
 }
 ```
 
@@ -192,7 +194,7 @@ curl -X POST 'https://pay.example.com/payments/gmpay/v1/order/create-transaction
 | `redirect_url` | string | 否 | 支付完成后的同步跳转地址。 |
 | `name` | string | 否 | 商品/订单名称。 |
 | `payment_type` | string | 否 | GMPay 兼容字段，不要求必须传；如果传了非空值，必须参与 GMPay `signature` 计算。普通 GMPay 不传时后台会存为 `Gmpay`；传 `Epay`（大小写不敏感）会统一存为 `Epay` 并使用 EPay 回调格式，且 PID 必须是数字。 |
-| `signature` | string | 是 | GMPay 签名。 |
+| `signature` | string | 是 | 64 位小写十六进制 GMPay HMAC-SHA256 签名。 |
 
 `token` 和 `network` 必须同传或同缺。两者同缺时只创建包含 `amount/currency` 的占位订单，状态为 `4`，不会分配钱包、不会计算链上支付金额，也不会锁定交易金额；后续由收银台调用 `/pay/switch-network` 选择具体链和币种或 OkPay。只缺其中一个会返回参数错误。
 
@@ -662,7 +664,7 @@ sign_type=MD5
   "receive_address": "TTestTronAddress001",
   "token": "USDT",
   "block_transaction_id": "0xabc123...",
-  "signature": "a1b2c3d4e5f6...",
+  "signature": "498975a97bc34563bdb14df53fc18054645df9684d6c67d9b9dd90ec62be1018",
   "status": 2
 }
 ```
@@ -677,10 +679,10 @@ sign_type=MD5
 | `receive_address` | string | 收款地址。 |
 | `token` | string | 收款币种。 |
 | `block_transaction_id` | string | 链上交易哈希或第三方支付订单号。 |
-| `signature` | string | 回调签名。 |
+| `signature` | string | 64 位小写十六进制 HMAC-SHA256 回调签名。 |
 | `status` | integer | 当前仅支付成功时回调，值为 `2`。 |
 
-GMPay 回调验签方式与创建订单一致，但排除 `signature` 字段。
+GMPay 回调验签方式与创建订单一致：排除 `signature` 字段后，使用商户 `secret_key` 对规范化参数字符串计算 HMAC-SHA256。回调体不包含 `payment_type` 字段。
 
 ### EPay 兼容回调
 

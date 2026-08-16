@@ -47,6 +47,11 @@ func runBscListener(contracts []common.Address) {
 		log.Sugar.Errorf("[BSC-WS] Failed to get wallet addresses: %v", err)
 		return
 	}
+	recipientTopics := evmRecipientTopicsFromWallets(wallets)
+	if len(recipientTopics) == 0 {
+		log.Sugar.Warnf("[BSC-WS] no enabled wallet addresses, listener idle")
+		return
+	}
 	storeBscRecipientsFromWallets(wallets)
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
@@ -74,7 +79,7 @@ func runBscListener(contracts []common.Address) {
 
 	query := ethereum.FilterQuery{
 		Addresses: contracts,
-		Topics:    [][]common.Hash{},
+		Topics:    evmTransferTopics(recipientTopics),
 	}
 
 	runEvmWsLogListener(ctx, mdb.NetworkBsc, "[BSC-WS]", wsNode, query, func(client *ethclient.Client, vLog types.Log) {

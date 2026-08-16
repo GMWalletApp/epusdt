@@ -30,6 +30,7 @@ func apiKeyFromContext(ctx echo.Context) *mdb.ApiKey {
 // @Description  Create a payment transaction order. Accepts JSON body (application/json) or form-encoded body (application/x-www-form-urlencoded).
 // @Description  GMPay may omit both token and network to create a status=4 placeholder order; EPay submit.php can also create one when neither request parameters nor database defaults provide token/network. Supplying only one of token/network is invalid.
 // @Description  payment_type is optional for GMPay. If it is sent, it is a normal signed parameter and must be included when calculating signature.
+// @Description  GMPay signature uses lowercase hexadecimal HMAC-SHA256 with secret_key as the HMAC key. Legacy MD5 signatures are not accepted.
 // @Tags         Payment
 // @Accept       json
 // @Accept       x-www-form-urlencoded
@@ -41,7 +42,7 @@ func apiKeyFromContext(ctx echo.Context) *mdb.ApiKey {
 // @Param        network formData string false "Network (e.g. ton, tron); omit together with token to create a placeholder where supported"
 // @Param        amount formData number false "Amount"
 // @Param        notify_url formData string false "Callback URL"
-// @Param        signature formData string false "MD5 signature"
+// @Param        signature formData string false "Lowercase hexadecimal HMAC-SHA256 signature"
 // @Param        redirect_url formData string false "Redirect URL"
 // @Param        name formData string false "Order name"
 // @Param        payment_type formData string false "Optional GMPay compatibility flag; include in signature when sent"

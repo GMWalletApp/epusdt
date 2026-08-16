@@ -14,6 +14,7 @@ type CheckoutCounterResponse struct {
 	RedirectUrl    string  `json:"redirect_url" example:"https://example.com/success"`                              // 非 EPay 时为商户原始回跳地址；EPay 时为内部中转地址 /pay/return/{trade_id}
 	PaymentUrl     string  `json:"payment_url" example:"https://pay.example.com/checkout/3nQ9pL2xV7sK1mR8cT4yB_aZ"` // 支付链接；链上订单为空，OkPay 订单为第三方 payLink
 	CreatedAt      int64   `json:"created_at" example:"1713264000"`                                                 // 订单创建时间 时间戳
+	ServerTime     int64   `json:"server_time" example:"1713264100"`                                                // 服务器当前时间 时间戳
 	IsSelected     bool    `json:"is_selected" example:"false"`                                                     // 是否已选择当前支付方式；status=4 占位订单和刚补全的占位父单为 false
 }
 

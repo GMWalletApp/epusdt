@@ -46,6 +46,11 @@ func runPlasmaListener(contracts []common.Address) {
 		log.Sugar.Errorf("[PLASMA-WS] Failed to get wallet addresses: %v", err)
 		return
 	}
+	recipientTopics := evmRecipientTopicsFromWallets(wallets)
+	if len(recipientTopics) == 0 {
+		log.Sugar.Warnf("[PLASMA-WS] no enabled wallet addresses, listener idle")
+		return
+	}
 	storePlasmaRecipientsFromWallets(wallets)
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
@@ -73,7 +78,7 @@ func runPlasmaListener(contracts []common.Address) {
 
 	query := ethereum.FilterQuery{
 		Addresses: contracts,
-		Topics:    [][]common.Hash{},
+		Topics:    evmTransferTopics(recipientTopics),
 	}
 
 	runEvmWsLogListener(ctx, mdb.NetworkPlasma, "[PLASMA-WS]", wsNode, query, func(client *ethclient.Client, vLog types.Log) {

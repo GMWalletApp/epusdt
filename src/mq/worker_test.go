@@ -484,6 +484,7 @@ func TestSendOrderCallbackGmpayUsesApiKeySecretByPid(t *testing.T) {
 		NotifyUrl:          server.URL,
 		BlockTransactionId: "block_gmpay_sign",
 		ApiKeyID:           key.ID,
+		PaymentType:        mdb.PaymentTypeGmpay,
 	}
 
 	if err := sendOrderCallback(order); err != nil {
@@ -496,6 +497,9 @@ func TestSendOrderCallbackGmpayUsesApiKeySecretByPid(t *testing.T) {
 	if gotPid, _ := received["pid"].(string); gotPid != key.Pid {
 		t.Fatalf("payload pid = %q, want %q", gotPid, key.Pid)
 	}
+	if _, ok := received["payment_type"]; ok {
+		t.Fatal("GMPay callback payload must not include payment_type")
+	}
 
 	recvSig, _ := received["signature"].(string)
 	if recvSig == "" {
@@ -503,7 +507,7 @@ func TestSendOrderCallbackGmpayUsesApiKeySecretByPid(t *testing.T) {
 	}
 	delete(received, "signature")
 
-	calcSig, err := sign.Get(received, key.SecretKey)
+	calcSig, err := sign.GetHMACSHA256(received, key.SecretKey)
 	if err != nil {
 		t.Fatalf("calc signature with target secret: %v", err)
 	}
@@ -511,7 +515,7 @@ func TestSendOrderCallbackGmpayUsesApiKeySecretByPid(t *testing.T) {
 		t.Fatalf("signature mismatch: got %q want %q", recvSig, calcSig)
 	}
 
-	wrongSig, err := sign.Get(received, warningKey.SecretKey)
+	wrongSig, err := sign.GetHMACSHA256(received, warningKey.SecretKey)
 	if err != nil {
 		t.Fatalf("calc signature with wrong secret: %v", err)
 	}
@@ -593,6 +597,9 @@ func TestSendOrderCallbackEpayUsesApiKeySecretByPid(t *testing.T) {
 	}
 	if formPayload["trade_status"] != "TRADE_SUCCESS" {
 		t.Fatalf("trade_status = %q, want TRADE_SUCCESS", formPayload["trade_status"])
+	}
+	if _, ok := formPayload["payment_type"]; ok {
+		t.Fatal("EPay callback payload must not include payment_type")
 	}
 
 	if formPayload["pid"] != key.Pid {

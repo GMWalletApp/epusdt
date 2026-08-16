@@ -1,0 +1,1 @@
+import{t as e}from"./preload-helper-DoS0eHac.js";import{t}from"./_.contribution-B15f5JFR.js";t({id:`go`,extensions:[`.go`],aliases:[`Go`],loader:()=>e(()=>import(`./go-Bf5Z_kyQ.js`),[])});

@@ -38,6 +38,7 @@ func MdbTableInit() {
 			{"AdminUser", &mdb.AdminUser{}},
 			{"ApiKey", &mdb.ApiKey{}},
 			{"Setting", &mdb.Setting{}},
+			{"RateCache", &mdb.RateCache{}},
 			{"NotificationChannel", &mdb.NotificationChannel{}},
 			{"Chain", &mdb.Chain{}},
 			{"ChainToken", &mdb.ChainToken{}},
@@ -179,10 +180,13 @@ func seedDefaultSettings() {
 	if okPayCallbackURL != "" {
 		okPayCallbackURL += "/payments/okpay/v1/notify"
 	}
+	defaultRateMode := defaultRateModeForSeed()
 	defaults := []mdb.Setting{
 		{Group: mdb.SettingGroupSystem, Key: mdb.SettingKeyAmountPrecision, Value: "2", Type: mdb.SettingTypeInt},
 		{Group: mdb.SettingGroupSystem, Key: mdb.SettingKeySystemLogLevel, Value: mdb.SettingDefaultSystemLogLevel, Type: mdb.SettingTypeString},
 		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateForcedRateList, Value: mdb.SettingDefaultRateForcedRateList, Type: mdb.SettingTypeJSON},
+		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateMode, Value: defaultRateMode, Type: mdb.SettingTypeString},
+		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateCacheTTLSeconds, Value: strconv.Itoa(mdb.SettingDefaultRateCacheTTL), Type: mdb.SettingTypeInt},
 		{Group: mdb.SettingGroupEpay, Key: mdb.SettingKeyEpayDefaultToken, Value: "", Type: mdb.SettingTypeString},
 		{Group: mdb.SettingGroupEpay, Key: mdb.SettingKeyEpayDefaultCurrency, Value: "cny", Type: mdb.SettingTypeString},
 		{Group: mdb.SettingGroupEpay, Key: mdb.SettingKeyEpayDefaultNetwork, Value: "", Type: mdb.SettingTypeString},
@@ -195,6 +199,31 @@ func seedDefaultSettings() {
 	if err := Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&defaults).Error; err != nil {
 		color.Red.Printf("[store_db] seed default settings err=%s\n", err)
 	}
+}
+
+// defaultRateModeForSeed keeps fresh installations on the safe fixed default,
+// while migrating installations created before rate.mode existed to auto when
+// they already relied on an external rate API. This is the closest equivalent
+// to the legacy forced-rate-then-API-fallback behavior available with the new
+// two explicit modes.
+func defaultRateModeForSeed() string {
+	var existingSettings int64
+	if err := Mdb.Unscoped().Model(&mdb.Setting{}).Count(&existingSettings).Error; err != nil {
+		color.Red.Printf("[store_db] detect existing settings for rate mode err=%s\n", err)
+		return mdb.SettingDefaultRateMode
+	}
+	if existingSettings == 0 {
+		return mdb.SettingDefaultRateMode
+	}
+
+	var apiSetting mdb.Setting
+	if err := Mdb.Where("key = ?", mdb.SettingKeyRateApiUrl).Limit(1).Find(&apiSetting).Error; err != nil {
+		color.Red.Printf("[store_db] detect legacy rate api setting err=%s\n", err)
+	}
+	if strings.TrimSpace(apiSetting.Value) != "" || strings.TrimSpace(config.GetRateApiUrlFromEnv()) != "" {
+		return config.RateModeAuto
+	}
+	return mdb.SettingDefaultRateMode
 }
 
 // seedTelegramChannelFromSettings auto-migrates the legacy settings-table

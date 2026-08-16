@@ -132,7 +132,7 @@ func TestEvmWsNodeFailureRecordsRuntimeStats(t *testing.T) {
 	t.Cleanup(data.ResetRpcFailoverForTest)
 	t.Cleanup(data.ResetRpcRuntimeStatsForTest)
 
-	recordEvmWsNodeFailure("[TEST]", mdb.NetworkEthereum, mdb.RpcNode{
+	recordEvmNodeFailure("[TEST]", mdb.NetworkEthereum, mdb.RpcNode{
 		BaseModel: mdb.BaseModel{ID: 123},
 		Url:       "wss://ethereum.example.com",
 		Type:      mdb.RpcNodeTypeWs,

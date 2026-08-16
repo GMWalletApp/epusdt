@@ -52,6 +52,11 @@ func runEthereumListener(contracts []common.Address) {
 		log.Sugar.Errorf("[ETH-WS] Failed to get wallet addresses: %v", err)
 		return
 	}
+	recipientTopics := evmRecipientTopicsFromWallets(wallets)
+	if len(recipientTopics) == 0 {
+		log.Sugar.Warnf("[ETH-WS] no enabled wallet addresses, listener idle")
+		return
+	}
 	StoreEthRecipientsFromWallets(wallets)
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
@@ -79,7 +84,7 @@ func runEthereumListener(contracts []common.Address) {
 
 	query := ethereum.FilterQuery{
 		Addresses: contracts,
-		Topics:    [][]common.Hash{},
+		Topics:    evmTransferTopics(recipientTopics),
 	}
 
 	runEvmWsLogListener(ctx, mdb.NetworkEthereum, "[ETH-WS]", wsNode, query, func(client *ethclient.Client, vLog types.Log) {

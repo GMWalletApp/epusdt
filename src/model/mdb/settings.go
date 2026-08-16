@@ -46,6 +46,8 @@ const (
 	SettingKeyRateAdjustPercent        = "rate.adjust_percent"
 	SettingKeyRateOkxC2cEnabled        = "rate.okx_c2c_enabled"
 	SettingKeyRateApiUrl               = "rate.api_url"
+	SettingKeyRateMode                 = "rate.mode"
+	SettingKeyRateCacheTTLSeconds      = "rate.cache_ttl_seconds"
 
 	// EPAY route defaults — can be overridden via admin settings.
 	SettingKeyEpayDefaultToken    = "epay.default_token"
@@ -66,6 +68,8 @@ const (
 const (
 	SettingDefaultSystemLogLevel     = "error"
 	SettingDefaultRateForcedRateList = `{"cny":{"usdt":0.14705882352941177,"usdc":0.14705882352941177}}`
+	SettingDefaultRateMode           = "fixed"
+	SettingDefaultRateCacheTTL       = 300
 )
 
 type Setting struct {

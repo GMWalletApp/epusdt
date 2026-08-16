@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"testing"
 
@@ -42,13 +43,14 @@ func SetupTestDatabases(t testing.TB) func() {
 		&mdb.WalletAddress{},
 		&mdb.ApiKey{},
 		&mdb.Setting{},
+		&mdb.RateCache{},
 		&mdb.NotificationChannel{},
 		&mdb.Chain{},
 		&mdb.ChainToken{},
 		&mdb.RpcNode{},
 		&mdb.AdminUser{},
 	)
-	mustMigrate(t, runtimeDB, &mdb.TransactionLock{})
+	mustMigrate(t, runtimeDB, &mdb.TransactionLock{}, &mdb.EvmScanCursor{})
 
 	dao.Mdb = mainDB
 	dao.RuntimeDB = runtimeDB
@@ -62,6 +64,46 @@ func SetupTestDatabases(t testing.TB) func() {
 		}
 		return row.Value
 	}
+	config.RateCacheLoad = func(base string) (config.RateCacheSnapshot, error) {
+		var row mdb.RateCache
+		err := dao.Mdb.Where("base = ?", base).Take(&row).Error
+		if err != nil {
+			return config.RateCacheSnapshot{}, err
+		}
+		return testRateCacheSnapshot(row), nil
+	}
+	config.RateCacheLoadAll = func() ([]config.RateCacheSnapshot, error) {
+		var rows []mdb.RateCache
+		err := dao.Mdb.Order("base ASC").Find(&rows).Error
+		if err != nil {
+			return nil, err
+		}
+		out := make([]config.RateCacheSnapshot, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, testRateCacheSnapshot(row))
+		}
+		return out, nil
+	}
+	config.RateCacheSave = func(snapshot config.RateCacheSnapshot) error {
+		rates, err := json.Marshal(snapshot.Rates)
+		if err != nil {
+			return err
+		}
+		row := mdb.RateCache{
+			Base:          snapshot.Base,
+			Rates:         string(rates),
+			SourceURL:     snapshot.SourceURL,
+			LastSuccessAt: snapshot.LastSuccessAt,
+			LastAttemptAt: snapshot.LastAttemptAt,
+			LastRefreshOK: snapshot.LastRefreshOK,
+			LastError:     snapshot.LastError,
+		}
+		return dao.Mdb.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "base"}},
+			DoUpdates: clause.AssignmentColumns([]string{"rates", "source_url", "last_success_at", "last_attempt_at", "last_refresh_ok", "last_error", "updated_at"}),
+		}).Create(&row).Error
+	}
+	config.ResetRateCacheRuntime()
 
 	// Seed all standard chains as enabled so IsChainEnabled checks pass.
 	for _, network := range []string{
@@ -110,7 +152,25 @@ func SetupTestDatabases(t testing.TB) func() {
 		dao.Mdb = nil
 		dao.RuntimeDB = nil
 		config.SettingsGetString = nil
+		config.RateCacheLoad = nil
+		config.RateCacheLoadAll = nil
+		config.RateCacheSave = nil
+		config.ResetRateCacheRuntime()
 		viper.Reset()
+	}
+}
+
+func testRateCacheSnapshot(row mdb.RateCache) config.RateCacheSnapshot {
+	rates := make(map[string]float64)
+	_ = json.Unmarshal([]byte(row.Rates), &rates)
+	return config.RateCacheSnapshot{
+		Base:          row.Base,
+		Rates:         rates,
+		SourceURL:     row.SourceURL,
+		LastSuccessAt: row.LastSuccessAt,
+		LastAttemptAt: row.LastAttemptAt,
+		LastRefreshOK: row.LastRefreshOK,
+		LastError:     row.LastError,
 	}
 }
 

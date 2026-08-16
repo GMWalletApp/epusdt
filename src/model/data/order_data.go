@@ -70,6 +70,15 @@ func applyLockAddressFilter(tx *gorm.DB, network, address string) *gorm.DB {
 	return tx.Where("address = ?", address)
 }
 
+func applyOrderReceiveAddressFilter(tx *gorm.DB, network, address string) *gorm.DB {
+	network = normalizeLockNetwork(network)
+	address = normalizeLockAddress(network, address)
+	if isEVMNetwork(network) {
+		return tx.Where("lower(receive_address) = ?", address)
+	}
+	return tx.Where("receive_address = ?", address)
+}
+
 func activeLocksForAddress(tx *gorm.DB, network, address, token string, now time.Time) *gorm.DB {
 	query := tx.Model(&mdb.TransactionLock{}).
 		Where("network = ?", normalizeLockNetwork(network)).
@@ -464,6 +473,28 @@ func GetTradeIdByWalletAddressAndAmountAndToken(network string, address string, 
 		}
 	}
 	return "", nil
+}
+
+// GetOnChainOrderByWalletAddressAndAmountAndTokenBeforeTime finds the most
+// relevant on-chain order row when the runtime lock is gone. It is used by
+// backfill scanners that need to recover a payment after the reservation lock
+// has already expired.
+func GetOnChainOrderByWalletAddressAndAmountAndTokenBeforeTime(network string, address string, token string, amount float64, before time.Time) (*mdb.Orders, error) {
+	network = normalizeLockNetwork(network)
+	address = normalizeLockAddress(network, address)
+	token = normalizeLockToken(token)
+
+	order := new(mdb.Orders)
+	query := dao.Mdb.Model(order).
+		Where("network = ?", network).
+		Where("token = ?", token).
+		Where("actual_amount = ?", amount).
+		Where("created_at <= ?", before).
+		Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusExpired}).
+		Where("(pay_provider = ? OR pay_provider = '')", mdb.PaymentProviderOnChain)
+	query = applyOrderReceiveAddressFilter(query, network, address)
+	err := query.Order("created_at desc, id desc").Limit(1).Find(order).Error
+	return order, err
 }
 
 // LockTransaction reserves a network+address+token+amount pair in sqlite until expiration.

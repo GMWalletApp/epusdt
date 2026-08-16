@@ -3,9 +3,12 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
+	"sync"
 
+	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
@@ -21,7 +24,9 @@ import (
 //
 //   - group=rate:
 //     rate.forced_rate_list  (json)   — override rate map, e.g. {"cny":{"usdt":0.14635,"ton":0.5}}; base/coin keys are normalized to lowercase
-//     rate.api_url           (string) — optional external rate API URL used when no positive forced rate exists
+//     rate.api_url           (string) — optional external rate API URL used by auto mode
+//     rate.mode              (string) — fixed or auto (default fixed)
+//     rate.cache_ttl_seconds (int)    — automatic cache TTL in seconds (10-86400, default 300)
 //     rate.adjust_percent    (float)  — rate adjustment percentage
 //     rate.okx_c2c_enabled   (bool)   — use OKX C2C rate feed
 //
@@ -97,7 +102,7 @@ func (c *BaseAdminController) ListSettings(ctx echo.Context) error {
 // @Description  Supported groups: brand, rate, system, epay, okpay.
 // @Description  epay group keys: epay.default_token (e.g. "usdt" or "ton", ignored when a supported type=token.network selector is supplied, empty allows status=4 placeholders), epay.default_currency (e.g. "cny", still applies when a supported type selector is supplied, empty falls back to cny), epay.default_network (e.g. "tron" or "ton", ignored when a supported type=token.network selector is supplied, empty allows status=4 placeholders).
 // @Description  okpay group keys: okpay.enabled, okpay.shop_id, okpay.shop_token, okpay.api_url, okpay.callback_url, okpay.return_url, okpay.timeout_seconds, okpay.allow_tokens.
-// @Description  rate group keys: rate.forced_rate_list (JSON map, e.g. {"cny":{"usdt":0.14635,"ton":0.5}}; base/coin keys are normalized to lowercase; empty is restored to the built-in CNY USDT/USDC default), rate.api_url (optional; non-empty value must be a public http/https URL), rate.adjust_percent, rate.okx_c2c_enabled.
+// @Description  rate group keys: rate.mode (fixed|auto, default fixed), rate.cache_ttl_seconds (10-86400, default 300), rate.forced_rate_list (JSON map, e.g. {"cny":{"usdt":0.14635,"ton":0.5}}; base/coin keys are normalized to lowercase; empty is restored to the built-in CNY USDT/USDC default), rate.api_url (optional; non-empty value must be a public http/https URL), rate.adjust_percent, rate.okx_c2c_enabled.
 // @Description  brand group keys: brand.checkout_name, brand.logo_url, brand.site_title, brand.success_copy, brand.support_url, brand.background_color, brand.background_image_url. Legacy aliases brand.site_name, brand.page_title and brand.pay_success_text are also supported.
 // @Description  system group keys: system.order_expiration_time, system.amount_precision (int, 2-6, default 2), system.log_level (debug|info|warn|error, default error).
 // @Tags         Admin Settings
@@ -150,6 +155,14 @@ func (c *BaseAdminController) UpsertSettings(ctx echo.Context) error {
 		if key == mdb.SettingKeyRateForcedRateList {
 			item.Group = mdb.SettingGroupRate
 			item.Type = mdb.SettingTypeJSON
+		}
+		if key == mdb.SettingKeyRateMode {
+			item.Group = mdb.SettingGroupRate
+			item.Type = mdb.SettingTypeString
+		}
+		if key == mdb.SettingKeyRateCacheTTLSeconds {
+			item.Group = mdb.SettingGroupRate
+			item.Type = mdb.SettingTypeInt
 		}
 		if key == mdb.SettingKeySystemLogLevel {
 			item.Group = mdb.SettingGroupSystem
@@ -236,6 +249,24 @@ func normalizeAndValidateSettingItem(group, key, value string) (string, error) {
 		if err := security.ValidatePublicHTTPURL(value); err != nil {
 			return value, fmt.Errorf("%s invalid: %w", key, err)
 		}
+	case mdb.SettingKeyRateMode:
+		if strings.ToLower(strings.TrimSpace(group)) != mdb.SettingGroupRate {
+			return value, fmt.Errorf("%s must use group %s", key, mdb.SettingGroupRate)
+		}
+		mode := strings.ToLower(strings.TrimSpace(value))
+		if mode != config.RateModeFixed && mode != config.RateModeAuto {
+			return value, fmt.Errorf("%s must be fixed or auto", key)
+		}
+		return mode, nil
+	case mdb.SettingKeyRateCacheTTLSeconds:
+		if strings.ToLower(strings.TrimSpace(group)) != mdb.SettingGroupRate {
+			return value, fmt.Errorf("%s must use group %s", key, mdb.SettingGroupRate)
+		}
+		ttl, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil || ttl < config.MinRateCacheTTLSeconds || ttl > config.MaxRateCacheTTLSeconds {
+			return value, fmt.Errorf("%s must be between %d and %d", key, config.MinRateCacheTTLSeconds, config.MaxRateCacheTTLSeconds)
+		}
+		return strconv.Itoa(ttl), nil
 	case mdb.SettingKeySystemLogLevel:
 		if strings.ToLower(strings.TrimSpace(group)) != mdb.SettingGroupSystem {
 			return value, fmt.Errorf("%s must use group %s", key, mdb.SettingGroupSystem)
@@ -247,6 +278,94 @@ func normalizeAndValidateSettingItem(group, key, value string) (string, error) {
 		return normalized, nil
 	}
 	return value, nil
+}
+
+type RateRefreshRequest struct {
+	Bases []string `json:"bases" binding:"max=20" example:"cny,usd"`
+}
+
+// RateStatus returns the effective rate configuration and persisted cache.
+// @Summary      Get rate cache status
+// @Description  Returns effective auto/fixed settings and the last persisted refresh state for every cached base currency.
+// @Tags         Admin Settings
+// @Security     AdminJWT
+// @Produce      json
+// @Success      200 {object} response.ApiResponse{data=config.RateStatus}
+// @Failure      400 {object} response.ApiResponse
+// @Router       /admin/api/v1/settings/rate/status [get]
+func (c *BaseAdminController) RateStatus(ctx echo.Context) error {
+	return c.SucJson(ctx, config.GetRateStatus())
+}
+
+// RefreshRates forces one or more base-currency cache refreshes.
+// @Summary      Refresh external rate cache
+// @Description  Forces refreshes for the requested base currencies. With an empty body, refreshes known cached/configured bases and falls back to CNY. Per-base API failures are returned as result rows while prior successful rates remain cached. Successful partial responses update returned coins and retain previously successful coins omitted by the provider.
+// @Tags         Admin Settings
+// @Security     AdminJWT
+// @Accept       json
+// @Produce      json
+// @Param        request body admin.RateRefreshRequest false "Optional base currencies"
+// @Success      200 {object} response.ApiResponse{data=[]config.RateRefreshResult}
+// @Failure      400 {object} response.ApiResponse
+// @Router       /admin/api/v1/settings/rate/refresh [post]
+func (c *BaseAdminController) RefreshRates(ctx echo.Context) error {
+	req := new(RateRefreshRequest)
+	if err := ctx.Bind(req); err != nil && err != io.EOF {
+		return c.FailJson(ctx, constant.ParamsMarshalErr)
+	}
+	bases := req.Bases
+	useKnownBases := len(bases) == 0
+	if useKnownBases {
+		bases = config.KnownRateBases()
+	}
+	if !useKnownBases && len(bases) > 20 {
+		return c.FailJson(ctx, constant.ParamsMarshalErr)
+	}
+	seen := make(map[string]struct{}, len(bases))
+	normalized := make([]string, 0, len(bases))
+	for _, base := range bases {
+		base = strings.ToLower(strings.TrimSpace(base))
+		if !validRateBase(base) {
+			if useKnownBases {
+				continue
+			}
+			return c.FailJson(ctx, constant.ParamsMarshalErr)
+		}
+		if _, ok := seen[base]; ok {
+			continue
+		}
+		seen[base] = struct{}{}
+		normalized = append(normalized, base)
+	}
+	if len(normalized) == 0 {
+		normalized = append(normalized, "cny")
+	}
+	results := make([]config.RateRefreshResult, len(normalized))
+	var wg sync.WaitGroup
+	concurrency := make(chan struct{}, 5)
+	for index, base := range normalized {
+		wg.Add(1)
+		go func(index int, base string) {
+			defer wg.Done()
+			concurrency <- struct{}{}
+			defer func() { <-concurrency }()
+			results[index] = config.RefreshRateBase(base, true)
+		}(index, base)
+	}
+	wg.Wait()
+	return c.SucJson(ctx, results)
+}
+
+func validRateBase(base string) bool {
+	if len(base) < 2 || len(base) > 16 {
+		return false
+	}
+	for _, char := range base {
+		if (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '-' && char != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeForcedRateListSetting(group, key, value string) (string, error) {

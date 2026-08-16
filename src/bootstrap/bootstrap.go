@@ -34,6 +34,9 @@ func InitApp() {
 		config.SettingsGetString = func(key string) string {
 			return data.GetSettingString(key, "")
 		}
+		config.RateCacheLoad = data.LoadRateCacheSnapshot
+		config.RateCacheLoadAll = data.ListRateCacheSnapshots
+		config.RateCacheSave = data.SaveRateCacheSnapshot
 		// Seed rate.api_url from .env into the settings table on first run
 		// so the admin UI can display and change it without a code restart.
 		// Only written if the key is not already present in the DB.

@@ -1,34 +1,49 @@
 package sign
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
-	"github.com/GMWalletApp/epusdt/util/json"
-	"github.com/gookit/goutil/strutil"
 	"reflect"
 	"sort"
 	"strconv"
+
+	"github.com/GMWalletApp/epusdt/util/json"
+	"github.com/gookit/goutil/strutil"
 )
 
 // Get 获取签名
 func Get(data interface{}, bizKey string) (string, error) {
-	var err error
-	signStr := ""
+	signStr, err := canonicalParams(data)
+	if err != nil {
+		return "", err
+	}
+	return strutil.Md5(signStr + bizKey), nil
+}
+
+// GetHMACSHA256 returns the lowercase hexadecimal HMAC-SHA256 signature of
+// the canonical parameter string, using bizKey as the HMAC key.
+func GetHMACSHA256(data interface{}, bizKey string) (string, error) {
+	signStr, err := canonicalParams(data)
+	if err != nil {
+		return "", err
+	}
+
+	mac := hmac.New(sha256.New, []byte(bizKey))
+	_, _ = mac.Write([]byte(signStr))
+	return hex.EncodeToString(mac.Sum(nil)), nil
+}
+
+func canonicalParams(data interface{}) (string, error) {
 	switch v := reflect.ValueOf(data); v.Kind() {
 	case reflect.Map:
-		signStr, err = MapToParams(data.(map[string]interface{}))
-		if err != nil {
-			return "", err
-		}
+		return MapToParams(data.(map[string]interface{}))
 	case reflect.Struct:
-		signStr, err = Struct2map(v.Interface())
-		if err != nil {
-			return "", err
-		}
+		return Struct2map(v.Interface())
 	default:
 		return "", errors.New("type err")
 	}
-	sign := strutil.Md5(signStr + bizKey)
-	return sign, nil
 }
 
 func Struct2map(content interface{}) (string, error) {

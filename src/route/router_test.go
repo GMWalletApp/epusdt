@@ -2,6 +2,7 @@ package route
 
 import (
 	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -74,6 +75,7 @@ func setupTestEnv(t *testing.T) *echo.Echo {
 		&mdb.AdminUser{},
 		&mdb.ApiKey{},
 		&mdb.Setting{},
+		&mdb.RateCache{},
 		&mdb.NotificationChannel{},
 		&mdb.Chain{},
 		&mdb.ChainToken{},
@@ -87,8 +89,16 @@ func setupTestEnv(t *testing.T) *echo.Echo {
 	config.SettingsGetString = func(key string) string {
 		return data.GetSettingString(key, "")
 	}
+	config.RateCacheLoad = data.LoadRateCacheSnapshot
+	config.RateCacheLoadAll = data.ListRateCacheSnapshots
+	config.RateCacheSave = data.SaveRateCacheSnapshot
+	config.ResetRateCacheRuntime()
 	t.Cleanup(func() {
 		config.SettingsGetString = nil
+		config.RateCacheLoad = nil
+		config.RateCacheLoadAll = nil
+		config.RateCacheSave = nil
+		config.ResetRateCacheRuntime()
 	})
 	if err := data.SetSetting("rate", "rate.forced_rate_list", `{"cny":{"usdt":0.14285714285714285}}`, "json"); err != nil {
 		t.Fatalf("seed rate.forced_rate_list: %v", err)
@@ -120,7 +130,7 @@ func setupTestEnv(t *testing.T) *echo.Echo {
 	})
 
 	// Seed one universal api_keys row. The test's testAPIToken doubles
-	// as both pid and secret_key so sign.Get(body, testAPIToken) calls
+	// as both pid and secret_key so signing helper calls
 	// stay valid.
 	dao.Mdb.Create(&mdb.ApiKey{
 		Name:      "test-universal",
@@ -147,7 +157,7 @@ func signBody(body map[string]interface{}) map[string]interface{} {
 	if _, ok := body["pid"]; !ok {
 		body["pid"] = testAPIToken
 	}
-	sig, _ := sign.Get(body, testAPIToken)
+	sig, _ := sign.GetHMACSHA256(body, testAPIToken)
 	body["signature"] = sig
 	return body
 }
@@ -409,9 +419,97 @@ func signGmpayFormValues(values url.Values) url.Values {
 		}
 		params[k] = vs[0]
 	}
-	sig, _ := sign.Get(params, testAPIToken)
+	sig, _ := sign.GetHMACSHA256(params, testAPIToken)
 	values.Set("signature", sig)
 	return values
+}
+
+func TestCreateOrderGmpayV1RejectsLegacyMD5Signature(t *testing.T) {
+	e := setupTestEnv(t)
+	useRspErrorHTTPStatuses(e)
+
+	body := map[string]interface{}{
+		"pid":        testAPIToken,
+		"order_id":   "test-legacy-md5-001",
+		"amount":     1,
+		"token":      "usdt",
+		"currency":   "cny",
+		"network":    "solana",
+		"notify_url": "https://93.184.216.34/notify",
+	}
+	legacySignature, err := sign.Get(body, testAPIToken)
+	if err != nil {
+		t.Fatalf("build legacy MD5 signature: %v", err)
+	}
+	body["signature"] = legacySignature
+
+	rec := doPost(e, "/payments/gmpay/v1/order/create-transaction", body)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for legacy MD5 signature, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateOrderGmpayV1PaymentTypeEpayUsesHMACSHA256(t *testing.T) {
+	e := setupTestEnv(t)
+	useRspErrorHTTPStatuses(e)
+
+	body := signBody(map[string]interface{}{
+		"pid":          "1",
+		"order_id":     "test-gmpay-epay-hmac-001",
+		"amount":       1,
+		"token":        "usdt",
+		"currency":     "cny",
+		"network":      "solana",
+		"notify_url":   "https://93.184.216.34/notify",
+		"payment_type": "Epay",
+	})
+	if signature, _ := body["signature"].(string); len(signature) != sha256.Size*2 {
+		t.Fatalf("signature length = %d, want %d", len(signature), sha256.Size*2)
+	}
+
+	rec := doPost(e, "/payments/gmpay/v1/order/create-transaction", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected HMAC-signed GMPay request to succeed, got %d: %s", rec.Code, rec.Body.String())
+	}
+	resp := parseResp(t, rec)
+	respData, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data in response, got: %v", resp)
+	}
+	tradeID, _ := respData["trade_id"].(string)
+	order, err := data.GetOrderInfoByTradeId(tradeID)
+	if err != nil {
+		t.Fatalf("reload order: %v", err)
+	}
+	if order.PaymentType != mdb.PaymentTypeEpay {
+		t.Fatalf("payment_type = %q, want %q", order.PaymentType, mdb.PaymentTypeEpay)
+	}
+
+	tampered := signBody(map[string]interface{}{
+		"pid":          "1",
+		"order_id":     "test-gmpay-epay-hmac-002",
+		"amount":       1,
+		"token":        "usdt",
+		"currency":     "cny",
+		"network":      "solana",
+		"notify_url":   "https://93.184.216.34/notify",
+		"payment_type": "Epay",
+	})
+	tampered["payment_type"] = "Gmpay"
+	tamperedRec := doPost(e, "/payments/gmpay/v1/order/create-transaction", tampered)
+	if tamperedRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 after changing signed payment_type, got %d: %s", tamperedRec.Code, tamperedRec.Body.String())
+	}
+}
+
+func useRspErrorHTTPStatuses(e *echo.Echo) {
+	e.HTTPErrorHandler = func(err error, ctx echo.Context) {
+		if rspErr, ok := err.(*constant.RspError); ok {
+			_ = ctx.NoContent(rspErr.HttpStatus())
+			return
+		}
+		e.DefaultHTTPErrorHandler(err, ctx)
+	}
 }
 
 // TestCreateOrderGmpayV1FormData verifies that the GMPAY create-transaction endpoint

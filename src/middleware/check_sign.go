@@ -30,7 +30,7 @@ const (
 // Flow:
 //  1. Extract the pid from the request body.
 //  2. Look up the enabled row by pid; if missing, return signature error.
-//  3. Verify signature == MD5(sorted_params + secret_key).
+//  3. Verify signature == lowercase hex HMAC-SHA256(sorted_params, secret_key).
 //  4. Enforce IP whitelist (empty = allow any).
 //  5. Bump call_count / last_used_at (best-effort).
 //  6. Stash api_key_id + row in context and rewind the body.
@@ -75,7 +75,7 @@ func CheckApiSign() echo.MiddlewareFunc {
 				return constant.SignatureErr
 			}
 
-			checkSignature, err := sign.Get(m, row.SecretKey)
+			checkSignature, err := sign.GetHMACSHA256(m, row.SecretKey)
 			if err != nil {
 				return constant.SignatureErr
 			}

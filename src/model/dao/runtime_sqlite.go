@@ -51,6 +51,10 @@ func RuntimeInit() error {
 		color.Red.Printf("[runtime_db] sqlite migrate DB(TransactionLock),err=%s\n", err)
 		return err
 	}
+	if err = RuntimeDB.AutoMigrate(&mdb.EvmScanCursor{}); err != nil {
+		color.Red.Printf("[runtime_db] sqlite migrate DB(EvmScanCursor),err=%s\n", err)
+		return err
+	}
 
 	log.Sugar.Debug("[runtime_db] sqlite connDB success")
 	return nil

@@ -40,13 +40,15 @@ func runEvmWsLogListener(ctx context.Context, network string, logPrefix string, 
 			return
 		}
 
-		client, err := ethclient.Dial(wsURL)
+		dialCtx, cancelDial := context.WithTimeout(ctx, evmNodeDialTimeout)
+		client, err := ethclient.DialContext(dialCtx, wsURL)
+		cancelDial()
 		if err != nil {
 			if ctx.Err() != nil {
 				return
 			}
 			log.Sugar.Warnf("%s dial: %v, retry in %s", logPrefix, err, failWait)
-			if recordEvmWsNodeFailure(logPrefix, network, node, "dial") {
+			if recordEvmNodeFailure(logPrefix, network, node, "dial") {
 				return
 			}
 			if !sleepOrDone(ctx, failWait) {
@@ -64,7 +66,7 @@ func runEvmWsLogListener(ctx context.Context, network string, logPrefix string, 
 				return
 			}
 			log.Sugar.Warnf("%s subscribe: %v, retry in %s", logPrefix, err, failWait)
-			if recordEvmWsNodeFailure(logPrefix, network, node, "subscribe") {
+			if recordEvmNodeFailure(logPrefix, network, node, "subscribe") {
 				return
 			}
 			if !sleepOrDone(ctx, failWait) {
@@ -89,7 +91,7 @@ func runEvmWsLogListener(ctx context.Context, network string, logPrefix string, 
 				data.RecordRpcFailure(network)
 			}
 			data.RecordRpcNodeSuccess(node.ID)
-		} else if recvErr != nil && recordEvmWsNodeFailure(logPrefix, network, node, recvErr.Error()) {
+		} else if recvErr != nil && recordEvmNodeFailure(logPrefix, network, node, recvErr.Error()) {
 			return
 		}
 		if !sleepOrDone(ctx, rejoinWait) {
@@ -201,15 +203,15 @@ func recordEvmHeaderBlockHeight(network string, logPrefix string, header *types.
 	return true
 }
 
-func recordEvmWsNodeFailure(logPrefix string, network string, node mdb.RpcNode, reason string) bool {
+func recordEvmNodeFailure(logPrefix string, network string, node mdb.RpcNode, reason string) bool {
 	data.RecordRpcFailure(network)
 	failures, cooling := data.RecordRpcNodeFailure(node.ID)
 	nodeLabel := data.RpcNodeLogLabel(node)
 	if !cooling {
-		log.Sugar.Warnf("%s WSS node failed (%s), node=%s failures=%d/%d", logPrefix, reason, nodeLabel, failures, data.RpcFailoverThreshold)
+		log.Sugar.Warnf("%s node failed (%s), node=%s failures=%d/%d", logPrefix, reason, nodeLabel, failures, data.RpcFailoverThreshold)
 		return false
 	}
-	log.Sugar.Warnf("%s WSS node reached fail threshold (%s), node=%s, resolving another node", logPrefix, reason, nodeLabel)
+	log.Sugar.Warnf("%s node reached fail threshold (%s), node=%s, resolving another node", logPrefix, reason, nodeLabel)
 	return true
 }
 

@@ -1,1 +1,0 @@
-import{tm as e}from"./messages-D4fi8niO.js";import{i as t}from"./button-YQ61VXM1.js";var n=e();function r({className:e,...r}){return(0,n.jsx)(`img`,{alt:`GMPay`,className:t(`size-6`,e),height:24,src:`/images/logo.png`,width:24,...r})}export{r as t};

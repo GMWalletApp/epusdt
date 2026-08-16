@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/internal/testutil"
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/data"
@@ -289,6 +290,9 @@ func TestCreateTransactionUsesRateAPIWhenForcedSettingIsNotPositive(t *testing.T
 	if err := data.SetSetting("rate", "rate.api_url", "https://rate.example.test", "string"); err != nil {
 		t.Fatalf("set rate.api_url: %v", err)
 	}
+	if err := data.SetSetting("rate", "rate.mode", config.RateModeAuto, "string"); err != nil {
+		t.Fatalf("set rate.mode: %v", err)
+	}
 	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
@@ -364,6 +368,9 @@ func TestCreateTransactionFailsWhenRateAPIUnavailableAndForcedSettingIsNotPositi
 	}
 	if err := data.SetSetting("rate", "rate.api_url", "", "string"); err != nil {
 		t.Fatalf("clear rate.api_url: %v", err)
+	}
+	if err := data.SetSetting("rate", "rate.mode", config.RateModeAuto, "string"); err != nil {
+		t.Fatalf("set rate.mode: %v", err)
 	}
 
 	_, err := CreateTransaction(newCreateTransactionRequest("order_missing_rate_1", 10), nil)

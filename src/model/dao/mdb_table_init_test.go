@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/libtnb/sqlite"
 	"github.com/spf13/viper"
@@ -229,6 +230,114 @@ func TestSeedDefaultSettingsIncludesDefaultForcedRateList(t *testing.T) {
 	}
 	if row.Type != mdb.SettingTypeJSON {
 		t.Fatalf("rate.forced_rate_list type = %q, want %q", row.Type, mdb.SettingTypeJSON)
+	}
+}
+
+func TestSeedDefaultSettingsIncludesRateModeAndTTL(t *testing.T) {
+	db := setupSeedSettingsTestDB(t)
+	Mdb = db
+
+	seedDefaultSettings()
+
+	wants := map[string]struct {
+		value     string
+		valueType string
+	}{
+		mdb.SettingKeyRateMode:            {value: mdb.SettingDefaultRateMode, valueType: mdb.SettingTypeString},
+		mdb.SettingKeyRateCacheTTLSeconds: {value: "300", valueType: mdb.SettingTypeInt},
+	}
+	for key, want := range wants {
+		var row mdb.Setting
+		if err := Mdb.Where("`key` = ?", key).Take(&row).Error; err != nil {
+			t.Fatalf("load %s seed: %v", key, err)
+		}
+		if row.Group != mdb.SettingGroupRate || row.Value != want.value || row.Type != want.valueType {
+			t.Fatalf("%s seed = group:%q value:%q type:%q", key, row.Group, row.Value, row.Type)
+		}
+	}
+}
+
+func TestSeedDefaultSettingsKeepsFreshInstallFixedWithConfiguredEnvAPI(t *testing.T) {
+	db := setupSeedSettingsTestDB(t)
+	Mdb = db
+	viper.Set("api_rate_url", "https://rate.example.test")
+
+	seedDefaultSettings()
+
+	var row mdb.Setting
+	if err := Mdb.Where("`key` = ?", mdb.SettingKeyRateMode).Take(&row).Error; err != nil {
+		t.Fatalf("load fresh rate.mode seed: %v", err)
+	}
+	if row.Value != config.RateModeFixed {
+		t.Fatalf("fresh rate.mode = %q, want fixed", row.Value)
+	}
+}
+
+func TestSeedDefaultSettingsMigratesLegacyExternalAPIInstallToAuto(t *testing.T) {
+	db := setupSeedSettingsTestDB(t)
+	Mdb = db
+	legacy := []mdb.Setting{
+		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateForcedRateList, Value: mdb.SettingDefaultRateForcedRateList, Type: mdb.SettingTypeJSON},
+		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateApiUrl, Value: "https://rate.example.test", Type: mdb.SettingTypeString},
+	}
+	if err := Mdb.Create(&legacy).Error; err != nil {
+		t.Fatalf("seed legacy settings: %v", err)
+	}
+
+	seedDefaultSettings()
+
+	var row mdb.Setting
+	if err := Mdb.Where("`key` = ?", mdb.SettingKeyRateMode).Take(&row).Error; err != nil {
+		t.Fatalf("load migrated rate.mode: %v", err)
+	}
+	if row.Value != config.RateModeAuto {
+		t.Fatalf("legacy rate.mode = %q, want auto", row.Value)
+	}
+}
+
+func TestSeedDefaultSettingsMigratesLegacyEnvAPIInstallToAuto(t *testing.T) {
+	db := setupSeedSettingsTestDB(t)
+	Mdb = db
+	viper.Set("api_rate_url", "https://rate.example.test")
+	if err := Mdb.Create(&mdb.Setting{
+		Group: mdb.SettingGroupRate,
+		Key:   mdb.SettingKeyRateForcedRateList,
+		Value: mdb.SettingDefaultRateForcedRateList,
+		Type:  mdb.SettingTypeJSON,
+	}).Error; err != nil {
+		t.Fatalf("seed legacy forced rate: %v", err)
+	}
+
+	seedDefaultSettings()
+
+	var row mdb.Setting
+	if err := Mdb.Where("`key` = ?", mdb.SettingKeyRateMode).Take(&row).Error; err != nil {
+		t.Fatalf("load env-migrated rate.mode: %v", err)
+	}
+	if row.Value != config.RateModeAuto {
+		t.Fatalf("legacy env rate.mode = %q, want auto", row.Value)
+	}
+}
+
+func TestSeedDefaultSettingsPreservesExplicitLegacyRateMode(t *testing.T) {
+	db := setupSeedSettingsTestDB(t)
+	Mdb = db
+	legacy := []mdb.Setting{
+		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateApiUrl, Value: "https://rate.example.test", Type: mdb.SettingTypeString},
+		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateMode, Value: config.RateModeFixed, Type: mdb.SettingTypeString},
+	}
+	if err := Mdb.Create(&legacy).Error; err != nil {
+		t.Fatalf("seed explicit mode settings: %v", err)
+	}
+
+	seedDefaultSettings()
+
+	var row mdb.Setting
+	if err := Mdb.Where("`key` = ?", mdb.SettingKeyRateMode).Take(&row).Error; err != nil {
+		t.Fatalf("load explicit rate.mode: %v", err)
+	}
+	if row.Value != config.RateModeFixed {
+		t.Fatalf("explicit rate.mode = %q, want fixed", row.Value)
 	}
 }
 

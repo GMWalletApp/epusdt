@@ -11,9 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GMWalletApp/epusdt/util/http_client"
 	"github.com/spf13/viper"
-	"github.com/tidwall/gjson"
 )
 
 var (
@@ -335,87 +333,6 @@ func GetRateApiUrlFromEnv() string {
 		log.Println("api_rate_url is empty")
 	}
 	return rateURL
-}
-
-func GetRateForCoin(coin string, base string) float64 {
-	coin = strings.ToLower(strings.TrimSpace(coin))
-	base = strings.ToLower(strings.TrimSpace(base))
-	if coin == "" || base == "" {
-		return 0
-	}
-	if coin == base {
-		return 1
-	}
-	if forcedRate := getForcedRateForCoin(coin, base); forcedRate > 0 {
-		return forcedRate
-	}
-	if coin == "usdt" && base == "usd" {
-		return 1
-	}
-	if rate := getRateForCoinFromAPI(coin, base); rate > 0 {
-		return rate
-	}
-	if coin == "ton" {
-		return getRateForCoinFromAPI("toncoin", base)
-	}
-	return 0
-}
-
-func getForcedRateForCoin(coin string, base string) float64 {
-	raw := strings.TrimSpace(settingsForcedRateList())
-	if raw != "" {
-		if rate := gjson.Get(raw, base+"."+coin).Float(); rate > 0 {
-			return rate
-		}
-	}
-	return 0
-}
-
-func getRateForCoinFromAPI(coin string, base string) float64 {
-	baseURL := GetRateApiUrl()
-	if baseURL == "" {
-		log.Printf("rate api url is empty")
-		return 0.0
-	}
-	if baseURL[len(baseURL)-1] != '/' {
-		baseURL += "/"
-	}
-
-	client := http_client.GetHttpClient()
-	resp, err := client.R().Get(baseURL + fmt.Sprintf("%s.json", base))
-	if err != nil {
-		log.Printf("call rate api error: %s", err.Error())
-		return 0.0
-	}
-	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
-		log.Printf("call rate api unexpected status: %s", resp.Status())
-		return 0.0
-	}
-
-	targetRate := 0.0
-	gjson.GetBytes(resp.Body(), base).ForEach(func(key, value gjson.Result) bool {
-		if key.String() == coin {
-			targetRate = value.Float()
-			return false
-		}
-		return true
-	})
-	return targetRate
-}
-
-func GetUsdtRate() float64 {
-	// rate.forced_rate_list stores token amount per one base currency unit.
-	// GetUsdtRate returns the inverse display value: CNY per USDT.
-	if forcedRate := getForcedRateForCoin("usdt", "cny"); forcedRate > 0 {
-		return 1 / forcedRate
-	}
-
-	apiRate := getRateForCoinFromAPI("usdt", "cny")
-	if apiRate > 0 {
-		return 1 / apiRate
-	}
-	log.Printf("usdt/cny rate unavailable: rate.forced_rate_list has no positive cny.usdt entry and rate api returned no data")
-	return 0
 }
 
 func GetOrderExpirationTime() int {

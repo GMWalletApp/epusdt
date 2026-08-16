@@ -46,6 +46,11 @@ func runPolygonListener(contracts []common.Address) {
 		log.Sugar.Errorf("[POLYGON-WS] Failed to get wallet addresses: %v", err)
 		return
 	}
+	recipientTopics := evmRecipientTopicsFromWallets(wallets)
+	if len(recipientTopics) == 0 {
+		log.Sugar.Warnf("[POLYGON-WS] no enabled wallet addresses, listener idle")
+		return
+	}
 	storePolygonRecipientsFromWallets(wallets)
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
@@ -73,7 +78,7 @@ func runPolygonListener(contracts []common.Address) {
 
 	query := ethereum.FilterQuery{
 		Addresses: contracts,
-		Topics:    [][]common.Hash{},
+		Topics:    evmTransferTopics(recipientTopics),
 	}
 
 	runEvmWsLogListener(ctx, mdb.NetworkPolygon, "[POLYGON-WS]", wsNode, query, func(client *ethclient.Client, vLog types.Log) {

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/internal/testutil"
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/data"
@@ -221,5 +222,123 @@ func TestTryProcessEvmERC20TransferSkipsTransfersBeforeOrderCreation(t *testing.
 	}
 	if lockTradeID != tradeID {
 		t.Fatalf("runtime lock trade_id = %q, want %q", lockTradeID, tradeID)
+	}
+}
+
+func TestTryProcessEvmERC20TransferRecoversExpiredOrderAfterLockCleanup(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	const (
+		tradeID  = "T202605110003"
+		orderID  = "ORD202605110003"
+		tokenSym = "USDT"
+		amount   = 17.68
+	)
+	contract := common.HexToAddress("0x5555555555555555555555555555555555555555")
+	receiveAddress := common.HexToAddress("0x6666666666666666666666666666666666666666")
+
+	upsertTaskServiceTestChainToken(t, mdb.ChainToken{
+		Network:         mdb.NetworkBsc,
+		Symbol:          tokenSym,
+		ContractAddress: contract.Hex(),
+		Decimals:        6,
+		Enabled:         true,
+	})
+
+	order := &mdb.Orders{
+		TradeId:        tradeID,
+		OrderId:        orderID,
+		Amount:         100,
+		Currency:       "CNY",
+		ActualAmount:   amount,
+		Token:          tokenSym,
+		Network:        mdb.NetworkBsc,
+		ReceiveAddress: strings.ToLower(receiveAddress.Hex()),
+		Status:         mdb.StatusExpired,
+		PayProvider:    mdb.PaymentProviderOnChain,
+	}
+	if err := dao.Mdb.Create(order).Error; err != nil {
+		t.Fatalf("seed expired order: %v", err)
+	}
+	createdAt := time.Now().Add(-2 * time.Minute)
+	if err := dao.Mdb.Model(&mdb.Orders{}).
+		Where("trade_id = ?", tradeID).
+		Update("created_at", createdAt).Error; err != nil {
+		t.Fatalf("backdate order: %v", err)
+	}
+
+	rawValue := big.NewInt(17_680_000) // 17.68 with 6 decimals
+	blockTsMs := createdAt.Add(time.Minute).UnixMilli()
+	TryProcessEvmERC20Transfer(mdb.NetworkBsc, contract, receiveAddress, rawValue, "0xrecovered-hash", blockTsMs)
+
+	paid, err := data.GetOrderInfoByTradeId(tradeID)
+	if err != nil {
+		t.Fatalf("load paid order: %v", err)
+	}
+	if paid.Status != mdb.StatusPaySuccess {
+		t.Fatalf("order status = %d, want %d", paid.Status, mdb.StatusPaySuccess)
+	}
+	if paid.BlockTransactionId != "0xrecovered-hash" {
+		t.Fatalf("block transaction id = %q, want recovered hash", paid.BlockTransactionId)
+	}
+}
+
+func TestTryProcessEvmERC20TransferSkipsExpiredOrderAfterPaymentWindow(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	const (
+		tradeID  = "T202605110004"
+		orderID  = "ORD202605110004"
+		tokenSym = "USDT"
+		amount   = 19.99
+	)
+	contract := common.HexToAddress("0x7777777777777777777777777777777777777777")
+	receiveAddress := common.HexToAddress("0x8888888888888888888888888888888888888888")
+
+	upsertTaskServiceTestChainToken(t, mdb.ChainToken{
+		Network:         mdb.NetworkBsc,
+		Symbol:          tokenSym,
+		ContractAddress: contract.Hex(),
+		Decimals:        6,
+		Enabled:         true,
+	})
+
+	order := &mdb.Orders{
+		TradeId:        tradeID,
+		OrderId:        orderID,
+		Amount:         100,
+		Currency:       "CNY",
+		ActualAmount:   amount,
+		Token:          tokenSym,
+		Network:        mdb.NetworkBsc,
+		ReceiveAddress: strings.ToLower(receiveAddress.Hex()),
+		Status:         mdb.StatusExpired,
+		PayProvider:    mdb.PaymentProviderOnChain,
+	}
+	if err := dao.Mdb.Create(order).Error; err != nil {
+		t.Fatalf("seed expired order: %v", err)
+	}
+	createdAt := time.Now().Add(-2 * config.GetOrderExpirationTimeDuration())
+	if err := dao.Mdb.Model(&mdb.Orders{}).
+		Where("trade_id = ?", tradeID).
+		Update("created_at", createdAt).Error; err != nil {
+		t.Fatalf("backdate order: %v", err)
+	}
+
+	rawValue := big.NewInt(19_990_000) // 19.99 with 6 decimals
+	blockTsMs := createdAt.Add(config.GetOrderExpirationTimeDuration() + time.Minute).UnixMilli()
+	TryProcessEvmERC20Transfer(mdb.NetworkBsc, contract, receiveAddress, rawValue, "0xlate-hash", blockTsMs)
+
+	got, err := data.GetOrderInfoByTradeId(tradeID)
+	if err != nil {
+		t.Fatalf("load order: %v", err)
+	}
+	if got.Status != mdb.StatusExpired {
+		t.Fatalf("order status = %d, want %d", got.Status, mdb.StatusExpired)
+	}
+	if got.BlockTransactionId != "" {
+		t.Fatalf("block transaction id = %q, want empty", got.BlockTransactionId)
 	}
 }
