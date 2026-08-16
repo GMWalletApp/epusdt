@@ -44,19 +44,50 @@
 
 私有部署，按 HTTP API 接入，几分钟内就可以开始接收 **Crypto Payments**。
 
-### 已支持网络与代币
+### 默认内置网络与代币
 
 | 网络 | 代币 |
 |------|------|
 | **TRC20** (Tron) | USDT、TRX |
-| **ERC20** (Ethereum) | USDT、USDC、ETH |
-| **Solana** | USDT、USDC |
-| **BEP20** (BSC) | USDT、USDC、BNB |
-| **Polygon** | USDT、USDC |
+| **ERC20** (Ethereum) | USDT、USDC |
+| **Solana** | USDT、USDC、SOL |
+| **BEP20** (BSC) | USDT、USDC |
+| **Polygon** | USDT、USDC、USDC.e |
+| **Plasma** | USDT |
+| **Base** (Chain ID 8453) | USDC |
+| **Arbitrum One** (Chain ID 42161) | USDC、USDT（官方合约已升级为 USDT0） |
+| **TON** | TON、USDT |
 | **Aptos** | USDC、USDT |
 | **更多** | 持续扩展中… |
 
-> 具体支持的链与代币以 [最新版本](https://github.com/GMWalletApp/epusdt/releases) 及 [官方文档](https://epusdt.com) 为准。
+> Base 默认使用 Circle 原生 USDC，不包含 USDbC；Arbitrum One 默认使用 Circle 原生 USDC 和官方 USDT/USDT0 合约，暂不支持两条链的原生 ETH。实际可用资产还取决于后台是否启用对应链、代币，以及是否配置了该链钱包地址和可用 RPC 节点，可通过 `GET /payments/gmpay/v1/config` 查询。
+
+### 默认监控合约与资产标识
+
+以下地址是新数据库首次启动时写入的默认配置。EVM/TRON 使用代币合约地址，Solana 使用 Mint 地址，TON 使用 Jetton Master 地址，Aptos 使用 Fungible Asset Metadata 地址；原生资产没有合约地址。已有数据库中的同网络、同代币配置不会被启动过程覆盖，运行时应以管理后台和数据库中的 `chain_tokens` 实际记录为准。
+
+| 网络 | `network` 参数 | 代币 | 合约或资产标识 | 精度 |
+|------|-----------------|------|------------------|------|
+| TRON | `tron` | USDT | `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t` | 6 |
+| TRON | `tron` | TRX | 原生资产，无合约地址 | 6 |
+| Ethereum | `ethereum` | USDT | `0xdAC17F958D2ee523a2206206994597C13D831ec7` | 6 |
+| Ethereum | `ethereum` | USDC | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` | 6 |
+| Solana | `solana` | USDT | `Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB` | 6 |
+| Solana | `solana` | USDC | `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` | 6 |
+| Solana | `solana` | SOL | 原生资产，无合约地址 | 9 |
+| BSC | `binance` | USDT | `0x55d398326f99059fF775485246999027B3197955` | 18 |
+| BSC | `binance` | USDC | `0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d` | 18 |
+| Polygon | `polygon` | USDT | `0xc2132D05D31c914a87C6611C10748AEb04B58e8F` | 6 |
+| Polygon | `polygon` | USDC | `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` | 6 |
+| Polygon | `polygon` | USDC.e | `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174` | 6 |
+| Plasma | `plasma` | USDT | `0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb` | 6 |
+| Base | `base` | USDC | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | 6 |
+| Arbitrum One | `arbitrum` | USDC | `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` | 6 |
+| Arbitrum One | `arbitrum` | USDT | `0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9` | 6 |
+| TON | `ton` | TON | 原生资产，无合约地址 | 9 |
+| TON | `ton` | USDT | `0:b113a994b5024a16719f69139328eb759596c38a25f59028b146fecdc3621dfe` | 6 |
+| Aptos | `aptos` | USDC | `0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b` | 6 |
+| Aptos | `aptos` | USDT | `0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d6ffc9dc2b` | 6 |
 
 ---
 
@@ -83,7 +114,7 @@ Epusdt 已完成第三方安全审计。
 
 ## 核心特性
 
-- **多链多币种** — 支持 TRC20、ERC20、BEP20、Polygon、Aptos 等主流网络
+- **多链多币种** — 支持 TRON、Ethereum、Solana、BSC、Polygon、Plasma、Base、Arbitrum One、TON、Aptos 等网络
 - **私有化部署** — 资金完全自主掌控
 - **零依赖运行** — 单个二进制即可启动，低并发场景无需 MySQL + Redis
 - **跨平台** — 支持 x86 / ARM 架构的 Windows / Linux / Mac
@@ -107,11 +138,84 @@ Epusdt 已完成第三方安全审计。
 | [宝塔面板部署](https://epusdt.com/guide/installation/aapanel) | 适合宝塔用户 |
 | [手动部署](https://epusdt.com/guide/installation/manual.html) | 完全手动控制 |
 | [开发者 API 文档](https://epusdt.com/zh/guide/integration/gmpay.html) | 接口集成指南 |
+| [仓库内：完整 API 文档](wiki/API.md) | 当前代码路由、签名、请求参数、回调与示例 |
 
 仓库内还提供顶层脚本：
 
+- [`./build.sh`](./build.sh) 用于一键编译当前平台、指定平台或全部平台，产物输出到 `dist/`
 - [`./epctl`](./epctl) 用于 Linux 二进制安装、升级、查看配置、状态和初始化密码
 - [`./epctl-docker-test.sh`](./epctl-docker-test.sh) 用于在本机 Docker 里跑 Ubuntu + systemd 的真实安装验收
+
+一键编译当前平台：
+
+```bash
+./build.sh
+```
+
+编译 Linux AMD64 或全部支持平台：
+
+```bash
+./build.sh linux-amd64
+./build.sh all
+```
+
+脚本会自动写入版本号、Git 提交号和编译时间，并生成压缩包及 SHA-256 校验文件。可通过 `BUILD_VERSION=v1.2.3 ./build.sh linux-amd64` 指定版本号。
+
+---
+
+## API 暴露与认证边界
+
+正常运行时，HTTP 端口同时承载收银台、商户支付接口和管理后台接口。部署时应通过 HTTPS 反向代理对外提供服务，并根据下表限制不需要公开的路径。
+
+### 公开及订单访问接口
+
+| 方法 | 路径 | 认证方式 | 用途 |
+|------|------|----------|------|
+| `POST` | `/` | 无 | 服务探测 |
+| `GET` | `/payments/gmpay/v1/config` | 无 | 获取公开站点配置及当前可用资产 |
+| `GET` | `/pay/checkout-counter/{trade_id}` | 无 | 跳转到收银台页面 |
+| `GET` | `/pay/checkout-counter-resp/{trade_id}` | 无 | 获取收银台订单数据 |
+| `GET` | `/pay/check-status/{trade_id}` | 无 | 查询订单状态 |
+| `GET` | `/pay/return/{trade_id}` | 无 | EPay 支付完成后的商户跳转 |
+| `POST` | `/pay/submit-tx-hash/{trade_id}` | `trade_id` 能力凭证 | 用户提交链上交易哈希进行补单验证 |
+| `POST` | `/pay/switch-network` | `trade_id` 能力凭证 | 为订单选择或切换支付网络/通道 |
+
+`trade_id` 可用于读取订单状态、切换支付目标或提交交易哈希，应当视为不可公开传播的能力凭证，不要写入公开日志、统计参数或第三方页面。
+
+### 商户及支付平台接口
+
+| 方法 | 路径 | 认证方式 |
+|------|------|----------|
+| `POST` | `/payments/gmpay/v1/order/create-transaction` | 商户 PID、API Key 签名及可选 IP 白名单 |
+| `GET/POST` | `/payments/epay/v1/order/create-transaction/submit.php` | EPay 签名及可选 IP 白名单 |
+| `POST` | `/payments/okpay/v1/notify` | OkPay 平台签名 |
+
+Base 与 Arbitrum One 复用上述通用接口，不提供单独的链专用 API：
+
+| 网络 | GMPay 参数 | EPay `type` 示例 |
+|------|------------|------------------|
+| Base | `network=base`、`token=USDC` | `USDC.base` |
+| Arbitrum One | `network=arbitrum`、`token=USDC` | `USDC.arbitrum` |
+| Arbitrum One | `network=arbitrum`、`token=USDT` | `USDT.arbitrum` |
+
+### 管理后台接口
+
+- `POST /admin/api/v1/auth/login` 和 `GET /admin/api/v1/auth/init-password-hash` 不要求 JWT。
+- 其余 `/admin/api/v1/*` 接口均要求管理员 JWT，覆盖 API Key、通知渠道、链与代币、RPC、钱包、订单、仪表盘和系统设置管理。
+- `GET /admin/api/v1/dashboard/rpc-stats` 是需要 JWT 的 SSE 长连接接口。
+
+### 首次安装接口
+
+当 `.env` 不存在或配置了 `install=true` 时，程序会先开放以下安装接口，完成安装后才启动正常业务 API：
+
+| 方法 | 路径 | 认证方式 |
+|------|------|----------|
+| `GET` | `/api/install/defaults` | 无 |
+| `POST` | `/api/install` | 无 |
+
+安装服务默认监听 `:8000`，`POST /api/install` 会初始化数据库并返回初始管理员密码。首次启动必须限制在本机或可信内网完成，不要在未安装状态下直接将 `8000` 端口暴露到公网。
+
+完整字段、签名算法、响应结构和回调示例请查看 [仓库内 API 文档](wiki/API.md)。
 
 ---
 
@@ -153,7 +257,7 @@ Epusdt
 
 ## 实现原理
 
-Epusdt 通过监听多条区块链网络（TRC20、ERC20、BEP20、Polygon 等）的 API 或 RPC 节点，实时捕获钱包地址的代币入账事件，利用**金额差异**与**时效性**精确匹配交易归属：
+Epusdt 通过监听多条区块链网络（TRON、Ethereum、BSC、Polygon、Base、Arbitrum One、Solana、TON、Aptos 等）的 API 或 RPC 节点，实时捕获钱包地址的代币入账事件，利用**金额差异**与**时效性**精确匹配交易归属：
 
 ```text
 工作流程：

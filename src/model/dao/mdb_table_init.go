@@ -8,6 +8,7 @@ import (
 
 	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/model/mdb"
+	"github.com/GMWalletApp/epusdt/util/sign"
 	"github.com/gookit/color"
 	"gorm.io/gorm/clause"
 )
@@ -51,6 +52,10 @@ func MdbTableInit() {
 				return
 			}
 		}
+		if err := backfillSignatureCompatibility(); err != nil {
+			color.Red.Printf("[store_db] 回填签名兼容字段失败,err=%s\n", err)
+			return
+		}
 
 		seedChains()
 		backfillRpcNodePurpose()
@@ -59,6 +64,18 @@ func MdbTableInit() {
 		seedDefaultSettings()
 		seedTelegramChannelFromSettings()
 	})
+}
+
+// backfillSignatureCompatibility 为升级前数据补齐安全的兼容默认值。
+func backfillSignatureCompatibility() error {
+	if err := Mdb.Model(&mdb.ApiKey{}).
+		Where("gmpay_sign_mode IS NULL OR gmpay_sign_mode = ?", "").
+		Update("gmpay_sign_mode", sign.GMPaySignModeDual).Error; err != nil {
+		return err
+	}
+	return Mdb.Model(&mdb.Orders{}).
+		Where("sign_algorithm IS NULL OR sign_algorithm = ?", "").
+		Update("sign_algorithm", sign.AlgorithmMD5).Error
 }
 
 // seedChains inserts the built-in networks as enabled rows. Uses
@@ -71,6 +88,8 @@ func seedChains() {
 		{Network: mdb.NetworkBsc, DisplayName: "BSC", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 5},
 		{Network: mdb.NetworkPolygon, DisplayName: "Polygon", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 5},
 		{Network: mdb.NetworkPlasma, DisplayName: "Plasma", Enabled: true, MinConfirmations: 1, ScanIntervalSec: 5},
+		{Network: mdb.NetworkBase, DisplayName: "Base", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 5, Extra: `{"chain_id":8453}`},
+		{Network: mdb.NetworkArbitrum, DisplayName: "Arbitrum One", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 5, Extra: `{"chain_id":42161}`},
 		{Network: mdb.NetworkTon, DisplayName: "TON", Enabled: true, MinConfirmations: 1, ScanIntervalSec: 5},
 		{Network: mdb.NetworkAptos, DisplayName: "Aptos", Enabled: true, MinConfirmations: 1, ScanIntervalSec: 5},
 	}
@@ -107,6 +126,11 @@ func seedChainTokens() {
 		{Network: mdb.NetworkPolygon, Symbol: "USDC.e", ContractAddress: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174", Decimals: 6, Enabled: true},
 		// Plasma
 		{Network: mdb.NetworkPlasma, Symbol: "USDT", ContractAddress: "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb", Decimals: 6, Enabled: true},
+		// Base（Circle 原生 USDC，暂不包含跨链 USDbC）
+		{Network: mdb.NetworkBase, Symbol: "USDC", ContractAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", Decimals: 6, Enabled: true},
+		// Arbitrum One（Circle 原生 USDC，以及已升级为 USDT0 的官方 USDT 合约）
+		{Network: mdb.NetworkArbitrum, Symbol: "USDC", ContractAddress: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", Decimals: 6, Enabled: true},
+		{Network: mdb.NetworkArbitrum, Symbol: "USDT", ContractAddress: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", Decimals: 6, Enabled: true},
 		// TON
 		{Network: mdb.NetworkTon, Symbol: "TON", ContractAddress: "", Decimals: 9, Enabled: true},
 		{Network: mdb.NetworkTon, Symbol: "USDT", ContractAddress: "0:b113a994b5024a16719f69139328eb759596c38a25f59028b146fecdc3621dfe", Decimals: 6, Enabled: true},
@@ -147,6 +171,8 @@ func defaultRpcNodes() []mdb.RpcNode {
 		{Network: mdb.NetworkBsc, Url: "wss://bsc.drpc.org", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkPolygon, Url: "wss://polygon-bor-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkPlasma, Url: "wss://rpc.plasma.to", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkBase, Url: "wss://base-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkArbitrum, Url: "wss://arbitrum-one-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkTon, Url: "https://ton-blockchain.github.io/global.config.json", Type: mdb.RpcNodeTypeLite, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkAptos, Url: "https://aptos-rest.publicnode.com/", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkEthereum, Url: "https://rpc.epusdt.com/ethereum", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeManualVerify, Status: mdb.RpcNodeStatusUnknown},
@@ -192,11 +218,7 @@ func seedDefaultSettings() {
 	}
 }
 
-// defaultRateModeForSeed keeps fresh installations on the safe fixed default,
-// while migrating installations created before rate.mode existed to auto when
-// they already relied on an external rate API. This is the closest equivalent
-// to the legacy forced-rate-then-API-fallback behavior available with the new
-// two explicit modes.
+// 新安装保持 fixed；已有安装若曾配置外部 API，则迁移到保留旧版优先级的 auto 模式。
 func defaultRateModeForSeed() string {
 	var existingSettings int64
 	if err := Mdb.Unscoped().Model(&mdb.Setting{}).Count(&existingSettings).Error; err != nil {

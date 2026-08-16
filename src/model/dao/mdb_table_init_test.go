@@ -7,10 +7,68 @@ import (
 
 	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/model/mdb"
+	"github.com/GMWalletApp/epusdt/util/sign"
 	"github.com/libtnb/sqlite"
 	"github.com/spf13/viper"
 	"gorm.io/gorm"
 )
+
+type legacyApiKeyForSignMigration struct {
+	ID        uint64 `gorm:"primaryKey"`
+	Name      string
+	Pid       string
+	SecretKey string
+	Status    int
+}
+
+func (legacyApiKeyForSignMigration) TableName() string { return "api_keys" }
+
+type legacyOrderForSignMigration struct {
+	ID      uint64 `gorm:"primaryKey"`
+	TradeID string `gorm:"column:trade_id"`
+	OrderID string `gorm:"column:order_id"`
+}
+
+func (legacyOrderForSignMigration) TableName() string { return "orders" }
+
+func TestBackfillSignatureCompatibilityMigratesLegacyRows(t *testing.T) {
+	db := setupSeedTableTestDB(t)
+	if err := db.AutoMigrate(&legacyApiKeyForSignMigration{}, &legacyOrderForSignMigration{}); err != nil {
+		t.Fatalf("创建旧版表结构失败: %v", err)
+	}
+	if err := db.Create(&legacyApiKeyForSignMigration{
+		Name: "legacy", Pid: "1000", SecretKey: "legacy-secret", Status: mdb.ApiKeyStatusEnable,
+	}).Error; err != nil {
+		t.Fatalf("写入旧版 API Key 失败: %v", err)
+	}
+	if err := db.Create(&legacyOrderForSignMigration{TradeID: "legacy-trade", OrderID: "legacy-order"}).Error; err != nil {
+		t.Fatalf("写入旧版订单失败: %v", err)
+	}
+
+	if err := db.AutoMigrate(&mdb.ApiKey{}, &mdb.Orders{}); err != nil {
+		t.Fatalf("升级签名字段失败: %v", err)
+	}
+	Mdb = db
+	if err := backfillSignatureCompatibility(); err != nil {
+		t.Fatalf("回填签名兼容字段失败: %v", err)
+	}
+
+	var apiKey mdb.ApiKey
+	if err := db.Where("pid = ?", "1000").Take(&apiKey).Error; err != nil {
+		t.Fatalf("读取升级后的 API Key 失败: %v", err)
+	}
+	if apiKey.GMPaySignMode != sign.GMPaySignModeDual {
+		t.Fatalf("历史 API Key 模式 = %q, want %q", apiKey.GMPaySignMode, sign.GMPaySignModeDual)
+	}
+
+	var order mdb.Orders
+	if err := db.Where("trade_id = ?", "legacy-trade").Take(&order).Error; err != nil {
+		t.Fatalf("读取升级后的订单失败: %v", err)
+	}
+	if order.SignAlgorithm != sign.AlgorithmMD5 {
+		t.Fatalf("历史订单算法 = %q, want %q", order.SignAlgorithm, sign.AlgorithmMD5)
+	}
+}
 
 func TestDefaultRpcNodesIncludesManualVerifyEpusdtEvmNodes(t *testing.T) {
 	want := map[string]string{
@@ -150,6 +208,47 @@ func TestSeedChainTokensIncludesAptosAssets(t *testing.T) {
 	}
 }
 
+func TestSeedChainsAndTokensIncludeBaseAndArbitrum(t *testing.T) {
+	db := setupSeedTableTestDB(t, &mdb.Chain{}, &mdb.ChainToken{})
+	Mdb = db
+
+	seedChains()
+	seedChainTokens()
+
+	chains := map[string]struct {
+		name    string
+		chainID string
+	}{
+		mdb.NetworkBase:     {name: "Base", chainID: `"chain_id":8453`},
+		mdb.NetworkArbitrum: {name: "Arbitrum One", chainID: `"chain_id":42161`},
+	}
+	for network, want := range chains {
+		var row mdb.Chain
+		if err := Mdb.Where("network = ?", network).Take(&row).Error; err != nil {
+			t.Fatalf("load %s chain seed: %v", network, err)
+		}
+		if !row.Enabled || row.DisplayName != want.name || !strings.Contains(row.Extra, want.chainID) {
+			t.Fatalf("unexpected %s chain seed: %+v", network, row)
+		}
+	}
+
+	contracts := map[string]string{
+		mdb.NetworkBase + "/USDC":     "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+		mdb.NetworkArbitrum + "/USDC": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+		mdb.NetworkArbitrum + "/USDT": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+	}
+	for key, contract := range contracts {
+		parts := strings.Split(key, "/")
+		var row mdb.ChainToken
+		if err := Mdb.Where("network = ? AND symbol = ?", parts[0], parts[1]).Take(&row).Error; err != nil {
+			t.Fatalf("load token seed %s: %v", key, err)
+		}
+		if !row.Enabled || row.Decimals != 6 || !strings.EqualFold(row.ContractAddress, contract) {
+			t.Fatalf("unexpected token seed %s: %+v", key, row)
+		}
+	}
+}
+
 func TestSeedDefaultSettingsIncludesSystemLogLevel(t *testing.T) {
 	db := setupSeedSettingsTestDB(t)
 	Mdb = db
@@ -279,24 +378,29 @@ func TestSeedDefaultSettingsMigratesLegacyEnvAPIInstallToAuto(t *testing.T) {
 }
 
 func TestSeedDefaultSettingsPreservesExplicitLegacyRateMode(t *testing.T) {
-	db := setupSeedSettingsTestDB(t)
-	Mdb = db
-	legacy := []mdb.Setting{
-		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateApiUrl, Value: "https://rate.example.test", Type: mdb.SettingTypeString},
-		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateMode, Value: config.RateModeFixed, Type: mdb.SettingTypeString},
-	}
-	if err := Mdb.Create(&legacy).Error; err != nil {
-		t.Fatalf("seed explicit mode settings: %v", err)
-	}
+	for _, mode := range []string{config.RateModeFixed, config.RateModeAuto} {
+		t.Run(mode, func(t *testing.T) {
+			db := setupSeedSettingsTestDB(t)
+			Mdb = db
+			legacy := []mdb.Setting{
+				{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateApiUrl, Value: "https://rate.example.test", Type: mdb.SettingTypeString},
+				{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateMode, Value: mode, Type: mdb.SettingTypeString},
+			}
+			if err := Mdb.Create(&legacy).Error; err != nil {
+				t.Fatalf("seed explicit mode settings: %v", err)
+			}
 
-	seedDefaultSettings()
+			seedDefaultSettings()
+			seedDefaultSettings()
 
-	var row mdb.Setting
-	if err := Mdb.Where("`key` = ?", mdb.SettingKeyRateMode).Take(&row).Error; err != nil {
-		t.Fatalf("load explicit rate.mode: %v", err)
-	}
-	if row.Value != config.RateModeFixed {
-		t.Fatalf("explicit rate.mode = %q, want fixed", row.Value)
+			var row mdb.Setting
+			if err := Mdb.Where("`key` = ?", mdb.SettingKeyRateMode).Take(&row).Error; err != nil {
+				t.Fatalf("load explicit rate.mode: %v", err)
+			}
+			if row.Value != mode {
+				t.Fatalf("explicit rate.mode = %q, want %q", row.Value, mode)
+			}
+		})
 	}
 }
 

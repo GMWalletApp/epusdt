@@ -322,7 +322,8 @@ func TestProcessAptosLedgerRoundMarksMatchingUSDTOrderPaid(t *testing.T) {
 	amount := 3.1
 	tradeID := "aptos_trade_1"
 	usdt := "0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d6ffc9dc2b"
-	body := aptosFungibleTransferBody(t, "0xabc", 101, receive, usdt, "3100000")
+	version := time.Now().UnixNano()
+	txID := fmt.Sprintf("0x%x", version)
 
 	order := &mdb.Orders{
 		TradeId:         tradeID,
@@ -343,22 +344,23 @@ func TestProcessAptosLedgerRoundMarksMatchingUSDTOrderPaid(t *testing.T) {
 	if err := data.LockTransaction(mdb.NetworkAptos, receive, "USDT", tradeID, amount, time.Hour); err != nil {
 		t.Fatalf("lock transaction: %v", err)
 	}
+	body := aptosFungibleTransferBody(t, txID, version, receive, usdt, "3100000")
 
 	state, err := loadMoveWatchState(mdb.NetworkAptos)
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	provider := &fakeAptosProvider{bodiesByStart: map[int64][]byte{101: body}}
-	cursor := &aptosRuntimeCursor{initialized: true, lastSeenVersion: 100}
+	provider := &fakeAptosProvider{bodiesByStart: map[int64][]byte{version: body}}
+	cursor := &aptosRuntimeCursor{initialized: true, lastSeenVersion: version - 1}
 
-	if _, err = processAptosLedgerRound(context.Background(), provider, state, cursor, 101); err != nil {
+	if _, err = processAptosLedgerRound(context.Background(), provider, state, cursor, version); err != nil {
 		t.Fatalf("processAptosLedgerRound(): %v", err)
 	}
 	paid, err := data.GetOrderInfoByTradeId(tradeID)
 	if err != nil {
 		t.Fatalf("reload order: %v", err)
 	}
-	if paid.Status != mdb.StatusPaySuccess || paid.CallBackConfirm != mdb.CallBackConfirmNo || paid.BlockTransactionId != "0xabc" {
+	if paid.Status != mdb.StatusPaySuccess || paid.CallBackConfirm != mdb.CallBackConfirmNo || paid.BlockTransactionId != txID {
 		t.Fatalf("paid order = %#v", paid)
 	}
 	lockTradeID, err := data.GetTradeIdByWalletAddressAndAmountAndToken(mdb.NetworkAptos, receive, "USDT", amount)

@@ -17,6 +17,8 @@ type ApiKey struct {
 	SecretKey   string `gorm:"column:secret_key;size:255" json:"-"`
 	IpWhitelist string `gorm:"column:ip_whitelist;type:text" json:"ip_whitelist" example:"192.168.1.0/24,10.0.0.1"`
 	NotifyUrl   string `gorm:"column:notify_url;size:512" json:"notify_url" example:"https://example.com/notify"`
+	// GMPaySignMode 控制 GMPay 接口允许的签名算法；EPay 始终使用 MD5。
+	GMPaySignMode string `gorm:"column:gmpay_sign_mode;size:32;not null;default:dual" json:"gmpay_sign_mode" enums:"dual,hmac_sha256,md5" example:"hmac_sha256"`
 	// 状态 1=启用 2=禁用
 	Status     int         `gorm:"column:status;default:1" json:"status" enums:"1,2" example:"1"`
 	CallCount  int64       `gorm:"column:call_count;default:0" json:"call_count" example:"342"`

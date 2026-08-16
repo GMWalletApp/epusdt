@@ -108,7 +108,7 @@ func SetupTestDatabases(t testing.TB) func() {
 	// Seed all standard chains as enabled so IsChainEnabled checks pass.
 	for _, network := range []string{
 		mdb.NetworkTron, mdb.NetworkSolana, mdb.NetworkEthereum,
-		mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma, mdb.NetworkTon,
+		mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma, mdb.NetworkBase, mdb.NetworkArbitrum, mdb.NetworkTon,
 	} {
 		mainDB.Create(&mdb.Chain{Network: network, Enabled: true})
 	}
@@ -117,6 +117,9 @@ func SetupTestDatabases(t testing.TB) func() {
 		{Network: mdb.NetworkTron, Symbol: "USDT", ContractAddress: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", Decimals: 6, Enabled: true},
 		{Network: mdb.NetworkEthereum, Symbol: "USDT", ContractAddress: "0xdAC17F958D2ee523a2206206994597C13D831ec7", Decimals: 6, Enabled: true},
 		{Network: mdb.NetworkBsc, Symbol: "USDT", ContractAddress: "0x55d398326f99059fF775485246999027B3197955", Decimals: 18, Enabled: true},
+		{Network: mdb.NetworkBase, Symbol: "USDC", ContractAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", Decimals: 6, Enabled: true},
+		{Network: mdb.NetworkArbitrum, Symbol: "USDC", ContractAddress: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", Decimals: 6, Enabled: true},
+		{Network: mdb.NetworkArbitrum, Symbol: "USDT", ContractAddress: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", Decimals: 6, Enabled: true},
 		{Network: mdb.NetworkTon, Symbol: "TON", ContractAddress: "", Decimals: 9, Enabled: true},
 		{Network: mdb.NetworkTon, Symbol: "USDT", ContractAddress: "0:b113a994b5024a16719f69139328eb759596c38a25f59028b146fecdc3621dfe", Decimals: 6, Enabled: true},
 	})
@@ -125,14 +128,18 @@ func SetupTestDatabases(t testing.TB) func() {
 	// flows; the numeric PID 1001 row lets legacy tests that submit
 	// `pid=1001` still match.
 	mainDB.Create(&mdb.ApiKey{
-		Name: "test-default",
-		Pid:  "test-token", SecretKey: "test-token",
-		Status: mdb.ApiKeyStatusEnable,
+		Name:          "test-default",
+		Pid:           "test-token",
+		SecretKey:     "test-token",
+		GMPaySignMode: "hmac_sha256",
+		Status:        mdb.ApiKeyStatusEnable,
 	})
 	mainDB.Create(&mdb.ApiKey{
-		Name: "test-pid-1001",
-		Pid:  "1001", SecretKey: "test-token",
-		Status: mdb.ApiKeyStatusEnable,
+		Name:          "test-pid-1001",
+		Pid:           "1001",
+		SecretKey:     "test-token",
+		GMPaySignMode: "hmac_sha256",
+		Status:        mdb.ApiKeyStatusEnable,
 	})
 	if err := dao.Mdb.Create(&mdb.Setting{
 		Group: "rate",

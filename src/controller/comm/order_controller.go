@@ -11,13 +11,14 @@ import (
 	"github.com/GMWalletApp/epusdt/model/service"
 	"github.com/GMWalletApp/epusdt/util/constant"
 	"github.com/GMWalletApp/epusdt/util/log"
+	"github.com/GMWalletApp/epusdt/util/sign"
 	"github.com/labstack/echo/v4"
 )
 
 const EPayTypeContextKey = "epay_type"
 
-// apiKeyFromContext returns the api_keys row stamped by CheckApiSign.
-// Returns nil when the middleware didn't run (should not happen on authed routes).
+// apiKeyFromContext 返回验签流程写入上下文的 API Key。
+// 受保护路由正常执行时该值不应为空。
 func apiKeyFromContext(ctx echo.Context) *mdb.ApiKey {
 	if v, ok := ctx.Get(middleware.ApiKeyRowKey).(*mdb.ApiKey); ok {
 		return v
@@ -25,29 +26,42 @@ func apiKeyFromContext(ctx echo.Context) *mdb.ApiKey {
 	return nil
 }
 
+// gmpaySignAlgorithmFromContext 读取中间件实际验签成功的算法。
+func gmpaySignAlgorithmFromContext(ctx echo.Context) (string, bool) {
+	algorithm, ok := ctx.Get(middleware.SignAlgorithmKey).(string)
+	if !ok || sign.NormalizeAlgorithm(algorithm) == "" {
+		return "", false
+	}
+	return algorithm, true
+}
+
 // CreateTransaction 创建交易
 // @Summary      Create transaction
 // @Description  Create a payment transaction order. Accepts JSON body (application/json) or form-encoded body (application/x-www-form-urlencoded).
 // @Description  GMPay may omit both token and network to create a status=4 placeholder order; EPay submit.php can also create one when neither request parameters nor database defaults provide token/network. Supplying only one of token/network is invalid.
-// @Description  payment_type is optional for GMPay. If it is sent, it is a normal signed parameter and must be included when calculating signature.
-// @Description  GMPay signature uses lowercase hexadecimal HMAC-SHA256 with secret_key as the HMAC key. Legacy MD5 signatures are not accepted.
+// @Description  GMPay 认证必须提供 pid 与 signature。原始请求中除 signature 外的所有非空字符串或数字字段都会参与签名；未知字段不会写入订单，但客户端仍必须把它们计入签名。
+// @Description  payment_type 可省略；非空时参与 GMPay 签名。即使值为 Epay，也只切换回调格式，不会把本接口的入站验签切换为 EPay MD5。
+// @Description  GMPay 签名算法由 API Key 的 gmpay_sign_mode 控制；新建 Key 默认 HMAC-SHA256，升级前已有 Key 在升级后默认 dual 以兼容旧 MD5。该设置不影响独立的 EPay 接口。
+// @Description  network 使用公开配置返回的真实标识，例如 tron、ethereum、binance、base；BSC 的接口标识是 binance，不是 bsc。
 // @Tags         Payment
 // @Accept       json
 // @Accept       x-www-form-urlencoded
 // @Produce      json
-// @Param        request body request.CreateTransactionRequest false "Transaction payload (JSON)"
-// @Param        order_id formData string false "Merchant order ID"
-// @Param        currency formData string false "Fiat currency (e.g. cny)"
+// @Param        request body request.GMPayCreateTransactionDocRequest true "GMPay 创建订单 JSON 请求体"
+// @Param        pid formData string true "API Key 的 PID"
+// @Param        order_id formData string true "商户订单号"
+// @Param        currency formData string true "法币币种，例如 cny"
 // @Param        token formData string false "Crypto token (e.g. TON, USDT); omit together with network to create a placeholder where supported"
-// @Param        network formData string false "Network (e.g. ton, tron); omit together with token to create a placeholder where supported"
-// @Param        amount formData number false "Amount"
-// @Param        notify_url formData string false "Callback URL"
-// @Param        signature formData string false "Lowercase hexadecimal HMAC-SHA256 signature"
+// @Param        network formData string false "网络标识，例如 tron、binance；支持时可与 token 同时省略以创建占位订单"
+// @Param        amount formData number true "法币金额"
+// @Param        notify_url formData string true "异步回调地址"
+// @Param        signature formData string true "GMPay 签名：64 位 HMAC-SHA256，兼容模式下也可使用 32 位 MD5"
 // @Param        redirect_url formData string false "Redirect URL"
 // @Param        name formData string false "Order name"
 // @Param        payment_type formData string false "Optional GMPay compatibility flag; include in signature when sent"
 // @Success      200 {object} response.ApiResponse{data=response.CreateTransactionResponse}
 // @Failure      400 {object} response.ApiResponse "Stable errno in status_code: 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel"
+// @Failure      401 {object} response.ApiResponse "pid/signature 缺失、API Key 不可用、IP 不在白名单或签名错误"
 // @Router       /payments/gmpay/v1/order/create-transaction [post]
 func (c *BaseCommController) CreateTransaction(ctx echo.Context) (err error) {
 	req := new(request.CreateTransactionRequest)
@@ -57,7 +71,11 @@ func (c *BaseCommController) CreateTransaction(ctx echo.Context) (err error) {
 	if err = c.ValidateStruct(ctx, req); err != nil {
 		return c.FailJson(ctx, err)
 	}
-	resp, err := service.CreateTransaction(req, apiKeyFromContext(ctx))
+	algorithm, ok := gmpaySignAlgorithmFromContext(ctx)
+	if !ok {
+		return c.FailJson(ctx, constant.SignatureErr)
+	}
+	resp, err := service.CreateTransactionWithSignAlgorithm(req, apiKeyFromContext(ctx), algorithm)
 	if err != nil {
 		return c.FailJson(ctx, err)
 	}
@@ -100,38 +118,46 @@ func (c *BaseCommController) SwitchNetwork(ctx echo.Context) (err error) {
 	return c.SucJson(ctx, resp)
 }
 
-// CreateTransactionAndRedirect creates a transaction and redirects to
-// the checkout counter. The route accepts BOTH GET (query string) and
-// POST (form) per the legacy EPAY protocol; swagger documents POST as
-// the canonical form — the GET variant is identical save the transport.
+// CreateTransactionAndRedirect 创建 EPay 兼容订单并跳转到收银台。
+// 路由同时接受 GET 查询参数和 POST 表单，二者采用相同的参数及验签规则。
 // @Summary      Create transaction and redirect (EPAY compat)
 // @Description  Legacy EPAY-style endpoint. Accepts GET (querystring) and POST (form). On success, 302 redirects to /pay/checkout-counter/{trade_id}. Signature uses MD5 of sorted params + secret_key of the api_keys row matching the submitted pid.
 // @Description  After signature verification, type accepts only either alipay or a supported type=token.network selector (for example usdt.tron). Token/network resolution is: supported selector first; otherwise request token/network; otherwise epay.default_token / epay.default_network. If token and network are still both empty, the order is created as status=4 placeholder. Supplying only one of token/network remains invalid.
 // @Description  Currency resolution is unchanged: request currency -> epay.default_currency -> cny. Supported type selectors bypass only token/network defaults, not currency fallback.
 // @Description  Success return/notify reuse the stored request type. On this branch that means either alipay or a supported token.network selector; when the request omitted type, outbound fallback remains alipay. The server injects internal payment_type=Epay after EPay signature verification; merchants do not send GMPay payment_type to this endpoint.
+// @Description  EPay 认证必须提供 pid 与 sign，并始终使用 MD5；sign_type 不参与签名。API Key 的 gmpay_sign_mode 只作用于 GMPay，不改变本接口算法。
+// @Description  除 sign、sign_type 外，原始请求中的所有非空参数都会参与 EPay 签名；未知参数不会写入订单，但仍必须计入签名。
+// @Description  network 使用真实标识，例如 tron、ethereum、binance、base；BSC 的接口标识是 binance，不是 bsc。
 // @Tags         Payment
 // @Accept       x-www-form-urlencoded
 // @Produce      html
-// @Param        pid query integer false "API key PID (GET query)"
-// @Param        money query number false "Amount (fiat, GET query)"
-// @Param        out_trade_no query string false "Merchant order ID (GET query)"
-// @Param        notify_url query string false "Callback URL (GET query)"
+// @Param        pid query string true "API Key 的 PID（GET 查询参数）"
+// @Param        money query number true "法币金额（GET 查询参数）"
+// @Param        out_trade_no query string true "商户订单号（GET 查询参数）"
+// @Param        notify_url query string true "异步回调地址（GET 查询参数）"
 // @Param        return_url query string false "Redirect URL after payment (GET query)"
 // @Param        name query string false "Order name (GET query)"
 // @Param        type query string false "Either alipay or a supported token.network selector such as usdt.tron (GET query)"
-// @Param        sign query string false "MD5 signature (GET query)"
+// @Param        token query string false "type 未命中选择器时使用的币种（GET 查询参数）"
+// @Param        network query string false "type 未命中选择器时使用的网络，例如 tron、binance（GET 查询参数）"
+// @Param        currency query string false "法币币种（GET 查询参数）"
+// @Param        sign query string true "MD5 签名（GET 查询参数）"
 // @Param        sign_type query string false "Signature type (MD5, GET query)"
-// @Param        pid formData integer true "API key PID"
-// @Param        money formData number true "Amount (fiat)"
-// @Param        out_trade_no formData string true "Merchant order ID"
-// @Param        notify_url formData string true "Callback URL"
+// @Param        pid formData string true "API Key 的 PID"
+// @Param        money formData number true "法币金额"
+// @Param        out_trade_no formData string true "商户订单号"
+// @Param        notify_url formData string true "异步回调地址"
 // @Param        return_url formData string false "Redirect URL after payment"
 // @Param        name formData string false "Order name"
 // @Param        type formData string false "Either alipay or a supported token.network selector such as usdt.tron"
-// @Param        sign formData string true "MD5 signature"
+// @Param        token formData string false "type 未命中选择器时使用的币种"
+// @Param        network formData string false "type 未命中选择器时使用的网络，例如 tron、binance"
+// @Param        currency formData string false "法币币种"
+// @Param        sign formData string true "MD5 签名"
 // @Param        sign_type formData string false "Signature type (MD5)"
 // @Success      302 "Redirect to checkout counter"
 // @Failure      400 {object} response.ApiResponse "Stable errno in status_code: 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel"
+// @Failure      401 {object} response.ApiResponse "pid/sign 缺失、API Key 不可用、IP 不在白名单或签名错误"
 // @Router       /payments/epay/v1/order/create-transaction/submit.php [post]
 // @Router       /payments/epay/v1/order/create-transaction/submit.php [get]
 func (c *BaseCommController) CreateTransactionAndRedirect(ctx echo.Context) (err error) {

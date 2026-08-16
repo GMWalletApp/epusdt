@@ -8,6 +8,7 @@ import (
 
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/mdb"
+	"github.com/GMWalletApp/epusdt/util/sign"
 	"github.com/dromara/carbon/v2"
 	"gorm.io/gorm"
 )
@@ -115,10 +116,11 @@ func EnsureDefaultApiKey() (*SeededApiKey, error) {
 	}
 	secret := generateHex(32)
 	row := &mdb.ApiKey{
-		Name:      "default",
-		Pid:       strconv.Itoa(basePid),
-		SecretKey: secret,
-		Status:    mdb.ApiKeyStatusEnable,
+		Name:          "default",
+		Pid:           strconv.Itoa(basePid),
+		SecretKey:     secret,
+		GMPaySignMode: sign.GMPaySignModeHMACSHA256,
+		Status:        mdb.ApiKeyStatusEnable,
 	}
 	if err := dao.Mdb.Create(row).Error; err != nil {
 		return nil, err

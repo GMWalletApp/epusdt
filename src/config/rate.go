@@ -82,10 +82,10 @@ func GetRateForCoin(coin string, base string) float64 {
 	if coin == base {
 		return 1
 	}
+	if forcedRate := getForcedRateForCoin(coin, base); forcedRate > 0 {
+		return forcedRate
+	}
 	if GetRateMode() == RateModeFixed {
-		if forcedRate := getForcedRateForCoin(coin, base); forcedRate > 0 {
-			return forcedRate
-		}
 		if coin == "usdt" && base == "usd" {
 			return 1
 		}

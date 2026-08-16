@@ -70,6 +70,8 @@ type Orders struct {
 	// can rely on AutoMigrate without rewriting old orders.
 	PayProvider string `gorm:"column:pay_provider;size:32;default:on_chain;index:orders_pay_provider_index" json:"pay_provider" example:"on_chain"`
 	ApiKeyID    uint64 `gorm:"column:api_key_id;default:0;index:orders_api_key_id_index" json:"api_key_id" example:"1"`
+	// SignAlgorithm 固化创建订单时实际通过的 GMPay 算法，确保后续回调不受 API Key 模式切换影响。
+	SignAlgorithm string `gorm:"column:sign_algorithm;size:32;not null;default:md5" json:"-"`
 	// PayBySubId holds the primary-key ID of the sub-order that settled this parent order.
 	// Zero when the parent order was paid directly (no sub-order involved).
 	PayBySubId uint64 `gorm:"column:pay_by_sub_id;default:0" json:"pay_by_sub_id" example:"0"`

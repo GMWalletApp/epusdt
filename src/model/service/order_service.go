@@ -19,6 +19,7 @@ import (
 	"github.com/GMWalletApp/epusdt/util/log"
 	"github.com/GMWalletApp/epusdt/util/math"
 	"github.com/GMWalletApp/epusdt/util/security"
+	"github.com/GMWalletApp/epusdt/util/sign"
 	"github.com/dromara/carbon/v2"
 	"github.com/shopspring/decimal"
 )
@@ -57,7 +58,7 @@ func normalizeOrderAddressByNetwork(network, address string) string {
 	network = strings.ToLower(strings.TrimSpace(network))
 	address = strings.TrimSpace(address)
 	switch network {
-	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma:
+	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma, mdb.NetworkBase, mdb.NetworkArbitrum:
 		return strings.ToLower(address)
 	case mdb.NetworkTon:
 		if normalized, err := addressutil.NormalizeTonAddress(address); err == nil {
@@ -110,8 +111,17 @@ func buildCreateTransactionResponse(order *mdb.Orders) *response.CreateTransacti
 	}
 }
 
-// CreateTransaction creates a new payment order.
+// CreateTransaction 使用历史 MD5 默认值创建订单，供 EPay 和内部兼容调用使用。
 func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey) (*response.CreateTransactionResponse, error) {
+	return CreateTransactionWithSignAlgorithm(req, apiKey, sign.AlgorithmMD5)
+}
+
+// CreateTransactionWithSignAlgorithm 创建订单并固化本次 GMPay 实际通过的签名算法。
+func CreateTransactionWithSignAlgorithm(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey, signAlgorithm string) (*response.CreateTransactionResponse, error) {
+	signAlgorithm = sign.NormalizeAlgorithm(signAlgorithm)
+	if signAlgorithm == "" {
+		return nil, constant.SignatureErr
+	}
 	token := strings.ToUpper(strings.TrimSpace(req.Token))
 	currency := strings.ToUpper(strings.TrimSpace(req.Currency))
 	network := strings.ToLower(strings.TrimSpace(req.Network))
@@ -152,18 +162,19 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 	if token == "" && network == "" {
 		tradeID := GenerateCode()
 		order := &mdb.Orders{
-			TradeId:     tradeID,
-			OrderId:     req.OrderId,
-			Amount:      payAmount,
-			Currency:    currency,
-			Status:      mdb.StatusWaitSelect,
-			NotifyUrl:   notifyURL,
-			RedirectUrl: req.RedirectUrl,
-			Name:        req.Name,
-			EpayType:    epayType,
-			PaymentType: paymentType,
-			PayProvider: mdb.PaymentProviderOnChain,
-			ApiKeyID:    apiKeyID(apiKey),
+			TradeId:       tradeID,
+			OrderId:       req.OrderId,
+			Amount:        payAmount,
+			Currency:      currency,
+			Status:        mdb.StatusWaitSelect,
+			NotifyUrl:     notifyURL,
+			RedirectUrl:   req.RedirectUrl,
+			Name:          req.Name,
+			EpayType:      epayType,
+			PaymentType:   paymentType,
+			PayProvider:   mdb.PaymentProviderOnChain,
+			ApiKeyID:      apiKeyID(apiKey),
+			SignAlgorithm: signAlgorithm,
 		}
 		if err = data.CreateOrderWithTransaction(dao.Mdb, order); err != nil {
 			return nil, err
@@ -224,6 +235,7 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 		PaymentType:    paymentType,
 		PayProvider:    mdb.PaymentProviderOnChain,
 		ApiKeyID:       apiKeyID(apiKey),
+		SignAlgorithm:  signAlgorithm,
 	}
 	if err = data.CreateOrderWithTransaction(tx, order); err != nil {
 		tx.Rollback()
@@ -266,6 +278,11 @@ func orderProcessing(req *request.OrderProcessingRequest, opts orderProcessingOp
 	}
 	if exist.ID > 0 {
 		tx.Rollback()
+		if exist.TradeId == req.TradeId {
+			if err = finalizePaidOrder(exist, opts); err != nil {
+				return fmt.Errorf("继续完成已支付订单失败, trade_id=%s: %w", req.TradeId, err)
+			}
+		}
 		return constant.OrderBlockAlreadyProcess
 	}
 
@@ -283,7 +300,6 @@ func orderProcessing(req *request.OrderProcessingRequest, opts orderProcessingOp
 		return err
 	}
 
-	// Load order to check parent-child relationship
 	order, err := data.GetOrderInfoByTradeId(req.TradeId)
 	if err != nil {
 		if strings.TrimSpace(req.Network) != "" && strings.TrimSpace(req.ReceiveAddress) != "" && strings.TrimSpace(req.Token) != "" && req.Amount > 0 {
@@ -293,13 +309,20 @@ func orderProcessing(req *request.OrderProcessingRequest, opts orderProcessingOp
 		}
 		return fmt.Errorf("load paid order failed, trade_id=%s: %w", req.TradeId, err)
 	}
+	return finalizePaidOrder(order, opts)
+}
+
+func finalizePaidOrder(order *mdb.Orders, opts orderProcessingOptions) error {
+	if order == nil || order.ID == 0 || order.Status != mdb.StatusPaySuccess {
+		return fmt.Errorf("订单尚未进入支付成功状态")
+	}
 	if hasTransactionLock(order) {
-		if err = data.UnLockTransaction(order.Network, order.ReceiveAddress, order.Token, order.ActualAmount); err != nil {
+		if err := data.UnLockTransaction(order.Network, order.ReceiveAddress, order.Token, order.ActualAmount); err != nil {
 			log.Sugar.Warnf("[order] unlock transaction after pay success failed, trade_id=%s, err=%v", order.TradeId, err)
 		}
 	}
 
-	// Parent order paid directly: expire all sub-orders and release their locks
+	// 父单直接支付时，重复执行也会继续清理仍处于待支付状态的子单。
 	if order.ParentTradeId == "" {
 		subs, subErr := data.GetActiveSubOrders(order.TradeId)
 		if subErr != nil {
@@ -307,16 +330,16 @@ func orderProcessing(req *request.OrderProcessingRequest, opts orderProcessingOp
 			return fmt.Errorf("load sub-orders failed, parent_trade_id=%s: %w", order.TradeId, subErr)
 		}
 		for _, sub := range subs {
-			if err = data.ExpireOrderByTradeId(sub.TradeId); err != nil {
+			if err := data.ExpireOrderByTradeId(sub.TradeId); err != nil {
 				log.Sugar.Warnf("[order] expire sub-order failed, trade_id=%s, err=%v", sub.TradeId, err)
 			}
 			if sub.PayProvider != "" && sub.PayProvider != mdb.PaymentProviderOnChain {
-				if err = data.MarkProviderOrderExpired(sub.TradeId, sub.PayProvider); err != nil {
+				if err := data.MarkProviderOrderExpired(sub.TradeId, sub.PayProvider); err != nil {
 					log.Sugar.Warnf("[order] expire provider order failed, trade_id=%s, provider=%s, err=%v", sub.TradeId, sub.PayProvider, err)
 				}
 			}
 			if hasTransactionLock(&sub) {
-				if err = data.UnLockTransaction(sub.Network, sub.ReceiveAddress, sub.Token, sub.ActualAmount); err != nil {
+				if err := data.UnLockTransaction(sub.Network, sub.ReceiveAddress, sub.Token, sub.ActualAmount); err != nil {
 					log.Sugar.Warnf("[order] unlock sub-order transaction failed, trade_id=%s, err=%v", sub.TradeId, err)
 				}
 			}
@@ -329,8 +352,10 @@ func orderProcessing(req *request.OrderProcessingRequest, opts orderProcessingOp
 		log.Sugar.Errorf("[order] load parent order failed, parent_trade_id=%s, err=%v", order.ParentTradeId, err)
 		return fmt.Errorf("load parent order failed, parent_trade_id=%s: %w", order.ParentTradeId, err)
 	}
+	if parent == nil || parent.ID == 0 {
+		return fmt.Errorf("父订单不存在, parent_trade_id=%s", order.ParentTradeId)
+	}
 
-	// Snapshot siblings for lock release after DB state transition commits.
 	siblings, err := data.GetSiblingSubOrders(parent.TradeId, order.TradeId)
 	if err != nil {
 		log.Sugar.Errorf("[order] get sibling sub-orders failed, parent_trade_id=%s, err=%v", parent.TradeId, err)
@@ -339,51 +364,53 @@ func orderProcessing(req *request.OrderProcessingRequest, opts orderProcessingOp
 
 	finalizeTx := dao.Mdb.Begin()
 
-	// Mark parent as paid with sub-order's payment details
-	updatedParent, markErr := data.MarkParentOrderSuccessWithStatusesWithTransaction(finalizeTx, parent.TradeId, order, opts.parentAllowedStatuses)
-	if markErr != nil {
-		finalizeTx.Rollback()
-		log.Sugar.Errorf("[order] mark parent success failed, parent_trade_id=%s, err=%v", parent.TradeId, markErr)
-		return fmt.Errorf("mark parent success failed, parent_trade_id=%s: %w", parent.TradeId, markErr)
-	}
-	if !updatedParent {
-		finalizeTx.Rollback()
-		return fmt.Errorf("parent order not updated, trade_id=%s is not in an allowed status", parent.TradeId)
+	if parent.Status == mdb.StatusPaySuccess {
+		if parent.PayBySubId != order.ID {
+			finalizeTx.Rollback()
+			return fmt.Errorf("父订单已由其他支付路径完成, parent_trade_id=%s pay_by_sub_id=%d", parent.TradeId, parent.PayBySubId)
+		}
+	} else {
+		updatedParent, markErr := data.MarkParentOrderSuccessWithStatusesWithTransaction(finalizeTx, parent.TradeId, order, opts.parentAllowedStatuses)
+		if markErr != nil {
+			finalizeTx.Rollback()
+			log.Sugar.Errorf("[order] mark parent success failed, parent_trade_id=%s, err=%v", parent.TradeId, markErr)
+			return fmt.Errorf("mark parent success failed, parent_trade_id=%s: %w", parent.TradeId, markErr)
+		}
+		if !updatedParent {
+			finalizeTx.Rollback()
+			return fmt.Errorf("parent order not updated, trade_id=%s is not in an allowed status", parent.TradeId)
+		}
 	}
 
-	if err = data.ExpireSiblingSubOrdersWithTransaction(finalizeTx, parent.TradeId, order.TradeId); err != nil {
+	if err := data.ExpireSiblingSubOrdersWithTransaction(finalizeTx, parent.TradeId, order.TradeId); err != nil {
 		finalizeTx.Rollback()
 		return fmt.Errorf("expire sibling sub-orders failed, parent_trade_id=%s: %w", parent.TradeId, err)
 	}
 
-	if err = finalizeTx.Commit().Error; err != nil {
+	if err := finalizeTx.Commit().Error; err != nil {
 		finalizeTx.Rollback()
 		return fmt.Errorf("commit parent finalize tx failed, parent_trade_id=%s: %w", parent.TradeId, err)
 	}
 
-	// Sub-order should not trigger its own callback (notify_url is empty).
-	// OrderSuccessWithTransaction unconditionally sets callback_confirm=No,
-	// reset it only after the parent order is successfully finalized.
-	if err = data.ResetCallbackConfirmOk(order.TradeId); err != nil {
+	// 子单不独立回调；即使此前在提交后中断，重试也会恢复为无需回调。
+	if err := data.ResetCallbackConfirmOk(order.TradeId); err != nil {
 		log.Sugar.Warnf("[order] reset sub-order callback_confirm failed, trade_id=%s, err=%v", order.TradeId, err)
 	}
 
-	// Release parent's own wallet lock
 	if hasTransactionLock(parent) {
-		if err = data.UnLockTransaction(parent.Network, parent.ReceiveAddress, parent.Token, parent.ActualAmount); err != nil {
+		if err := data.UnLockTransaction(parent.Network, parent.ReceiveAddress, parent.Token, parent.ActualAmount); err != nil {
 			log.Sugar.Warnf("[order] unlock parent transaction failed, parent_trade_id=%s, err=%v", parent.TradeId, err)
 		}
 	}
 
-	// Release sibling locks after their status transitions commit.
 	for _, sib := range siblings {
 		if sib.PayProvider != "" && sib.PayProvider != mdb.PaymentProviderOnChain {
-			if err = data.MarkProviderOrderExpired(sib.TradeId, sib.PayProvider); err != nil {
+			if err := data.MarkProviderOrderExpired(sib.TradeId, sib.PayProvider); err != nil {
 				log.Sugar.Warnf("[order] expire sibling provider order failed, trade_id=%s, provider=%s, err=%v", sib.TradeId, sib.PayProvider, err)
 			}
 		}
 		if hasTransactionLock(&sib) {
-			if err = data.UnLockTransaction(sib.Network, sib.ReceiveAddress, sib.Token, sib.ActualAmount); err != nil {
+			if err := data.UnLockTransaction(sib.Network, sib.ReceiveAddress, sib.Token, sib.ActualAmount); err != nil {
 				log.Sugar.Warnf("[order] unlock sibling transaction failed, trade_id=%s, err=%v", sib.TradeId, err)
 			}
 		}
@@ -686,6 +713,7 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 		PaymentType:     parent.PaymentType,
 		PayProvider:     mdb.PaymentProviderOnChain,
 		ApiKeyID:        parent.ApiKeyID, // inherit from parent so resolveOrderApiKey never fails
+		SignAlgorithm:   parent.SignAlgorithm,
 	}
 	if err = data.CreateOrderWithTransaction(tx, subOrder); err != nil {
 		tx.Rollback()
@@ -967,6 +995,7 @@ func switchToOkPay(parent *mdb.Orders, token string) (*response.CheckoutCounterR
 		PaymentType:     parent.PaymentType,
 		PayProvider:     mdb.PaymentProviderOkPay,
 		ApiKeyID:        parent.ApiKeyID,
+		SignAlgorithm:   parent.SignAlgorithm,
 	}
 	if err = data.CreateOrderWithTransaction(tx, subOrder); err != nil {
 		tx.Rollback()

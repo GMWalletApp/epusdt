@@ -6,3 +6,4 @@ src/*.db-shm
 src/*.db-wal
 .DS_Store
 .env
+dist/

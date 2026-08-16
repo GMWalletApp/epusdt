@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
@@ -28,6 +29,32 @@ const (
 
 type evmRecipientStoreFunc func([]mdb.WalletAddress) int
 type evmRecipientCheckerFunc func(common.Address) bool
+type evmBlockHeaderFetcherFunc func(context.Context, *ethclient.Client, uint64) (*types.Header, error)
+type evmTransferProcessorFunc func(string, common.Address, common.Address, *big.Int, string, int64) error
+
+type evmBackfillRPCError struct {
+	err error
+}
+
+func (e *evmBackfillRPCError) Error() string {
+	return e.err.Error()
+}
+
+func (e *evmBackfillRPCError) Unwrap() error {
+	return e.err
+}
+
+func wrapEvmBackfillRPCError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &evmBackfillRPCError{err: err}
+}
+
+func isEvmBackfillRPCError(err error) bool {
+	var rpcErr *evmBackfillRPCError
+	return errors.As(err, &rpcErr)
+}
 
 func StartEthereumBackfillScannerListener() {
 	startEvmBackfillScanner(mdb.NetworkEthereum, "[ETH-BACKFILL]", StoreEthRecipientsFromWallets, isWatchedEthRecipient)
@@ -132,7 +159,7 @@ func runEvmBackfillScanner(network, logPrefix string, contracts []common.Address
 		}
 		if err != nil {
 			log.Sugar.Warnf("%s backfill loop stopped: %v, retry in %s", logPrefix, err, failWait)
-			if recordEvmNodeFailure(logPrefix, network, node, err.Error()) {
+			if isEvmBackfillRPCError(err) && recordEvmNodeFailure(logPrefix, network, node, err.Error()) {
 				return
 			}
 			if !sleepOrDone(ctx, failWait) {
@@ -167,7 +194,7 @@ func runEvmBackfillLoop(ctx context.Context, client *ethclient.Client, network, 
 
 		latest, err := latestEvmHeader(ctx, client, network, logPrefix)
 		if err != nil {
-			return err
+			return wrapEvmBackfillRPCError(err)
 		}
 		if latest == nil {
 			return nil
@@ -178,7 +205,8 @@ func runEvmBackfillLoop(ctx context.Context, client *ethclient.Client, network, 
 
 		confirmedHead := confirmedEvmHead(latest.Number.Int64(), chain.MinConfirmations)
 		if !initialized {
-			lastBlock = confirmedHead - evmBackfillInitialLookbackBlocks
+			lookbackBlocks := evmBackfillInitialLookback(network)
+			lastBlock = confirmedHead - lookbackBlocks
 			if lastBlock < 0 {
 				lastBlock = 0
 			}
@@ -186,7 +214,7 @@ func runEvmBackfillLoop(ctx context.Context, client *ethclient.Client, network, 
 				return fmt.Errorf("initialize backfill cursor: %w", err)
 			}
 			initialized = true
-			log.Sugar.Infof("%s initialized backfill cursor at block=%d confirmed_head=%d lookback=%d", logPrefix, lastBlock, confirmedHead, evmBackfillInitialLookbackBlocks)
+			log.Sugar.Infof("%s initialized backfill cursor at block=%d confirmed_head=%d lookback=%d", logPrefix, lastBlock, confirmedHead, lookbackBlocks)
 		}
 
 		if lastBlock >= confirmedHead {
@@ -218,7 +246,7 @@ func runEvmBackfillLoop(ctx context.Context, client *ethclient.Client, network, 
 		logs, err := client.FilterLogs(rpcCtx, batchQuery)
 		cancel()
 		if err != nil {
-			return fmt.Errorf("filter logs range=%d-%d: %w", fromBlock, toBlock, err)
+			return wrapEvmBackfillRPCError(fmt.Errorf("filter logs range=%d-%d: %w", fromBlock, toBlock, err))
 		}
 
 		if err := processEvmBackfillLogs(ctx, client, network, logPrefix, logs, isWatchedRecipient); err != nil {
@@ -244,7 +272,29 @@ func runEvmBackfillLoop(ctx context.Context, client *ethclient.Client, network, 
 	}
 }
 
-func processEvmBackfillLogs(ctx context.Context, client *ethclient.Client, network, logPrefix string, logs []types.Log, isWatchedRecipient evmRecipientCheckerFunc) error {
+func processEvmBackfillLogs(ctx context.Context, client *ethclient.Client, network, _ string, logs []types.Log, isWatchedRecipient evmRecipientCheckerFunc) error {
+	return processEvmBackfillLogsWith(
+		ctx,
+		client,
+		network,
+		logs,
+		isWatchedRecipient,
+		latestEvmBlockHeader,
+		service.ProcessEvmERC20Transfer,
+	)
+}
+
+func processEvmBackfillLogsWith(
+	ctx context.Context,
+	client *ethclient.Client,
+	network string,
+	logs []types.Log,
+	_ evmRecipientCheckerFunc,
+	fetchHeader evmBlockHeaderFetcherFunc,
+	processTransfer evmTransferProcessorFunc,
+) error {
+	// RPC 批次已按当次数据库地址主题精确过滤，不能再用异步快照二次过滤，
+	// 否则新地址可能被旧快照跳过并随游标推进而永久漏扫。
 	headerCache := make(map[uint64]int64)
 	for _, vLog := range logs {
 		if len(vLog.Topics) < 3 {
@@ -255,15 +305,12 @@ func processEvmBackfillLogs(ctx context.Context, client *ethclient.Client, netwo
 		}
 
 		toAddr := common.HexToAddress(vLog.Topics[2].Hex())
-		if !isWatchedRecipient(toAddr) {
-			continue
-		}
 
 		blockTsMs, ok := headerCache[vLog.BlockNumber]
 		if !ok {
-			header, err := latestEvmBlockHeader(ctx, client, vLog.BlockNumber)
+			header, err := fetchHeader(ctx, client, vLog.BlockNumber)
 			if err != nil {
-				return fmt.Errorf("fetch block header network=%s block=%d: %w", network, vLog.BlockNumber, err)
+				return wrapEvmBackfillRPCError(fmt.Errorf("fetch block header network=%s block=%d: %w", network, vLog.BlockNumber, err))
 			}
 			if header == nil || header.Time == 0 {
 				return fmt.Errorf("missing block header timestamp network=%s block=%d", network, vLog.BlockNumber)
@@ -272,7 +319,9 @@ func processEvmBackfillLogs(ctx context.Context, client *ethclient.Client, netwo
 			headerCache[vLog.BlockNumber] = blockTsMs
 		}
 
-		service.TryProcessEvmERC20Transfer(network, vLog.Address, toAddr, new(big.Int).SetBytes(vLog.Data), vLog.TxHash.Hex(), blockTsMs)
+		if err := processTransfer(network, vLog.Address, toAddr, new(big.Int).SetBytes(vLog.Data), vLog.TxHash.Hex(), blockTsMs); err != nil {
+			return fmt.Errorf("process transfer network=%s block=%d tx=%s: %w", network, vLog.BlockNumber, vLog.TxHash.Hex(), err)
+		}
 	}
 	return nil
 }
@@ -305,6 +354,14 @@ func evmBackfillBatchSize(network string) int64 {
 		return 200
 	}
 	return evmBackfillBatchBlocks
+}
+
+func evmBackfillInitialLookback(network string) int64 {
+	if network == mdb.NetworkArbitrum {
+		// Arbitrum 出块更快，需要扩大首次回看范围以覆盖订单有效期。
+		return 8192
+	}
+	return evmBackfillInitialLookbackBlocks
 }
 
 func confirmedEvmHead(head int64, minConfirmations int) int64 {

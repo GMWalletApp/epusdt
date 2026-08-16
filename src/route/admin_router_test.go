@@ -22,6 +22,7 @@ import (
 	"github.com/GMWalletApp/epusdt/util/constant"
 	"github.com/GMWalletApp/epusdt/util/http_client"
 	appLog "github.com/GMWalletApp/epusdt/util/log"
+	"github.com/GMWalletApp/epusdt/util/sign"
 	"github.com/go-resty/resty/v2"
 	"github.com/labstack/echo/v4"
 )
@@ -408,13 +409,37 @@ func TestAdminApiKeys_CRUD(t *testing.T) {
 		t.Fatal("CreateApiKey response missing id")
 	}
 	keyIDStr := fmt.Sprintf("%.0f", keyID.(float64))
+	if got, _ := dataObj["gmpay_sign_mode"].(string); got != sign.GMPaySignModeHMACSHA256 {
+		t.Fatalf("新建 API Key 的签名模式 = %q, want %q", got, sign.GMPaySignModeHMACSHA256)
+	}
 
 	// Update.
 	rec = doPatchAdmin(e, "/admin/api/v1/api-keys/"+keyIDStr, map[string]interface{}{
-		"name": "renamed-key",
+		"name":            "renamed-key",
+		"gmpay_sign_mode": sign.GMPaySignModeDual,
 	}, token)
 	t.Logf("UpdateApiKey: %s", rec.Body.String())
 	assertOK(t, rec)
+	row, err := data.GetApiKeyByID(uint64(keyID.(float64)))
+	if err != nil {
+		t.Fatalf("读取更新后的 API Key 失败: %v", err)
+	}
+	if row.GMPaySignMode != sign.GMPaySignModeDual {
+		t.Fatalf("更新后的签名模式 = %q, want %q", row.GMPaySignMode, sign.GMPaySignModeDual)
+	}
+
+	// 未知模式必须拒绝，且不能改变已保存的模式。
+	rec = doPatchAdmin(e, "/admin/api/v1/api-keys/"+keyIDStr, map[string]interface{}{
+		"gmpay_sign_mode": "unknown",
+	}, token)
+	assertErrorCode(t, rec, 10009)
+	row, err = data.GetApiKeyByID(uint64(keyID.(float64)))
+	if err != nil {
+		t.Fatalf("读取拒绝更新后的 API Key 失败: %v", err)
+	}
+	if row.GMPaySignMode != sign.GMPaySignModeDual {
+		t.Fatalf("非法更新改变了签名模式: %q", row.GMPaySignMode)
+	}
 
 	// Get secret.
 	rec = doGetAdmin(e, "/admin/api/v1/api-keys/"+keyIDStr+"/secret", token)

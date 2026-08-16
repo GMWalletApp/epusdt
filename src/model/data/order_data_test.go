@@ -200,3 +200,21 @@ func TestAptosTransactionLockAddressUsesCanonicalKey(t *testing.T) {
 		t.Fatalf("aptos lock lookup = %q, want trade-aptos", gotTradeID)
 	}
 }
+
+func TestAddedEvmNetworkTransactionLocksAreIsolated(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+	address := "0xA1B2c3D4e5F60718293aBcDeF001122334455667"
+	if err := LockTransaction(mdb.NetworkBase, address, "USDC", "base-trade", 1.23, time.Hour); err != nil {
+		t.Fatalf("lock Base: %v", err)
+	}
+	if err := LockTransaction(mdb.NetworkArbitrum, address, "USDC", "arb-trade", 1.23, time.Hour); err != nil {
+		t.Fatalf("lock Arbitrum: %v", err)
+	}
+	for network, want := range map[string]string{mdb.NetworkBase: "base-trade", mdb.NetworkArbitrum: "arb-trade"} {
+		got, err := GetTradeIdByWalletAddressAndAmountAndToken(network, address, "USDC", 1.23)
+		if err != nil || got != want {
+			t.Fatalf("%s lock = %q, %v; want %q", network, got, err, want)
+		}
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/notify"
+	"github.com/dromara/carbon/v2"
 	"github.com/ethereum/go-ethereum/common"
 	"gorm.io/gorm/clause"
 )
@@ -340,5 +341,129 @@ func TestTryProcessEvmERC20TransferSkipsExpiredOrderAfterPaymentWindow(t *testin
 	}
 	if got.BlockTransactionId != "" {
 		t.Fatalf("block transaction id = %q, want empty", got.BlockTransactionId)
+	}
+}
+
+func TestTryProcessEvmERC20TransferReturnsDatabaseFailure(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	sqlDB, err := dao.Mdb.DB()
+	if err != nil {
+		t.Fatalf("读取数据库句柄失败: %v", err)
+	}
+	if err = sqlDB.Close(); err != nil {
+		t.Fatalf("关闭测试数据库失败: %v", err)
+	}
+
+	err = ProcessEvmERC20Transfer(
+		mdb.NetworkBase,
+		common.HexToAddress("0x9999999999999999999999999999999999999999"),
+		common.HexToAddress("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		big.NewInt(1),
+		"0xdatabase-error",
+		time.Now().UnixMilli(),
+	)
+	if err == nil {
+		t.Fatal("数据库失败时应返回错误，避免补扫游标提前推进")
+	}
+}
+
+func TestProcessEvmERC20TransferRejectsMissingTokenConfiguration(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	err := ProcessEvmERC20Transfer(
+		mdb.NetworkBase,
+		common.HexToAddress("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+		common.HexToAddress("0xcccccccccccccccccccccccccccccccccccccccc"),
+		big.NewInt(1),
+		"0xmissing-token",
+		time.Now().UnixMilli(),
+	)
+	if err == nil {
+		t.Fatal("补扫命中的合约配置消失时应阻止游标推进")
+	}
+}
+
+func TestEvmTransferAllowedStatusesIncludesExpiredWithinPaymentWindow(t *testing.T) {
+	order := &mdb.Orders{Status: mdb.StatusWaitPay}
+	order.CreatedAt = *carbon.NewTime(carbon.Now())
+	blockTsMs := order.CreatedAt.AddMinute().TimestampMilli()
+
+	statuses, _, payable := evmTransferAllowedStatuses(order, blockTsMs)
+	if !payable {
+		t.Fatal("有效期内的转账应允许支付")
+	}
+	if len(statuses) != 2 || statuses[0] != mdb.StatusWaitPay || statuses[1] != mdb.StatusExpired {
+		t.Fatalf("allowed statuses = %v, want [%d %d]", statuses, mdb.StatusWaitPay, mdb.StatusExpired)
+	}
+}
+
+func TestProcessEvmERC20TransferResumesPaidSubOrderWithoutRuntimeLock(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	const (
+		parentTradeID = "T202608160100"
+		subTradeID    = "T202608160101"
+		blockID       = "0x1234567890abcdef"
+	)
+	receiveAddress := common.HexToAddress("0xdddddddddddddddddddddddddddddddddddddddd")
+	parent := &mdb.Orders{
+		TradeId:       parentTradeID,
+		OrderId:       "ORDER-PARENT-RESUME",
+		Status:        mdb.StatusWaitPay,
+		PaymentType:   mdb.PaymentTypeGmpay,
+		PayProvider:   mdb.PaymentProviderOnChain,
+		SignAlgorithm: "md5",
+	}
+	if err := dao.Mdb.Create(parent).Error; err != nil {
+		t.Fatalf("创建父单失败: %v", err)
+	}
+	sub := &mdb.Orders{
+		TradeId:            subTradeID,
+		OrderId:            "ORDER-SUB-RESUME",
+		ParentTradeId:      parentTradeID,
+		BlockTransactionId: blockID,
+		ActualAmount:       1.25,
+		ReceiveAddress:     strings.ToLower(receiveAddress.Hex()),
+		Token:              "USDC",
+		Network:            mdb.NetworkBase,
+		Status:             mdb.StatusPaySuccess,
+		CallBackConfirm:    mdb.CallBackConfirmNo,
+		PaymentType:        mdb.PaymentTypeGmpay,
+		PayProvider:        mdb.PaymentProviderOnChain,
+		SignAlgorithm:      "md5",
+	}
+	if err := dao.Mdb.Create(sub).Error; err != nil {
+		t.Fatalf("创建已提交子单失败: %v", err)
+	}
+
+	err := ProcessEvmERC20Transfer(
+		mdb.NetworkBase,
+		common.HexToAddress("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"),
+		receiveAddress,
+		big.NewInt(1_250_000),
+		blockID,
+		time.Now().UnixMilli(),
+	)
+	if err != nil {
+		t.Fatalf("继续处理已提交子单失败: %v", err)
+	}
+
+	gotParent, err := data.GetOrderInfoByTradeId(parentTradeID)
+	if err != nil {
+		t.Fatalf("读取父单失败: %v", err)
+	}
+	gotSub, err := data.GetOrderInfoByTradeId(subTradeID)
+	if err != nil {
+		t.Fatalf("读取子单失败: %v", err)
+	}
+	if gotParent.Status != mdb.StatusPaySuccess || gotParent.PayBySubId != gotSub.ID {
+		t.Fatalf("父单未完成收尾: status=%d pay_by_sub_id=%d want_sub_id=%d", gotParent.Status, gotParent.PayBySubId, gotSub.ID)
+	}
+	if gotSub.CallBackConfirm != mdb.CallBackConfirmOk {
+		t.Fatalf("子单 callback_confirm = %d, want %d", gotSub.CallBackConfirm, mdb.CallBackConfirmOk)
 	}
 }

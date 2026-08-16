@@ -316,6 +316,31 @@ func TestFixedModeDoesNotFallBackToRateAPI(t *testing.T) {
 	}
 }
 
+func TestAutoModePrefersForcedRateBeforeAPI(t *testing.T) {
+	installSettingsGetter(t, map[string]string{
+		"rate.mode":             RateModeAuto,
+		"rate.forced_rate_list": `{"cny":{"usdt":0.125}}`,
+		"rate.api_url":          "https://rate.example.test",
+	})
+	installMockHTTPClient(t, func(r *http.Request) (*http.Response, error) {
+		t.Fatal("auto 模式命中强制汇率时不应请求 API")
+		return nil, nil
+	})
+	if got := GetRateForCoin("usdt", "cny"); got != 0.125 {
+		t.Fatalf("auto forced rate = %v, want 0.125", got)
+	}
+}
+
+func TestAutoModeForcedRateOverridesUSDTPeg(t *testing.T) {
+	installSettingsGetter(t, map[string]string{
+		"rate.mode":             RateModeAuto,
+		"rate.forced_rate_list": `{"usd":{"usdt":0.99}}`,
+	})
+	if got := GetRateForCoin("usdt", "usd"); got != 0.99 {
+		t.Fatalf("auto USD/USDT rate = %v, want configured 0.99", got)
+	}
+}
+
 func TestGetUsdtRateUsesAPIWhenAdminOverrideIsNotPositive(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)

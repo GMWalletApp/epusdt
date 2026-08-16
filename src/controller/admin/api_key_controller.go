@@ -9,6 +9,7 @@ import (
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/util/constant"
+	"github.com/GMWalletApp/epusdt/util/sign"
 	"github.com/labstack/echo/v4"
 )
 
@@ -17,16 +18,18 @@ import (
 // no gateway_type. PID is auto-generated (incrementing from 1000);
 // no manual override.
 type CreateApiKeyRequest struct {
-	Name        string `json:"name" validate:"required|maxLen:128" example:"My API Key"`
-	IpWhitelist string `json:"ip_whitelist" example:""`
-	NotifyUrl   string `json:"notify_url" example:"https://example.com/notify"`
+	Name          string `json:"name" validate:"required|maxLen:128" example:"My API Key"`
+	IpWhitelist   string `json:"ip_whitelist" example:""`
+	NotifyUrl     string `json:"notify_url" example:"https://example.com/notify"`
+	GMPaySignMode string `json:"gmpay_sign_mode" enums:"dual,hmac_sha256,md5" example:"hmac_sha256"` // 省略时默认 hmac_sha256，仅控制 GMPay
 }
 
 // CreateApiKeyResponse is the response for a newly created API key.
 type CreateApiKeyResponse struct {
-	ID   uint64 `json:"id" example:"1"`
-	Name string `json:"name" example:"My API Key"`
-	Pid  string `json:"pid" example:"1003"`
+	ID            uint64 `json:"id" example:"1"`
+	Name          string `json:"name" example:"My API Key"`
+	Pid           string `json:"pid" example:"1003"`
+	GMPaySignMode string `json:"gmpay_sign_mode" example:"hmac_sha256"`
 	// SecretKey is returned ONCE on creation. After that, fetch via
 	// GET /api-keys/:id/secret or rotate to generate a new one.
 	SecretKey string `json:"secret_key" example:"secret123abc456"`
@@ -34,9 +37,10 @@ type CreateApiKeyResponse struct {
 
 // UpdateApiKeyRequest is the payload for updating an API key.
 type UpdateApiKeyRequest struct {
-	Name        *string `json:"name" example:"Updated Key Name"`
-	IpWhitelist *string `json:"ip_whitelist" example:"10.0.0.1,192.168.0.0/24"`
-	NotifyUrl   *string `json:"notify_url" example:"https://example.com/notify"`
+	Name          *string `json:"name" example:"Updated Key Name"`
+	IpWhitelist   *string `json:"ip_whitelist" example:"10.0.0.1,192.168.0.0/24"`
+	NotifyUrl     *string `json:"notify_url" example:"https://example.com/notify"`
+	GMPaySignMode *string `json:"gmpay_sign_mode" enums:"dual,hmac_sha256,md5" example:"hmac_sha256"` // 仅影响后续 GMPay 入站验签，不影响 EPay 或历史订单回调
 }
 
 // ChangeApiKeyStatusRequest is the payload for toggling API key status.
@@ -67,7 +71,7 @@ func (c *BaseAdminController) ListApiKeys(ctx echo.Context) error {
 // the highest existing numeric PID (starting at 1000). Secret is
 // randomly generated and returned once.
 // @Summary      Create API key
-// @Description  Create a new universal API key. Usable for both gateway flows (epay/gmpay). PID auto-incremented; secret returned once.
+// @Description  创建同时适用于 GMPay 和 EPay 的通用 API Key；PID 自动递增，密钥仅在创建时返回。省略 gmpay_sign_mode 时默认 hmac_sha256；该模式不影响始终使用 MD5 的 EPay。
 // @Tags         Admin API Keys
 // @Security     AdminJWT
 // @Accept       json
@@ -84,6 +88,13 @@ func (c *BaseAdminController) CreateApiKey(ctx echo.Context) error {
 	if err := c.ValidateStruct(ctx, req); err != nil {
 		return c.FailJson(ctx, err)
 	}
+	signMode := sign.GMPaySignModeHMACSHA256
+	if strings.TrimSpace(req.GMPaySignMode) != "" {
+		if !sign.IsExplicitGMPaySignMode(req.GMPaySignMode) {
+			return c.FailJson(ctx, constant.ParamsMarshalErr)
+		}
+		signMode = sign.NormalizeGMPaySignMode(req.GMPaySignMode)
+	}
 
 	// Retry on unique-index violation: two concurrent creates could
 	// both see the same max PID from NextPid() and race on INSERT.
@@ -97,12 +108,13 @@ func (c *BaseAdminController) CreateApiKey(ctx echo.Context) error {
 			return c.FailJson(ctx, err)
 		}
 		row = &mdb.ApiKey{
-			Name:        req.Name,
-			Pid:         strconv.Itoa(pid),
-			SecretKey:   secret,
-			IpWhitelist: req.IpWhitelist,
-			NotifyUrl:   req.NotifyUrl,
-			Status:      mdb.ApiKeyStatusEnable,
+			Name:          req.Name,
+			Pid:           strconv.Itoa(pid),
+			SecretKey:     secret,
+			IpWhitelist:   req.IpWhitelist,
+			NotifyUrl:     req.NotifyUrl,
+			GMPaySignMode: signMode,
+			Status:        mdb.ApiKeyStatusEnable,
 		}
 		err = data.CreateApiKey(row)
 		if err == nil {
@@ -113,10 +125,11 @@ func (c *BaseAdminController) CreateApiKey(ctx echo.Context) error {
 		}
 	}
 	return c.SucJson(ctx, CreateApiKeyResponse{
-		ID:        row.ID,
-		Name:      row.Name,
-		Pid:       row.Pid,
-		SecretKey: secret,
+		ID:            row.ID,
+		Name:          row.Name,
+		Pid:           row.Pid,
+		GMPaySignMode: row.GMPaySignMode,
+		SecretKey:     secret,
 	})
 }
 
@@ -134,10 +147,10 @@ func isUniqueViolation(err error) bool {
 		strings.Contains(msg, "constraint failed")
 }
 
-// UpdateApiKey patches name / ip_whitelist / notify_url. Secret rotation
-// and enable/disable have their own endpoints.
+// UpdateApiKey 更新名称、IP 白名单、回调地址或 GMPay 签名模式。
+// 密钥轮换和启用状态由独立接口处理。
 // @Summary      Update API key
-// @Description  Patch API key name / ip_whitelist / notify_url
+// @Description  更新 API Key 的 name、ip_whitelist、notify_url 或 gmpay_sign_mode。签名模式仅影响后续 GMPay 入站验签；EPay 始终使用 MD5，已创建订单的回调继续使用订单记录的算法。
 // @Tags         Admin API Keys
 // @Security     AdminJWT
 // @Accept       json
@@ -165,6 +178,12 @@ func (c *BaseAdminController) UpdateApiKey(ctx echo.Context) error {
 	}
 	if req.NotifyUrl != nil {
 		fields["notify_url"] = *req.NotifyUrl
+	}
+	if req.GMPaySignMode != nil {
+		if !sign.IsExplicitGMPaySignMode(*req.GMPaySignMode) {
+			return c.FailJson(ctx, constant.ParamsMarshalErr)
+		}
+		fields["gmpay_sign_mode"] = sign.NormalizeGMPaySignMode(*req.GMPaySignMode)
 	}
 	if err := data.UpdateApiKeyFields(id, fields); err != nil {
 		return c.FailJson(ctx, err)

@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,6 +15,13 @@ import (
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/util/sign"
 )
+
+func resetCallbackInflight() {
+	callbackInflight.Range(func(key, _ interface{}) bool {
+		callbackInflight.Delete(key)
+		return true
+	})
+}
 
 func TestProcessExpiredOrdersExpiresWaitingOrdersAndReleasesLocks(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
@@ -161,7 +167,7 @@ func TestDispatchPendingCallbacksHonorsBackoffAndPersistsSuccess(t *testing.T) {
 	defer cleanup()
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	resetCallbackInflight()
 
 	var requestCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -218,7 +224,7 @@ func TestDispatchPendingCallbacksResumesRetryAfterRestart(t *testing.T) {
 	defer cleanup()
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	resetCallbackInflight()
 
 	var requestCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -265,7 +271,7 @@ func TestDispatchPendingCallbacksResumesRetryAfterRestart(t *testing.T) {
 	}
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	resetCallbackInflight()
 
 	if err := dao.Mdb.Model(order).UpdateColumn("updated_at", time.Now().Add(-2*time.Second)).Error; err != nil {
 		t.Fatalf("age callback order for retry: %v", err)
@@ -291,7 +297,7 @@ func TestDispatchPendingCallbacksEpayRequiresAck(t *testing.T) {
 	defer cleanup()
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	resetCallbackInflight()
 
 	epayKey, err := data.GetEnabledApiKey("1001")
 	if err != nil || epayKey == nil || epayKey.ID == 0 {
@@ -345,7 +351,7 @@ func TestDispatchPendingCallbacksEpayAcceptsTrimmedOk(t *testing.T) {
 	defer cleanup()
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	resetCallbackInflight()
 
 	epayKey, err := data.GetEnabledApiKey("1001")
 	if err != nil || epayKey == nil || epayKey.ID == 0 {
@@ -485,6 +491,7 @@ func TestSendOrderCallbackGmpayUsesApiKeySecretByPid(t *testing.T) {
 		BlockTransactionId: "block_gmpay_sign",
 		ApiKeyID:           key.ID,
 		PaymentType:        mdb.PaymentTypeGmpay,
+		SignAlgorithm:      sign.AlgorithmHMACSHA256,
 	}
 
 	if err := sendOrderCallback(order); err != nil {
@@ -521,6 +528,60 @@ func TestSendOrderCallbackGmpayUsesApiKeySecretByPid(t *testing.T) {
 	}
 	if recvSig == wrongSig {
 		t.Fatal("signature should not match wrong api key secret")
+	}
+}
+
+func TestSendOrderCallbackGmpayHistoricalOrderKeepsMD5AfterKeyModeChange(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	key := &mdb.ApiKey{
+		Name:          "historical-gmpay-key",
+		Pid:           "9051",
+		SecretKey:     "historical-secret-9051",
+		GMPaySignMode: sign.GMPaySignModeHMACSHA256,
+		Status:        mdb.ApiKeyStatusEnable,
+	}
+	if err := dao.Mdb.Create(key).Error; err != nil {
+		t.Fatalf("创建 API Key 失败: %v", err)
+	}
+
+	var received map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &received)
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer server.Close()
+
+	order := &mdb.Orders{
+		TradeId:            "trade_historical_md5",
+		OrderId:            "order_historical_md5",
+		Amount:             1,
+		Currency:           "CNY",
+		ActualAmount:       1,
+		ReceiveAddress:     "wallet_historical_md5",
+		Token:              "USDT",
+		Status:             mdb.StatusPaySuccess,
+		NotifyUrl:          server.URL,
+		BlockTransactionId: "block_historical_md5",
+		ApiKeyID:           key.ID,
+		PaymentType:        mdb.PaymentTypeGmpay,
+		SignAlgorithm:      "",
+	}
+	if err := sendOrderCallback(order); err != nil {
+		t.Fatalf("发送历史订单回调失败: %v", err)
+	}
+
+	receivedSignature, _ := received["signature"].(string)
+	delete(received, "signature")
+	want, err := sign.Get(received, key.SecretKey)
+	if err != nil {
+		t.Fatalf("生成预期 MD5 签名失败: %v", err)
+	}
+	if receivedSignature != want {
+		t.Fatalf("历史订单回调签名 = %q, want MD5 %q", receivedSignature, want)
 	}
 }
 
@@ -713,7 +774,7 @@ func TestDispatchPendingCallbacksEpayAcceptsSuccessAck(t *testing.T) {
 	defer cleanup()
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	resetCallbackInflight()
 
 	epayKey, err := data.GetEnabledApiKey("1001")
 	if err != nil || epayKey == nil || epayKey.ID == 0 {

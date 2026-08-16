@@ -120,3 +120,20 @@ func TestAddWalletAddressWithNetworkNormalizesMoveAddressVariants(t *testing.T) 
 		t.Fatalf("add equivalent aptos wallet error = %v, want already exists", err)
 	}
 }
+
+func TestAddedEvmNetworksNormalizeWalletAddresses(t *testing.T) {
+	for _, network := range []string{mdb.NetworkBase, mdb.NetworkArbitrum} {
+		t.Run(network, func(t *testing.T) {
+			cleanup := testutil.SetupTestDatabases(t)
+			defer cleanup()
+			input := "0xA1B2c3D4e5F60718293aBcDeF001122334455667"
+			row, err := AddWalletAddressWithNetwork(network, input)
+			if err != nil {
+				t.Fatalf("add wallet: %v", err)
+			}
+			if row.Address != strings.ToLower(input) {
+				t.Fatalf("wallet address = %q", row.Address)
+			}
+		})
+	}
+}

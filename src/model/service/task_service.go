@@ -195,15 +195,26 @@ func evmChainLogLabel(chainNetwork string) string {
 		return "POLYGON"
 	case mdb.NetworkPlasma:
 		return "PLASMA"
+	case mdb.NetworkBase:
+		return "BASE"
+	case mdb.NetworkArbitrum:
+		return "ARBITRUM"
 	default:
 		return "EVM"
 	}
 }
 
 func TryProcessEvmERC20Transfer(chainNetwork string, contract common.Address, toAddr common.Address, rawValue *big.Int, txHash string, blockTsMs int64) {
+	if err := ProcessEvmERC20Transfer(chainNetwork, contract, toAddr, rawValue, txHash, blockTsMs); err != nil {
+		log.Sugar.Errorf("[%s-WS] processing transfer failed hash=%s: %v", evmChainLogLabel(chainNetwork), txHash, err)
+	}
+}
+
+func ProcessEvmERC20Transfer(chainNetwork string, contract common.Address, toAddr common.Address, rawValue *big.Int, txHash string, blockTsMs int64) (processErr error) {
 	defer func() {
-		if err := recover(); err != nil {
-			log.Sugar.Errorf("[%s-WS] TryProcessEvmERC20Transfer panic: %v", evmChainLogLabel(chainNetwork), err)
+		if recovered := recover(); recovered != nil {
+			processErr = fmt.Errorf("处理 EVM 转账发生 panic: %v", recovered)
+			log.Sugar.Errorf("[%s-WS] TryProcessEvmERC20Transfer panic: %v", evmChainLogLabel(chainNetwork), recovered)
 		}
 	}()
 
@@ -211,16 +222,16 @@ func TryProcessEvmERC20Transfer(chainNetwork string, contract common.Address, to
 	tokenConfig, err := data.GetEnabledChainTokenByContract(chainNetwork, contract.Hex())
 	if err != nil {
 		log.Sugar.Warnf("[%s-WS] load chain token contract=%s: %v", net, contract.Hex(), err)
-		return
+		return fmt.Errorf("读取链代币配置 network=%s contract=%s: %w", chainNetwork, contract.Hex(), err)
 	}
 	if tokenConfig == nil || tokenConfig.ID == 0 {
 		log.Sugar.Warnf("[%s-WS] skip unconfigured contract %s", net, contract.Hex())
-		return
+		return fmt.Errorf("链代币配置已失效 network=%s contract=%s", chainNetwork, contract.Hex())
 	}
 	tokenSym := strings.ToUpper(strings.TrimSpace(tokenConfig.Symbol))
 	if tokenSym == "" {
 		log.Sugar.Warnf("[%s-WS] skip contract %s with empty token symbol", net, contract.Hex())
-		return
+		return fmt.Errorf("链代币符号为空 network=%s contract=%s", chainNetwork, contract.Hex())
 	}
 	walletAddr := strings.ToLower(toAddr.Hex())
 	if rawValue == nil || rawValue.Sign() <= 0 {
@@ -229,7 +240,7 @@ func TryProcessEvmERC20Transfer(chainNetwork string, contract common.Address, to
 	}
 	decimals := tokenConfig.Decimals
 	if decimals < 0 {
-		decimals = 0
+		return fmt.Errorf("链代币精度无效 network=%s contract=%s decimals=%d", chainNetwork, contract.Hex(), decimals)
 	}
 	pow := decimal.New(1, int32(decimals))
 
@@ -249,7 +260,14 @@ func TryProcessEvmERC20Transfer(chainNetwork string, contract common.Address, to
 	order, fromLock, err := resolveEvmTransferOrder(chainNetwork, walletAddr, tokenSym, amount, blockTsMs)
 	if err != nil {
 		log.Sugar.Warnf("[%s-%s][%s] load order candidate: %v", net, tokenSym, walletAddr, err)
-		return
+		return fmt.Errorf("读取待支付订单 network=%s token=%s address=%s: %w", chainNetwork, tokenSym, walletAddr, err)
+	}
+	if order == nil || order.ID == 0 {
+		order, err = data.GetOrderByBlockTransactionIDsCaseInsensitive([]string{txHash})
+		if err != nil {
+			return fmt.Errorf("按交易哈希读取已提交订单 hash=%s: %w", txHash, err)
+		}
+		fromLock = false
 	}
 	if order == nil || order.ID == 0 {
 		log.Sugar.Warnf("[%s-%s][%s] skip unmatched tx hash=%s amount=%.2f", net, tokenSym, walletAddr, txHash, amount)
@@ -257,25 +275,28 @@ func TryProcessEvmERC20Transfer(chainNetwork string, contract common.Address, to
 	}
 	if strings.ToLower(strings.TrimSpace(order.Network)) != chainNetwork {
 		log.Sugar.Warnf("[%s-%s][%s] skip trade_id=%s network=%q", net, tokenSym, walletAddr, order.TradeId, order.Network)
-		return
+		return fmt.Errorf("订单网络与转账不一致 trade_id=%s order_network=%s transfer_network=%s", order.TradeId, order.Network, chainNetwork)
 	}
 	if strings.ToUpper(strings.TrimSpace(order.Token)) != tokenSym {
 		log.Sugar.Warnf("[%s-%s][%s] skip trade_id=%s token mismatch order=%s", net, tokenSym, walletAddr, order.TradeId, order.Token)
-		return
+		return fmt.Errorf("订单代币与转账不一致 trade_id=%s order_token=%s transfer_token=%s", order.TradeId, order.Token, tokenSym)
+	}
+	if !strings.EqualFold(strings.TrimSpace(order.ReceiveAddress), walletAddr) {
+		return fmt.Errorf("订单收款地址与转账不一致 trade_id=%s order_address=%s transfer_address=%s", order.TradeId, order.ReceiveAddress, walletAddr)
+	}
+	precision := int32(data.GetAmountPrecision())
+	if !decimal.NewFromFloat(order.ActualAmount).Round(precision).Equal(decimal.NewFromFloat(amount).Round(precision)) {
+		return fmt.Errorf("订单金额与转账不一致 trade_id=%s order_amount=%v transfer_amount=%v", order.TradeId, order.ActualAmount, amount)
 	}
 	if blockTsMs > 0 && blockTsMs < order.CreatedAt.TimestampMilli() {
 		log.Sugar.Warnf("[%s-%s][%s] skip tx %s because block time %d is before order create time %d", net, tokenSym, walletAddr, txHash, blockTsMs, order.CreatedAt.TimestampMilli())
 		return
 	}
 
-	allowedStatuses := []int{mdb.StatusWaitPay}
-	if order.Status == mdb.StatusExpired {
-		expirationTs := order.CreatedAt.AddMinutes(config.GetOrderExpirationTime()).TimestampMilli()
-		if blockTsMs <= 0 || blockTsMs > expirationTs {
-			log.Sugar.Warnf("[%s-%s][%s] skip expired trade_id=%s because block time %d is after expiration %d", net, tokenSym, walletAddr, order.TradeId, blockTsMs, expirationTs)
-			return
-		}
-		allowedStatuses = []int{mdb.StatusWaitPay, mdb.StatusExpired}
+	allowedStatuses, expirationTs, payable := evmTransferAllowedStatuses(order, blockTsMs)
+	if !payable {
+		log.Sugar.Warnf("[%s-%s][%s] skip expired trade_id=%s because block time %d is after expiration %d", net, tokenSym, walletAddr, order.TradeId, blockTsMs, expirationTs)
+		return
 	}
 
 	if fromLock {
@@ -299,11 +320,24 @@ func TryProcessEvmERC20Transfer(chainNetwork string, contract common.Address, to
 			return
 		}
 		log.Sugar.Errorf("[%s-%s][%s] OrderProcessing: %v", net, tokenSym, walletAddr, err)
-		return
+		return fmt.Errorf("处理 EVM 支付订单 trade_id=%s hash=%s: %w", order.TradeId, txHash, err)
 	}
 
 	sendPaymentNotification(order)
 	log.Sugar.Infof("[%s-%s][%s] payment processed trade_id=%s hash=%s", net, tokenSym, walletAddr, order.TradeId, txHash)
+	return nil
+}
+
+func evmTransferAllowedStatuses(order *mdb.Orders, blockTsMs int64) ([]int, int64, bool) {
+	expirationTs := order.CreatedAt.AddMinutes(config.GetOrderExpirationTime()).TimestampMilli()
+	if blockTsMs > 0 && blockTsMs <= expirationTs {
+		// 支付发生在有效期内时同时允许 WaitPay/Expired，消除过期任务与链监听的状态竞态。
+		return []int{mdb.StatusWaitPay, mdb.StatusExpired}, expirationTs, true
+	}
+	if order.Status == mdb.StatusExpired {
+		return nil, expirationTs, false
+	}
+	return []int{mdb.StatusWaitPay}, expirationTs, true
 }
 
 func resolveEvmTransferOrder(chainNetwork string, walletAddr string, tokenSym string, amount float64, blockTsMs int64) (*mdb.Orders, bool, error) {
@@ -391,6 +425,10 @@ func networkDisplay(n string) string {
 		return "Polygon"
 	case mdb.NetworkPlasma:
 		return "Plasma"
+	case mdb.NetworkBase:
+		return "Base"
+	case mdb.NetworkArbitrum:
+		return "Arbitrum One"
 	default:
 		if n == "" {
 			return "Tron"
