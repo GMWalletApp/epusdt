@@ -8,6 +8,7 @@ import (
 
 	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/model/mdb"
+	"github.com/GMWalletApp/epusdt/util/sign"
 	"github.com/gookit/color"
 	"gorm.io/gorm/clause"
 )
@@ -51,6 +52,10 @@ func MdbTableInit() {
 				return
 			}
 		}
+		if err := backfillSignatureCompatibility(); err != nil {
+			color.Red.Printf("[store_db] 回填签名兼容字段失败,err=%s\n", err)
+			return
+		}
 
 		seedChains()
 		backfillRpcNodePurpose()
@@ -59,6 +64,18 @@ func MdbTableInit() {
 		seedDefaultSettings()
 		seedTelegramChannelFromSettings()
 	})
+}
+
+// backfillSignatureCompatibility 为升级前数据补齐安全的兼容默认值。
+func backfillSignatureCompatibility() error {
+	if err := Mdb.Model(&mdb.ApiKey{}).
+		Where("gmpay_sign_mode IS NULL OR gmpay_sign_mode = ?", "").
+		Update("gmpay_sign_mode", sign.GMPaySignModeDual).Error; err != nil {
+		return err
+	}
+	return Mdb.Model(&mdb.Orders{}).
+		Where("sign_algorithm IS NULL OR sign_algorithm = ?", "").
+		Update("sign_algorithm", sign.AlgorithmMD5).Error
 }
 
 // seedChains inserts the built-in networks as enabled rows. Uses

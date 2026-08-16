@@ -9,6 +9,7 @@ import (
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/util/constant"
+	"github.com/GMWalletApp/epusdt/util/sign"
 	"github.com/labstack/echo/v4"
 )
 
@@ -17,16 +18,18 @@ import (
 // no gateway_type. PID is auto-generated (incrementing from 1000);
 // no manual override.
 type CreateApiKeyRequest struct {
-	Name        string `json:"name" validate:"required|maxLen:128" example:"My API Key"`
-	IpWhitelist string `json:"ip_whitelist" example:""`
-	NotifyUrl   string `json:"notify_url" example:"https://example.com/notify"`
+	Name          string `json:"name" validate:"required|maxLen:128" example:"My API Key"`
+	IpWhitelist   string `json:"ip_whitelist" example:""`
+	NotifyUrl     string `json:"notify_url" example:"https://example.com/notify"`
+	GMPaySignMode string `json:"gmpay_sign_mode" enums:"dual,hmac_sha256,md5" example:"hmac_sha256"`
 }
 
 // CreateApiKeyResponse is the response for a newly created API key.
 type CreateApiKeyResponse struct {
-	ID   uint64 `json:"id" example:"1"`
-	Name string `json:"name" example:"My API Key"`
-	Pid  string `json:"pid" example:"1003"`
+	ID            uint64 `json:"id" example:"1"`
+	Name          string `json:"name" example:"My API Key"`
+	Pid           string `json:"pid" example:"1003"`
+	GMPaySignMode string `json:"gmpay_sign_mode" example:"hmac_sha256"`
 	// SecretKey is returned ONCE on creation. After that, fetch via
 	// GET /api-keys/:id/secret or rotate to generate a new one.
 	SecretKey string `json:"secret_key" example:"secret123abc456"`
@@ -34,9 +37,10 @@ type CreateApiKeyResponse struct {
 
 // UpdateApiKeyRequest is the payload for updating an API key.
 type UpdateApiKeyRequest struct {
-	Name        *string `json:"name" example:"Updated Key Name"`
-	IpWhitelist *string `json:"ip_whitelist" example:"10.0.0.1,192.168.0.0/24"`
-	NotifyUrl   *string `json:"notify_url" example:"https://example.com/notify"`
+	Name          *string `json:"name" example:"Updated Key Name"`
+	IpWhitelist   *string `json:"ip_whitelist" example:"10.0.0.1,192.168.0.0/24"`
+	NotifyUrl     *string `json:"notify_url" example:"https://example.com/notify"`
+	GMPaySignMode *string `json:"gmpay_sign_mode" enums:"dual,hmac_sha256,md5" example:"hmac_sha256"`
 }
 
 // ChangeApiKeyStatusRequest is the payload for toggling API key status.
@@ -84,6 +88,13 @@ func (c *BaseAdminController) CreateApiKey(ctx echo.Context) error {
 	if err := c.ValidateStruct(ctx, req); err != nil {
 		return c.FailJson(ctx, err)
 	}
+	signMode := sign.GMPaySignModeHMACSHA256
+	if strings.TrimSpace(req.GMPaySignMode) != "" {
+		if !sign.IsExplicitGMPaySignMode(req.GMPaySignMode) {
+			return c.FailJson(ctx, constant.ParamsMarshalErr)
+		}
+		signMode = sign.NormalizeGMPaySignMode(req.GMPaySignMode)
+	}
 
 	// Retry on unique-index violation: two concurrent creates could
 	// both see the same max PID from NextPid() and race on INSERT.
@@ -97,12 +108,13 @@ func (c *BaseAdminController) CreateApiKey(ctx echo.Context) error {
 			return c.FailJson(ctx, err)
 		}
 		row = &mdb.ApiKey{
-			Name:        req.Name,
-			Pid:         strconv.Itoa(pid),
-			SecretKey:   secret,
-			IpWhitelist: req.IpWhitelist,
-			NotifyUrl:   req.NotifyUrl,
-			Status:      mdb.ApiKeyStatusEnable,
+			Name:          req.Name,
+			Pid:           strconv.Itoa(pid),
+			SecretKey:     secret,
+			IpWhitelist:   req.IpWhitelist,
+			NotifyUrl:     req.NotifyUrl,
+			GMPaySignMode: signMode,
+			Status:        mdb.ApiKeyStatusEnable,
 		}
 		err = data.CreateApiKey(row)
 		if err == nil {
@@ -113,10 +125,11 @@ func (c *BaseAdminController) CreateApiKey(ctx echo.Context) error {
 		}
 	}
 	return c.SucJson(ctx, CreateApiKeyResponse{
-		ID:        row.ID,
-		Name:      row.Name,
-		Pid:       row.Pid,
-		SecretKey: secret,
+		ID:            row.ID,
+		Name:          row.Name,
+		Pid:           row.Pid,
+		GMPaySignMode: row.GMPaySignMode,
+		SecretKey:     secret,
 	})
 }
 
@@ -165,6 +178,12 @@ func (c *BaseAdminController) UpdateApiKey(ctx echo.Context) error {
 	}
 	if req.NotifyUrl != nil {
 		fields["notify_url"] = *req.NotifyUrl
+	}
+	if req.GMPaySignMode != nil {
+		if !sign.IsExplicitGMPaySignMode(*req.GMPaySignMode) {
+			return c.FailJson(ctx, constant.ParamsMarshalErr)
+		}
+		fields["gmpay_sign_mode"] = sign.NormalizeGMPaySignMode(*req.GMPaySignMode)
 	}
 	if err := data.UpdateApiKeyFields(id, fields); err != nil {
 		return c.FailJson(ctx, err)

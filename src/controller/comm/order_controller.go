@@ -11,6 +11,7 @@ import (
 	"github.com/GMWalletApp/epusdt/model/service"
 	"github.com/GMWalletApp/epusdt/util/constant"
 	"github.com/GMWalletApp/epusdt/util/log"
+	"github.com/GMWalletApp/epusdt/util/sign"
 	"github.com/labstack/echo/v4"
 )
 
@@ -25,12 +26,21 @@ func apiKeyFromContext(ctx echo.Context) *mdb.ApiKey {
 	return nil
 }
 
+// gmpaySignAlgorithmFromContext 读取中间件实际验签成功的算法。
+func gmpaySignAlgorithmFromContext(ctx echo.Context) (string, bool) {
+	algorithm, ok := ctx.Get(middleware.SignAlgorithmKey).(string)
+	if !ok || sign.NormalizeAlgorithm(algorithm) == "" {
+		return "", false
+	}
+	return algorithm, true
+}
+
 // CreateTransaction 创建交易
 // @Summary      Create transaction
 // @Description  Create a payment transaction order. Accepts JSON body (application/json) or form-encoded body (application/x-www-form-urlencoded).
 // @Description  GMPay may omit both token and network to create a status=4 placeholder order; EPay submit.php can also create one when neither request parameters nor database defaults provide token/network. Supplying only one of token/network is invalid.
 // @Description  payment_type is optional for GMPay. If it is sent, it is a normal signed parameter and must be included when calculating signature.
-// @Description  GMPay signature uses lowercase hexadecimal HMAC-SHA256 with secret_key as the HMAC key. Legacy MD5 signatures are not accepted.
+// @Description  GMPay 签名算法由 API Key 的 gmpay_sign_mode 控制；新建 Key 默认 HMAC-SHA256，升级前 Key 默认 dual 以兼容旧 MD5。
 // @Tags         Payment
 // @Accept       json
 // @Accept       x-www-form-urlencoded
@@ -42,7 +52,7 @@ func apiKeyFromContext(ctx echo.Context) *mdb.ApiKey {
 // @Param        network formData string false "Network (e.g. ton, tron); omit together with token to create a placeholder where supported"
 // @Param        amount formData number false "Amount"
 // @Param        notify_url formData string false "Callback URL"
-// @Param        signature formData string false "Lowercase hexadecimal HMAC-SHA256 signature"
+// @Param        signature formData string false "GMPay 签名：64 位 HMAC-SHA256，兼容模式下也可使用 32 位 MD5"
 // @Param        redirect_url formData string false "Redirect URL"
 // @Param        name formData string false "Order name"
 // @Param        payment_type formData string false "Optional GMPay compatibility flag; include in signature when sent"
@@ -57,7 +67,11 @@ func (c *BaseCommController) CreateTransaction(ctx echo.Context) (err error) {
 	if err = c.ValidateStruct(ctx, req); err != nil {
 		return c.FailJson(ctx, err)
 	}
-	resp, err := service.CreateTransaction(req, apiKeyFromContext(ctx))
+	algorithm, ok := gmpaySignAlgorithmFromContext(ctx)
+	if !ok {
+		return c.FailJson(ctx, constant.SignatureErr)
+	}
+	resp, err := service.CreateTransactionWithSignAlgorithm(req, apiKeyFromContext(ctx), algorithm)
 	if err != nil {
 		return c.FailJson(ctx, err)
 	}

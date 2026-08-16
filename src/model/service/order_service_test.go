@@ -19,6 +19,7 @@ import (
 	"github.com/GMWalletApp/epusdt/model/request"
 	"github.com/GMWalletApp/epusdt/util/constant"
 	"github.com/GMWalletApp/epusdt/util/http_client"
+	"github.com/GMWalletApp/epusdt/util/sign"
 	"github.com/go-resty/resty/v2"
 	"github.com/xssnick/tonutils-go/address"
 )
@@ -126,6 +127,64 @@ func TestCreateTransactionCreatesWaitSelectPlaceholderWithoutTokenNetwork(t *tes
 	}
 	if locks != 0 {
 		t.Fatalf("placeholder lock count = %d, want 0", locks)
+	}
+}
+
+func TestGMPaySignAlgorithmPersistsThroughPlaceholderAndSubOrder(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	if _, err := data.AddWalletAddress("TSignAlgorithmAddress001"); err != nil {
+		t.Fatalf("添加 TRON 钱包失败: %v", err)
+	}
+	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkEthereum, "0xA1B2c3D4e5F60718293aBcDeF001122334455669"); err != nil {
+		t.Fatalf("添加 Ethereum 钱包失败: %v", err)
+	}
+
+	req := newCreateTransactionRequest("order_sign_algorithm_1", 10)
+	req.Token = ""
+	req.Network = ""
+	parentResp, err := CreateTransactionWithSignAlgorithm(req, nil, sign.AlgorithmHMACSHA256)
+	if err != nil {
+		t.Fatalf("创建 HMAC 占位订单失败: %v", err)
+	}
+	parent, err := data.GetOrderInfoByTradeId(parentResp.TradeId)
+	if err != nil {
+		t.Fatalf("读取占位订单失败: %v", err)
+	}
+	if parent.SignAlgorithm != sign.AlgorithmHMACSHA256 {
+		t.Fatalf("占位订单算法 = %q, want %q", parent.SignAlgorithm, sign.AlgorithmHMACSHA256)
+	}
+
+	if _, err = SwitchNetwork(&request.SwitchNetworkRequest{
+		TradeId: parentResp.TradeId,
+		Token:   "USDT",
+		Network: mdb.NetworkTron,
+	}); err != nil {
+		t.Fatalf("占位订单原地选择网络失败: %v", err)
+	}
+	parent, err = data.GetOrderInfoByTradeId(parentResp.TradeId)
+	if err != nil {
+		t.Fatalf("读取原地补全订单失败: %v", err)
+	}
+	if parent.SignAlgorithm != sign.AlgorithmHMACSHA256 {
+		t.Fatalf("原地补全后算法 = %q, want %q", parent.SignAlgorithm, sign.AlgorithmHMACSHA256)
+	}
+
+	subResp, err := SwitchNetwork(&request.SwitchNetworkRequest{
+		TradeId: parentResp.TradeId,
+		Token:   "USDT",
+		Network: mdb.NetworkEthereum,
+	})
+	if err != nil {
+		t.Fatalf("创建切换网络子订单失败: %v", err)
+	}
+	subOrder, err := data.GetOrderInfoByTradeId(subResp.TradeId)
+	if err != nil {
+		t.Fatalf("读取切换网络子订单失败: %v", err)
+	}
+	if subOrder.SignAlgorithm != sign.AlgorithmHMACSHA256 {
+		t.Fatalf("子订单算法 = %q, want %q", subOrder.SignAlgorithm, sign.AlgorithmHMACSHA256)
 	}
 }
 

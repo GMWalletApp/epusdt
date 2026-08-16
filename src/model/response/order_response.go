@@ -24,7 +24,7 @@ type OrderNotifyResponse struct {
 	ReceiveAddress     string  `json:"receive_address" example:"TTestTronAddress001"`                                        //  收款钱包地址
 	Token              string  `json:"token" example:"USDT"`                                                                 // 所属币种 TRX USDT......
 	BlockTransactionId string  `json:"block_transaction_id" example:"0xabc123..."`                                           // 区块id
-	Signature          string  `json:"signature" example:"498975a97bc34563bdb14df53fc18054645df9684d6c67d9b9dd90ec62be1018"` // GMPay 签名 HMAC-SHA256(secret_key, sorted_params)
+	Signature          string  `json:"signature" example:"498975a97bc34563bdb14df53fc18054645df9684d6c67d9b9dd90ec62be1018"` // GMPay 签名，算法与订单创建时实际通过的算法一致
 	//  订单状态 1=等待支付 2=支付成功 3=已过期
 	Status int `json:"status" enums:"1,2,3" example:"2"`
 }

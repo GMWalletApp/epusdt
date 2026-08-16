@@ -19,6 +19,7 @@ import (
 	"github.com/GMWalletApp/epusdt/util/log"
 	"github.com/GMWalletApp/epusdt/util/math"
 	"github.com/GMWalletApp/epusdt/util/security"
+	"github.com/GMWalletApp/epusdt/util/sign"
 	"github.com/dromara/carbon/v2"
 	"github.com/shopspring/decimal"
 )
@@ -110,8 +111,17 @@ func buildCreateTransactionResponse(order *mdb.Orders) *response.CreateTransacti
 	}
 }
 
-// CreateTransaction creates a new payment order.
+// CreateTransaction 使用历史 MD5 默认值创建订单，供 EPay 和内部兼容调用使用。
 func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey) (*response.CreateTransactionResponse, error) {
+	return CreateTransactionWithSignAlgorithm(req, apiKey, sign.AlgorithmMD5)
+}
+
+// CreateTransactionWithSignAlgorithm 创建订单并固化本次 GMPay 实际通过的签名算法。
+func CreateTransactionWithSignAlgorithm(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey, signAlgorithm string) (*response.CreateTransactionResponse, error) {
+	signAlgorithm = sign.NormalizeAlgorithm(signAlgorithm)
+	if signAlgorithm == "" {
+		return nil, constant.SignatureErr
+	}
 	token := strings.ToUpper(strings.TrimSpace(req.Token))
 	currency := strings.ToUpper(strings.TrimSpace(req.Currency))
 	network := strings.ToLower(strings.TrimSpace(req.Network))
@@ -152,18 +162,19 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 	if token == "" && network == "" {
 		tradeID := GenerateCode()
 		order := &mdb.Orders{
-			TradeId:     tradeID,
-			OrderId:     req.OrderId,
-			Amount:      payAmount,
-			Currency:    currency,
-			Status:      mdb.StatusWaitSelect,
-			NotifyUrl:   notifyURL,
-			RedirectUrl: req.RedirectUrl,
-			Name:        req.Name,
-			EpayType:    epayType,
-			PaymentType: paymentType,
-			PayProvider: mdb.PaymentProviderOnChain,
-			ApiKeyID:    apiKeyID(apiKey),
+			TradeId:       tradeID,
+			OrderId:       req.OrderId,
+			Amount:        payAmount,
+			Currency:      currency,
+			Status:        mdb.StatusWaitSelect,
+			NotifyUrl:     notifyURL,
+			RedirectUrl:   req.RedirectUrl,
+			Name:          req.Name,
+			EpayType:      epayType,
+			PaymentType:   paymentType,
+			PayProvider:   mdb.PaymentProviderOnChain,
+			ApiKeyID:      apiKeyID(apiKey),
+			SignAlgorithm: signAlgorithm,
 		}
 		if err = data.CreateOrderWithTransaction(dao.Mdb, order); err != nil {
 			return nil, err
@@ -224,6 +235,7 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 		PaymentType:    paymentType,
 		PayProvider:    mdb.PaymentProviderOnChain,
 		ApiKeyID:       apiKeyID(apiKey),
+		SignAlgorithm:  signAlgorithm,
 	}
 	if err = data.CreateOrderWithTransaction(tx, order); err != nil {
 		tx.Rollback()
@@ -686,6 +698,7 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 		PaymentType:     parent.PaymentType,
 		PayProvider:     mdb.PaymentProviderOnChain,
 		ApiKeyID:        parent.ApiKeyID, // inherit from parent so resolveOrderApiKey never fails
+		SignAlgorithm:   parent.SignAlgorithm,
 	}
 	if err = data.CreateOrderWithTransaction(tx, subOrder); err != nil {
 		tx.Rollback()
@@ -967,6 +980,7 @@ func switchToOkPay(parent *mdb.Orders, token string) (*response.CheckoutCounterR
 		PaymentType:     parent.PaymentType,
 		PayProvider:     mdb.PaymentProviderOkPay,
 		ApiKeyID:        parent.ApiKeyID,
+		SignAlgorithm:   parent.SignAlgorithm,
 	}
 	if err = data.CreateOrderWithTransaction(tx, subOrder); err != nil {
 		tx.Rollback()

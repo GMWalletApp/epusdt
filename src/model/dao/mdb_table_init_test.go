@@ -7,10 +7,68 @@ import (
 
 	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/model/mdb"
+	"github.com/GMWalletApp/epusdt/util/sign"
 	"github.com/libtnb/sqlite"
 	"github.com/spf13/viper"
 	"gorm.io/gorm"
 )
+
+type legacyApiKeyForSignMigration struct {
+	ID        uint64 `gorm:"primaryKey"`
+	Name      string
+	Pid       string
+	SecretKey string
+	Status    int
+}
+
+func (legacyApiKeyForSignMigration) TableName() string { return "api_keys" }
+
+type legacyOrderForSignMigration struct {
+	ID      uint64 `gorm:"primaryKey"`
+	TradeID string `gorm:"column:trade_id"`
+	OrderID string `gorm:"column:order_id"`
+}
+
+func (legacyOrderForSignMigration) TableName() string { return "orders" }
+
+func TestBackfillSignatureCompatibilityMigratesLegacyRows(t *testing.T) {
+	db := setupSeedTableTestDB(t)
+	if err := db.AutoMigrate(&legacyApiKeyForSignMigration{}, &legacyOrderForSignMigration{}); err != nil {
+		t.Fatalf("创建旧版表结构失败: %v", err)
+	}
+	if err := db.Create(&legacyApiKeyForSignMigration{
+		Name: "legacy", Pid: "1000", SecretKey: "legacy-secret", Status: mdb.ApiKeyStatusEnable,
+	}).Error; err != nil {
+		t.Fatalf("写入旧版 API Key 失败: %v", err)
+	}
+	if err := db.Create(&legacyOrderForSignMigration{TradeID: "legacy-trade", OrderID: "legacy-order"}).Error; err != nil {
+		t.Fatalf("写入旧版订单失败: %v", err)
+	}
+
+	if err := db.AutoMigrate(&mdb.ApiKey{}, &mdb.Orders{}); err != nil {
+		t.Fatalf("升级签名字段失败: %v", err)
+	}
+	Mdb = db
+	if err := backfillSignatureCompatibility(); err != nil {
+		t.Fatalf("回填签名兼容字段失败: %v", err)
+	}
+
+	var apiKey mdb.ApiKey
+	if err := db.Where("pid = ?", "1000").Take(&apiKey).Error; err != nil {
+		t.Fatalf("读取升级后的 API Key 失败: %v", err)
+	}
+	if apiKey.GMPaySignMode != sign.GMPaySignModeDual {
+		t.Fatalf("历史 API Key 模式 = %q, want %q", apiKey.GMPaySignMode, sign.GMPaySignModeDual)
+	}
+
+	var order mdb.Orders
+	if err := db.Where("trade_id = ?", "legacy-trade").Take(&order).Error; err != nil {
+		t.Fatalf("读取升级后的订单失败: %v", err)
+	}
+	if order.SignAlgorithm != sign.AlgorithmMD5 {
+		t.Fatalf("历史订单算法 = %q, want %q", order.SignAlgorithm, sign.AlgorithmMD5)
+	}
+}
 
 func TestDefaultRpcNodesIncludesManualVerifyEpusdtEvmNodes(t *testing.T) {
 	want := map[string]string{

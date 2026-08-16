@@ -133,17 +133,19 @@ func setupTestEnv(t *testing.T) *echo.Echo {
 	// as both pid and secret_key so signing helper calls
 	// stay valid.
 	dao.Mdb.Create(&mdb.ApiKey{
-		Name:      "test-universal",
-		Pid:       testAPIToken,
-		SecretKey: testAPIToken,
-		Status:    mdb.ApiKeyStatusEnable,
+		Name:          "test-universal",
+		Pid:           testAPIToken,
+		SecretKey:     testAPIToken,
+		GMPaySignMode: sign.GMPaySignModeHMACSHA256,
+		Status:        mdb.ApiKeyStatusEnable,
 	})
 	// Additional numeric-PID row for EPAY tests (EPAY pid must be numeric).
 	dao.Mdb.Create(&mdb.ApiKey{
-		Name:      "test-epay-pid-1",
-		Pid:       "1",
-		SecretKey: testAPIToken,
-		Status:    mdb.ApiKeyStatusEnable,
+		Name:          "test-epay-pid-1",
+		Pid:           "1",
+		SecretKey:     testAPIToken,
+		GMPaySignMode: sign.GMPaySignModeHMACSHA256,
+		Status:        mdb.ApiKeyStatusEnable,
 	})
 
 	e := echo.New()
@@ -449,6 +451,102 @@ func TestCreateOrderGmpayV1RejectsLegacyMD5Signature(t *testing.T) {
 	}
 }
 
+func TestCreateOrderGmpayV1DualAcceptsLegacyMD5AndPersistsAlgorithm(t *testing.T) {
+	e := setupTestEnv(t)
+	if err := dao.Mdb.Model(&mdb.ApiKey{}).
+		Where("pid = ?", testAPIToken).
+		Update("gmpay_sign_mode", sign.GMPaySignModeDual).Error; err != nil {
+		t.Fatalf("设置双兼容模式失败: %v", err)
+	}
+
+	body := map[string]interface{}{
+		"pid":        testAPIToken,
+		"order_id":   "test-dual-md5-001",
+		"amount":     1,
+		"token":      "usdt",
+		"currency":   "cny",
+		"network":    "solana",
+		"notify_url": "https://93.184.216.34/notify",
+	}
+	legacySignature, err := sign.Get(body, testAPIToken)
+	if err != nil {
+		t.Fatalf("生成旧版 MD5 签名失败: %v", err)
+	}
+	body["signature"] = legacySignature
+
+	rec := doPost(e, "/payments/gmpay/v1/order/create-transaction", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("双兼容模式应接受 MD5，得到 %d: %s", rec.Code, rec.Body.String())
+	}
+	respData, _ := parseResp(t, rec)["data"].(map[string]interface{})
+	tradeID, _ := respData["trade_id"].(string)
+	order, err := data.GetOrderInfoByTradeId(tradeID)
+	if err != nil {
+		t.Fatalf("读取订单失败: %v", err)
+	}
+	if order.SignAlgorithm != sign.AlgorithmMD5 {
+		t.Fatalf("订单签名算法 = %q, want %q", order.SignAlgorithm, sign.AlgorithmMD5)
+	}
+}
+
+func TestCreateOrderGmpayV1MD5ModeRejectsHMACAndAcceptsMD5(t *testing.T) {
+	e := setupTestEnv(t)
+	useRspErrorHTTPStatuses(e)
+	if err := dao.Mdb.Model(&mdb.ApiKey{}).
+		Where("pid = ?", testAPIToken).
+		Update("gmpay_sign_mode", sign.GMPaySignModeMD5).Error; err != nil {
+		t.Fatalf("设置 MD5 模式失败: %v", err)
+	}
+
+	hmacBody := signBody(map[string]interface{}{
+		"order_id":   "test-md5-mode-hmac-001",
+		"amount":     1,
+		"token":      "usdt",
+		"currency":   "cny",
+		"network":    "solana",
+		"notify_url": "https://93.184.216.34/notify",
+	})
+	if rec := doPost(e, "/payments/gmpay/v1/order/create-transaction", hmacBody); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("MD5 模式应拒绝 HMAC，得到 %d: %s", rec.Code, rec.Body.String())
+	}
+
+	md5Body := map[string]interface{}{
+		"pid":        testAPIToken,
+		"order_id":   "test-md5-mode-md5-001",
+		"amount":     1,
+		"token":      "usdt",
+		"currency":   "cny",
+		"network":    "solana",
+		"notify_url": "https://93.184.216.34/notify",
+	}
+	md5Body["signature"], _ = sign.Get(md5Body, testAPIToken)
+	if rec := doPost(e, "/payments/gmpay/v1/order/create-transaction", md5Body); rec.Code != http.StatusOK {
+		t.Fatalf("MD5 模式应接受 MD5，得到 %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateOrderGmpayV1UnknownModeFailsClosed(t *testing.T) {
+	e := setupTestEnv(t)
+	useRspErrorHTTPStatuses(e)
+	if err := dao.Mdb.Model(&mdb.ApiKey{}).
+		Where("pid = ?", testAPIToken).
+		Update("gmpay_sign_mode", "unknown").Error; err != nil {
+		t.Fatalf("设置未知模式失败: %v", err)
+	}
+
+	body := signBody(map[string]interface{}{
+		"order_id":   "test-unknown-mode-001",
+		"amount":     1,
+		"token":      "usdt",
+		"currency":   "cny",
+		"network":    "solana",
+		"notify_url": "https://93.184.216.34/notify",
+	})
+	if rec := doPost(e, "/payments/gmpay/v1/order/create-transaction", body); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("未知模式必须拒绝请求，得到 %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestCreateOrderGmpayV1PaymentTypeEpayUsesHMACSHA256(t *testing.T) {
 	e := setupTestEnv(t)
 	useRspErrorHTTPStatuses(e)
@@ -483,6 +581,9 @@ func TestCreateOrderGmpayV1PaymentTypeEpayUsesHMACSHA256(t *testing.T) {
 	}
 	if order.PaymentType != mdb.PaymentTypeEpay {
 		t.Fatalf("payment_type = %q, want %q", order.PaymentType, mdb.PaymentTypeEpay)
+	}
+	if order.SignAlgorithm != sign.AlgorithmHMACSHA256 {
+		t.Fatalf("sign_algorithm = %q, want %q", order.SignAlgorithm, sign.AlgorithmHMACSHA256)
 	}
 
 	tampered := signBody(map[string]interface{}{
@@ -546,6 +647,44 @@ func TestCreateOrderGmpayV1FormData(t *testing.T) {
 		t.Error("expected trade_id in response")
 	}
 	t.Logf("Form-data order created: trade_id=%v", data["trade_id"])
+}
+
+func TestCreateOrderGmpayV1DualAcceptsLegacyMD5FormData(t *testing.T) {
+	e := setupTestEnv(t)
+	if err := dao.Mdb.Model(&mdb.ApiKey{}).
+		Where("pid = ?", testAPIToken).
+		Update("gmpay_sign_mode", sign.GMPaySignModeDual).Error; err != nil {
+		t.Fatalf("设置双兼容模式失败: %v", err)
+	}
+
+	values := url.Values{
+		"pid":        {testAPIToken},
+		"order_id":   {"test-form-md5-001"},
+		"amount":     {"1.00"},
+		"token":      {"usdt"},
+		"currency":   {"cny"},
+		"network":    {"solana"},
+		"notify_url": {"https://93.184.216.34/notify"},
+	}
+	params := make(map[string]interface{}, len(values))
+	for key, items := range values {
+		params[key] = items[0]
+	}
+	values.Set("signature", mustLegacyGMPaySignature(t, params))
+
+	rec := doFormPost(e, "/payments/gmpay/v1/order/create-transaction", values)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("双兼容模式应接受表单 MD5，得到 %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func mustLegacyGMPaySignature(t *testing.T, params map[string]interface{}) string {
+	t.Helper()
+	signature, err := sign.Get(params, testAPIToken)
+	if err != nil {
+		t.Fatalf("生成旧版 GMPay 签名失败: %v", err)
+	}
+	return signature
 }
 
 func TestCreateOrderGmpayV1PlaceholderWithoutTokenNetwork(t *testing.T) {

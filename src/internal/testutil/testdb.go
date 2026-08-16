@@ -128,14 +128,18 @@ func SetupTestDatabases(t testing.TB) func() {
 	// flows; the numeric PID 1001 row lets legacy tests that submit
 	// `pid=1001` still match.
 	mainDB.Create(&mdb.ApiKey{
-		Name: "test-default",
-		Pid:  "test-token", SecretKey: "test-token",
-		Status: mdb.ApiKeyStatusEnable,
+		Name:          "test-default",
+		Pid:           "test-token",
+		SecretKey:     "test-token",
+		GMPaySignMode: "hmac_sha256",
+		Status:        mdb.ApiKeyStatusEnable,
 	})
 	mainDB.Create(&mdb.ApiKey{
-		Name: "test-pid-1001",
-		Pid:  "1001", SecretKey: "test-token",
-		Status: mdb.ApiKeyStatusEnable,
+		Name:          "test-pid-1001",
+		Pid:           "1001",
+		SecretKey:     "test-token",
+		GMPaySignMode: "hmac_sha256",
+		Status:        mdb.ApiKeyStatusEnable,
 	})
 	if err := dao.Mdb.Create(&mdb.Setting{
 		Group: "rate",

@@ -45,17 +45,25 @@
 
 ## 签名规则
 
-当前版本使用统一商户凭证。请求必须携带 `pid`，服务端用 `pid` 查询对应的 `secret_key` 作为签名密钥。默认安装会创建一个 PID 为 `1000` 的默认密钥。
+当前版本使用统一商户凭证。请求必须携带 `pid`，服务端用 `pid` 查询对应的 `secret_key` 作为签名密钥。全新安装创建的默认密钥使用 HMAC-SHA256；从旧版本升级的已有密钥进入 `dual` 模式，以便平滑迁移旧 MD5 调用方。
 
 ### GMPay 签名
 
 1. 将所有非空参数按参数名 ASCII 字典序升序排序。
 2. 使用 `key=value` 形式以 `&` 拼接。
 3. 不参与签名的字段：`signature`。
-4. 使用 `secret_key` 作为 HMAC 密钥，对拼接字符串计算 HMAC-SHA256。
+4. 推荐算法：使用 `secret_key` 作为 HMAC 密钥，对拼接字符串计算 HMAC-SHA256。
 5. 将结果编码为 64 位小写十六进制字符串，作为 `signature`。
 
-> GMPay 已硬切至 HMAC-SHA256，不再接受旧版 MD5 签名，也不提供算法协商或回退。
+每个 API Key 的 `gmpay_sign_mode` 决定允许的 GMPay 算法：
+
+| 模式 | 行为 |
+| --- | --- |
+| `hmac_sha256` | 仅接受 HMAC-SHA256；全新 API Key 的默认值。 |
+| `md5` | 仅接受旧版 `MD5(待签名字符串 + secret_key)`。 |
+| `dual` | 先校验 HMAC-SHA256，失败后再校验旧版 MD5；已有 API Key 升级后的默认值。 |
+
+管理员可通过 `PATCH /admin/api/v1/api-keys/{id}` 设置模式，例如 `{"gmpay_sign_mode":"dual"}`。算法由服务端配置决定，客户端不能通过额外请求字段选择算法；额外字段反而会参与签名并导致校验失败。
 
 注意：
 
@@ -112,6 +120,26 @@ function gmpaySign(array $params, string $secretKey): string
     }
 
     return hash_hmac('sha256', implode('&', $pairs), $secretKey);
+}
+```
+
+迁移期旧版 MD5 计算方式如下，仅适用于 API Key 已设置为 `dual` 或 `md5` 的情况：
+
+```php
+function gmpayLegacyMd5Sign(array $params, string $secretKey): string
+{
+    unset($params['signature']);
+    ksort($params, SORT_STRING);
+
+    $pairs = [];
+    foreach ($params as $key => $value) {
+        if ($value === '' || $value === null) {
+            continue;
+        }
+        $pairs[] = $key . '=' . $value;
+    }
+
+    return strtolower(md5(implode('&', $pairs) . $secretKey));
 }
 ```
 
@@ -176,7 +204,7 @@ curl -X POST 'https://pay.example.com/payments/gmpay/v1/order/create-transaction
     "notify_url": "https://merchant.example/notify",
     "redirect_url": "https://merchant.example/return",
     "name": "VIP",
-    "signature": "476412c422f4dd75c3d533f5c47a9cac"
+    "signature": "6f874b1919d95081835e2809b620e354a5866f5a6dbb2e432d1627f1eb10059d"
   }'
 ```
 
@@ -194,7 +222,7 @@ curl -X POST 'https://pay.example.com/payments/gmpay/v1/order/create-transaction
 | `redirect_url` | string | 否 | 支付完成后的同步跳转地址。 |
 | `name` | string | 否 | 商品/订单名称。 |
 | `payment_type` | string | 否 | GMPay 兼容字段，不要求必须传；如果传了非空值，必须参与 GMPay `signature` 计算。普通 GMPay 不传时后台会存为 `Gmpay`；传 `Epay`（大小写不敏感）会统一存为 `Epay` 并使用 EPay 回调格式，且 PID 必须是数字。 |
-| `signature` | string | 是 | 64 位小写十六进制 GMPay HMAC-SHA256 签名。 |
+| `signature` | string | 是 | 推荐使用 64 位小写十六进制 HMAC-SHA256；`dual` 或 `md5` 模式也接受旧版 32 位 MD5。 |
 
 `token` 和 `network` 必须同传或同缺。两者同缺时只创建包含 `amount/currency` 的占位订单，状态为 `4`，不会分配钱包、不会计算链上支付金额，也不会锁定交易金额；后续由收银台调用 `/pay/switch-network` 选择具体链和币种或 OkPay。只缺其中一个会返回参数错误。
 
@@ -679,10 +707,10 @@ sign_type=MD5
 | `receive_address` | string | 收款地址。 |
 | `token` | string | 收款币种。 |
 | `block_transaction_id` | string | 链上交易哈希或第三方支付订单号。 |
-| `signature` | string | 64 位小写十六进制 HMAC-SHA256 回调签名。 |
+| `signature` | string | GMPay 回调签名；HMAC-SHA256 为 64 位小写十六进制，旧版 MD5 为 32 位。 |
 | `status` | integer | 当前仅支付成功时回调，值为 `2`。 |
 
-GMPay 回调验签方式与创建订单一致：排除 `signature` 字段后，使用商户 `secret_key` 对规范化参数字符串计算 HMAC-SHA256。回调体不包含 `payment_type` 字段。
+GMPay 回调使用订单创建时实际通过的算法，不受之后修改 API Key 模式影响。验签时排除 `signature` 字段：HMAC 订单使用 `secret_key` 作为密钥计算 HMAC-SHA256；旧版订单计算 `MD5(规范化参数字符串 + secret_key)`。回调体不包含 `payment_type` 和算法标识字段。
 
 ### EPay 兼容回调
 

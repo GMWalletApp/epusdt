@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"bytes"
-	"crypto/subtle"
 	"io"
 	"net"
 	"net/url"
@@ -19,8 +18,9 @@ import (
 // Context keys populated by CheckApiSign after successful verification.
 // Handlers (pay/order creation) pull ApiKeyIDKey to stamp order.api_key_id.
 const (
-	ApiKeyIDKey  = "api_key_id"
-	ApiKeyRowKey = "api_key_row"
+	ApiKeyIDKey      = "api_key_id"
+	ApiKeyRowKey     = "api_key_row"
+	SignAlgorithmKey = "gmpay_sign_algorithm"
 )
 
 // CheckApiSign validates the body signature against the secret_key of
@@ -75,12 +75,12 @@ func CheckApiSign() echo.MiddlewareFunc {
 				return constant.SignatureErr
 			}
 
-			checkSignature, err := sign.GetHMACSHA256(m, row.SecretKey)
-			if err != nil {
+			signatureStr, ok := signature.(string)
+			if !ok || strings.TrimSpace(signatureStr) == "" {
 				return constant.SignatureErr
 			}
-			signatureStr, _ := signature.(string)
-			if subtle.ConstantTimeCompare([]byte(checkSignature), []byte(signatureStr)) != 1 {
+			algorithm, err := sign.VerifyGMPay(m, row.SecretKey, signatureStr, row.GMPaySignMode)
+			if err != nil {
 				return constant.SignatureErr
 			}
 
@@ -92,6 +92,7 @@ func CheckApiSign() echo.MiddlewareFunc {
 
 			ctx.Set(ApiKeyIDKey, row.ID)
 			ctx.Set(ApiKeyRowKey, row)
+			ctx.Set(SignAlgorithmKey, algorithm)
 			return next(ctx)
 		}
 	}
