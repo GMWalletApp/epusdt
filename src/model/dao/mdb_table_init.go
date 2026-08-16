@@ -218,11 +218,7 @@ func seedDefaultSettings() {
 	}
 }
 
-// defaultRateModeForSeed keeps fresh installations on the safe fixed default,
-// while migrating installations created before rate.mode existed to auto when
-// they already relied on an external rate API. This is the closest equivalent
-// to the legacy forced-rate-then-API-fallback behavior available with the new
-// two explicit modes.
+// 新安装保持 fixed；已有安装若曾配置外部 API，则迁移到保留旧版优先级的 auto 模式。
 func defaultRateModeForSeed() string {
 	var existingSettings int64
 	if err := Mdb.Unscoped().Model(&mdb.Setting{}).Count(&existingSettings).Error; err != nil {

@@ -378,24 +378,29 @@ func TestSeedDefaultSettingsMigratesLegacyEnvAPIInstallToAuto(t *testing.T) {
 }
 
 func TestSeedDefaultSettingsPreservesExplicitLegacyRateMode(t *testing.T) {
-	db := setupSeedSettingsTestDB(t)
-	Mdb = db
-	legacy := []mdb.Setting{
-		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateApiUrl, Value: "https://rate.example.test", Type: mdb.SettingTypeString},
-		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateMode, Value: config.RateModeFixed, Type: mdb.SettingTypeString},
-	}
-	if err := Mdb.Create(&legacy).Error; err != nil {
-		t.Fatalf("seed explicit mode settings: %v", err)
-	}
+	for _, mode := range []string{config.RateModeFixed, config.RateModeAuto} {
+		t.Run(mode, func(t *testing.T) {
+			db := setupSeedSettingsTestDB(t)
+			Mdb = db
+			legacy := []mdb.Setting{
+				{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateApiUrl, Value: "https://rate.example.test", Type: mdb.SettingTypeString},
+				{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateMode, Value: mode, Type: mdb.SettingTypeString},
+			}
+			if err := Mdb.Create(&legacy).Error; err != nil {
+				t.Fatalf("seed explicit mode settings: %v", err)
+			}
 
-	seedDefaultSettings()
+			seedDefaultSettings()
+			seedDefaultSettings()
 
-	var row mdb.Setting
-	if err := Mdb.Where("`key` = ?", mdb.SettingKeyRateMode).Take(&row).Error; err != nil {
-		t.Fatalf("load explicit rate.mode: %v", err)
-	}
-	if row.Value != config.RateModeFixed {
-		t.Fatalf("explicit rate.mode = %q, want fixed", row.Value)
+			var row mdb.Setting
+			if err := Mdb.Where("`key` = ?", mdb.SettingKeyRateMode).Take(&row).Error; err != nil {
+				t.Fatalf("load explicit rate.mode: %v", err)
+			}
+			if row.Value != mode {
+				t.Fatalf("explicit rate.mode = %q, want %q", row.Value, mode)
+			}
+		})
 	}
 }
 
