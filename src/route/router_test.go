@@ -19,6 +19,8 @@ import (
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/model/service"
+	"github.com/GMWalletApp/epusdt/notify"
+	"github.com/GMWalletApp/epusdt/telegram"
 	"github.com/GMWalletApp/epusdt/util/constant"
 	"github.com/GMWalletApp/epusdt/util/http_client"
 	"github.com/GMWalletApp/epusdt/util/log"
@@ -35,6 +37,8 @@ const testAPIToken = "test-secret-token"
 
 func setupTestEnv(t *testing.T) *echo.Echo {
 	t.Helper()
+	notify.WaitForDispatchesForTest()
+	telegram.WaitForReloadsForTest()
 
 	tmpDir := t.TempDir()
 
@@ -94,6 +98,8 @@ func setupTestEnv(t *testing.T) *echo.Echo {
 	config.RateCacheSave = data.SaveRateCacheSnapshot
 	config.ResetRateCacheRuntime()
 	t.Cleanup(func() {
+		notify.WaitForDispatchesForTest()
+		telegram.WaitForReloadsForTest()
 		config.SettingsGetString = nil
 		config.RateCacheLoad = nil
 		config.RateCacheLoadAll = nil

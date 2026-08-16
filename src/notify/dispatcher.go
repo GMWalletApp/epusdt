@@ -18,8 +18,9 @@ import (
 type Sender func(config, text string) error
 
 var (
-	sendersMu sync.RWMutex
-	senders   = map[string]Sender{}
+	sendersMu  sync.RWMutex
+	senders    = map[string]Sender{}
+	dispatchWG sync.WaitGroup
 )
 
 // RegisterSender wires a Sender for a channel type. Called once at
@@ -52,12 +53,19 @@ func Dispatch(event, text string) {
 			log.Sugar.Warnf("[notify] no sender registered for type=%s (channel_id=%d)", ch.Type, ch.ID)
 			continue
 		}
+		dispatchWG.Add(1)
 		go func(c mdb.NotificationChannel) {
+			defer dispatchWG.Done()
 			if err := sender(c.Config, text); err != nil {
 				log.Sugar.Errorf("[notify] send failed type=%s channel_id=%d: %v", c.Type, c.ID, err)
 			}
 		}(ch)
 	}
+}
+
+// WaitForDispatchesForTest 等待已经提交的异步通知发送完成，供测试隔离全局状态时使用。
+func WaitForDispatchesForTest() {
+	dispatchWG.Wait()
 }
 
 // ParseConfig helper for senders: unmarshal channel Config JSON into
