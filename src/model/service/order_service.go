@@ -96,6 +96,7 @@ func validateCreateTransactionTokenNetwork(token, network string) error {
 }
 
 func buildCreateTransactionResponse(order *mdb.Orders) *response.CreateTransactionResponse {
+	expirationTime := order.CreatedAt.AddMinutes(config.GetOrderExpirationTime()).Timestamp()
 	return &response.CreateTransactionResponse{
 		TradeId:        order.TradeId,
 		OrderId:        order.OrderId,
@@ -105,9 +106,44 @@ func buildCreateTransactionResponse(order *mdb.Orders) *response.CreateTransacti
 		ReceiveAddress: order.ReceiveAddress,
 		Token:          order.Token,
 		Status:         order.Status,
-		ExpirationTime: carbon.Now().AddMinutes(config.GetOrderExpirationTime()).Timestamp(),
+		ExpirationTime: expirationTime,
 		PaymentUrl:     fmt.Sprintf("%s/pay/checkout-counter/%s", config.GetAppUri(), order.TradeId),
 	}
+}
+
+// replayCreateTransaction returns the original response only when a repeated
+// merchant request is byte-for-byte equivalent after normalisation. This makes
+// order creation safely idempotent without exposing another merchant's order or
+// accepting a changed amount/payment target under the same merchant order ID.
+func replayCreateTransaction(
+	existing *mdb.Orders,
+	apiKey *mdb.ApiKey,
+	payAmount float64,
+	currency, token, network, notifyURL, redirectURL, name, paymentType, epayType string,
+) (*response.CreateTransactionResponse, error) {
+	if existing == nil || existing.ID == 0 {
+		return nil, nil
+	}
+	// Only authenticated GMPay merchant requests opt into replay. Legacy EPay
+	// paths (which may have no ApiKey owner) keep their previous conflict behavior.
+	if paymentType != mdb.PaymentTypeGmpay || apiKey == nil || apiKey.ID == 0 {
+		return nil, constant.OrderAlreadyExists
+	}
+	precision := data.GetAmountPrecision()
+	existingAmount := math.MustParsePrecFloat64(existing.Amount, precision)
+	if existing.ApiKeyID != apiKeyID(apiKey) ||
+		existingAmount != payAmount ||
+		existing.Currency != currency ||
+		existing.Token != token ||
+		existing.Network != network ||
+		existing.NotifyUrl != notifyURL ||
+		existing.RedirectUrl != redirectURL ||
+		existing.Name != name ||
+		existing.PaymentType != paymentType ||
+		existing.EpayType != epayType {
+		return nil, constant.OrderAlreadyExists
+	}
+	return buildCreateTransactionResponse(existing), nil
 }
 
 // CreateTransaction creates a new payment order.
@@ -119,6 +155,8 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 		return nil, err
 	}
 	notifyURL := strings.TrimSpace(req.NotifyUrl)
+	redirectURL := strings.TrimSpace(req.RedirectUrl)
+	name := strings.TrimSpace(req.Name)
 	if err := security.ValidatePublicHTTPURL(notifyURL); err != nil {
 		return nil, constant.NotifyURLErr
 	}
@@ -141,7 +179,10 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 		return nil, err
 	}
 	if exist.ID > 0 {
-		return nil, constant.OrderAlreadyExists
+		return replayCreateTransaction(
+			exist, apiKey, payAmount, currency, token, network, notifyURL,
+			redirectURL, name, paymentType, epayType,
+		)
 	}
 
 	decimalPayAmount := decimal.NewFromFloat(payAmount)
@@ -158,14 +199,22 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 			Currency:    currency,
 			Status:      mdb.StatusWaitSelect,
 			NotifyUrl:   notifyURL,
-			RedirectUrl: req.RedirectUrl,
-			Name:        req.Name,
+			RedirectUrl: redirectURL,
+			Name:        name,
 			EpayType:    epayType,
 			PaymentType: paymentType,
 			PayProvider: mdb.PaymentProviderOnChain,
 			ApiKeyID:    apiKeyID(apiKey),
 		}
 		if err = data.CreateOrderWithTransaction(dao.Mdb, order); err != nil {
+			// A second process may have won the globally unique order_id race.
+			// Re-read and return only an exact same-merchant replay.
+			if concurrent, readErr := data.GetOrderInfoByOrderId(req.OrderId); readErr == nil && concurrent.ID > 0 {
+				return replayCreateTransaction(
+					concurrent, apiKey, payAmount, currency, token, network, notifyURL,
+					redirectURL, name, paymentType, epayType,
+				)
+			}
 			return nil, err
 		}
 		return buildCreateTransactionResponse(order), nil
@@ -218,8 +267,8 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 		Network:        network,
 		Status:         mdb.StatusWaitPay,
 		NotifyUrl:      notifyURL,
-		RedirectUrl:    req.RedirectUrl,
-		Name:           req.Name,
+		RedirectUrl:    redirectURL,
+		Name:           name,
 		EpayType:       epayType,
 		PaymentType:    paymentType,
 		PayProvider:    mdb.PaymentProviderOnChain,
@@ -228,6 +277,14 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 	if err = data.CreateOrderWithTransaction(tx, order); err != nil {
 		tx.Rollback()
 		_ = data.UnLockTransactionByTradeId(tradeID)
+		// A second process may have won the globally unique order_id race.
+		// Re-read and return only an exact same-merchant replay.
+		if concurrent, readErr := data.GetOrderInfoByOrderId(req.OrderId); readErr == nil && concurrent.ID > 0 {
+			return replayCreateTransaction(
+				concurrent, apiKey, payAmount, currency, token, network, notifyURL,
+				redirectURL, name, paymentType, epayType,
+			)
+		}
 		return nil, err
 	}
 	if err = tx.Commit().Error; err != nil {
