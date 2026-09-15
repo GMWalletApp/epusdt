@@ -214,6 +214,64 @@ func TestCreateTransactionAssignsIncrementedAmountsAndLocks(t *testing.T) {
 	}
 }
 
+func TestCreateTransactionShufflesWalletsBeforeLock(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	orig := shuffleWalletAddresses
+	t.Cleanup(func() { shuffleWalletAddresses = orig })
+	shuffleWalletAddresses = func(wallets []mdb.WalletAddress) {
+		for i, wallet := range wallets {
+			if wallet.Address == "wallet_shuffle_2" {
+				wallets[0], wallets[i] = wallets[i], wallets[0]
+				return
+			}
+		}
+	}
+
+	if _, err := data.AddWalletAddress("wallet_shuffle_1"); err != nil {
+		t.Fatalf("add wallet 1: %v", err)
+	}
+	if _, err := data.AddWalletAddress("wallet_shuffle_2"); err != nil {
+		t.Fatalf("add wallet 2: %v", err)
+	}
+
+	resp, err := CreateTransaction(newCreateTransactionRequest("order_shuffle_1", 1), nil)
+	if err != nil {
+		t.Fatalf("create transaction: %v", err)
+	}
+	if resp.ReceiveAddress != "wallet_shuffle_2" {
+		t.Fatalf("receive address = %s, want wallet_shuffle_2 after shuffle", resp.ReceiveAddress)
+	}
+}
+
+func TestCreateTransactionRandomWalletAssignmentUsesMoreThanFirstAddress(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	if _, err := data.AddWalletAddress("wallet_rand_1"); err != nil {
+		t.Fatalf("add wallet 1: %v", err)
+	}
+	if _, err := data.AddWalletAddress("wallet_rand_2"); err != nil {
+		t.Fatalf("add wallet 2: %v", err)
+	}
+	if _, err := data.AddWalletAddress("wallet_rand_3"); err != nil {
+		t.Fatalf("add wallet 3: %v", err)
+	}
+
+	seen := map[string]int{}
+	for i := 1; i <= 24; i++ {
+		resp, err := CreateTransaction(newCreateTransactionRequest(fmt.Sprintf("order_rand_%d", i), float64(i)), nil)
+		if err != nil {
+			t.Fatalf("create transaction %d: %v", i, err)
+		}
+		seen[resp.ReceiveAddress]++
+	}
+	if len(seen) < 2 {
+		t.Fatalf("assigned addresses = %v, want more than one wallet", seen)
+	}
+}
+
 func TestCreateTransactionUsesConfiguredAmountPrecision(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()

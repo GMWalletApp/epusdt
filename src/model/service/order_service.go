@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	mathrand "math/rand/v2"
 	"strings"
 	"sync"
 
@@ -392,11 +393,21 @@ func orderProcessing(req *request.OrderProcessingRequest, opts orderProcessingOp
 	return nil
 }
 
+func shuffleWalletAddressesRandom(wallets []mdb.WalletAddress) {
+	mathrand.Shuffle(len(wallets), func(i, j int) {
+		wallets[i], wallets[j] = wallets[j], wallets[i]
+	})
+}
+
+// shuffleWalletAddresses randomizes lock-try order. Tests may replace it.
+var shuffleWalletAddresses = shuffleWalletAddressesRandom
+
 // ReserveAvailableWalletAndAmount finds and locks a network+address+token+amount pair.
 func ReserveAvailableWalletAndAmount(tradeID string, network string, token string, amount float64, walletAddress []mdb.WalletAddress) (string, float64, error) {
 	availableAddress := ""
 	availableAmount := amount
 	amountPrecision := data.GetAmountPrecision()
+	shuffleWalletAddresses(walletAddress)
 
 	tryLockWalletFunc := func(targetAmount float64) (string, error) {
 		for _, address := range walletAddress {
