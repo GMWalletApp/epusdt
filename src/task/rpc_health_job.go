@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/util/log"
@@ -35,6 +36,9 @@ func (r RpcHealthJob) Run() {
 		if !nodes[i].Enabled {
 			continue
 		}
+		if !scheduledRpcProbeDue(nodes[i], time.Now()) {
+			continue
+		}
 		wg.Add(1)
 		go func(n mdb.RpcNode) {
 			defer wg.Done()
@@ -45,6 +49,21 @@ func (r RpcHealthJob) Run() {
 		}(nodes[i])
 	}
 	wg.Wait()
+}
+
+// Idle BSC HTTP probes run every five minutes instead of twice a minute.
+// New/recent orders keep normal probing.
+// Manual admin probes do not use this scheduler gate.
+func scheduledRpcProbeDue(node mdb.RpcNode, now time.Time) bool {
+	if node.Network != mdb.NetworkBsc || node.Type != mdb.RpcNodeTypeHttp || node.LastCheckedAt.IsZero() {
+		return true
+	}
+	last := time.UnixMilli(node.LastCheckedAt.TimestampMilli())
+	if now.Sub(last) >= bscIdleHealthInterval || now.Before(last) {
+		return true
+	}
+	orders, err := data.ListEvmBackfillOrders(mdb.NetworkBsc, now, config.GetOrderExpirationTimeDuration(), bscOrderScanGrace)
+	return err != nil || len(orders) > 0
 }
 
 // ProbeNode does a TCP dial to the RPC URL and returns (status, latencyMs).

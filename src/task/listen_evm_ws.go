@@ -48,6 +48,7 @@ func runEvmWsLogListener(ctx context.Context, network string, logPrefix string, 
 				return
 			}
 			log.Sugar.Warnf("%s dial: %v, retry in %s", logPrefix, err, failWait)
+			wakeBscBackfill(network)
 			if recordEvmNodeFailure(logPrefix, network, node, "dial") {
 				return
 			}
@@ -66,6 +67,7 @@ func runEvmWsLogListener(ctx context.Context, network string, logPrefix string, 
 				return
 			}
 			log.Sugar.Warnf("%s subscribe: %v, retry in %s", logPrefix, err, failWait)
+			wakeBscBackfill(network)
 			if recordEvmNodeFailure(logPrefix, network, node, "subscribe") {
 				return
 			}
@@ -77,6 +79,7 @@ func runEvmWsLogListener(ctx context.Context, network string, logPrefix string, 
 		}
 		failWait = minBackoff
 		data.RecordRpcSuccess(network)
+		wakeBscBackfill(network)
 
 		log.Sugar.Infof("%s connected, subscribed to Transfer logs using WSS node %s", logPrefix, nodeLabel)
 
@@ -85,6 +88,9 @@ func runEvmWsLogListener(ctx context.Context, network string, logPrefix string, 
 
 		if ctx.Err() != nil {
 			return
+		}
+		if recvErr != nil {
+			wakeBscBackfill(network)
 		}
 		if time.Since(connectedAt) >= stableResetAfter {
 			if recvErr != nil {
