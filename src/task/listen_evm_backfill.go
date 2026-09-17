@@ -150,6 +150,9 @@ func runEvmBackfillScanner(network, logPrefix string, contracts []common.Address
 }
 
 func runEvmBackfillLoop(ctx context.Context, client *ethclient.Client, network, logPrefix string, node mdb.RpcNode, baseQuery ethereum.FilterQuery, isWatchedRecipient evmRecipientCheckerFunc) error {
+	if network == mdb.NetworkBsc {
+		return runBscDemandBackfillLoop(ctx, client, node, baseQuery, isWatchedRecipient)
+	}
 	lastBlock, initialized, err := loadEvmScanCursor(network)
 	if err != nil {
 		return err
@@ -302,7 +305,8 @@ func evmBackfillChainConfig(network string) (*mdb.Chain, time.Duration) {
 
 func evmBackfillBatchSize(network string) int64 {
 	if network == mdb.NetworkBsc {
-		return 200
+		// Keep BSC log batches compatible with the 10-block free RPC limit.
+		return 10
 	}
 	return evmBackfillBatchBlocks
 }
