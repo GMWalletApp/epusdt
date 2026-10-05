@@ -368,6 +368,10 @@ func (s *Scanner) Init() error {
 	if err != nil {
 		return fmt.Errorf("resolve tron node: %w", err)
 	}
+	return s.initWithRpcNode(node)
+}
+
+func (s *Scanner) initWithRpcNode(node *mdb.RpcNode) error {
 	s.useRpcNode(node)
 
 	log.Sugar.Infof("[TRON-BLOCK] using RPC node %s", s.nodeLabel)
@@ -397,6 +401,13 @@ func (s *Scanner) Run() {
 	defer statTicker.Stop()
 
 	for {
+		if !data.IsChainEnabled(mdb.NetworkTron) {
+			log.Sugar.Info("[TRON-BLOCK] chain disabled, stopping scanner")
+			return
+		}
+		if !tronScannerHasWallets() {
+			return
+		}
 		select {
 		case <-statTicker.C:
 			log.Sugar.Infof("[TRON-BLOCK] stats blocks=%d trc20=%d trx=%d", s.totalBlocks, s.totalTRC20Txs, s.totalTRXTxs)
@@ -407,6 +418,9 @@ func (s *Scanner) Run() {
 }
 
 func (s *Scanner) poll() {
+	if !data.IsChainEnabled(mdb.NetworkTron) {
+		return
+	}
 	latest, err := GetNowBlock(s.baseURL, s.apiKey)
 	if err != nil {
 		log.Sugar.Warnf("[TRON-BLOCK] get latest block: %v", err)
@@ -422,6 +436,9 @@ func (s *Scanner) poll() {
 	tokenMap := loadTronTRC20TokenMap()
 	hadBlockFetchError := false
 	for num := s.lastBlock + 1; num <= latestNum; num++ {
+		if !data.IsChainEnabled(mdb.NetworkTron) {
+			return
+		}
 		var block *Block
 		if num == latestNum {
 			block = latest
@@ -471,16 +488,38 @@ func (s *Scanner) recordRpcFailure(reason string) {
 	log.Sugar.Warnf("[TRON-BLOCK] switched RPC node from %s to %s", oldLabel, s.nodeLabel)
 }
 
+func tronScannerHasWallets() bool {
+	wallets, err := data.GetAvailableWalletAddressByNetwork(mdb.NetworkTron)
+	if err != nil {
+		log.Sugar.Errorf("[TRON-BLOCK] failed to get wallet addresses: %v", err)
+		return false
+	}
+	if len(wallets) == 0 {
+		log.Sugar.Warn("[TRON-BLOCK] no enabled wallet addresses, scanner idle")
+		return false
+	}
+	return true
+}
+
 func StartTronBlockScannerListener() {
 	for {
+		// Keep the listener alive so admin-side toggles take effect without a restart.
+		if !data.IsChainEnabled(mdb.NetworkTron) || !tronScannerHasWallets() {
+			time.Sleep(10 * time.Second)
+			continue
+		}
+		node, ok := resolveChainHttpNode(mdb.NetworkTron, "[TRON-BLOCK]")
+		if !ok {
+			time.Sleep(10 * time.Second)
+			continue
+		}
 		scanner := NewScanner()
-		if err := scanner.Init(); err != nil {
+		if err := scanner.initWithRpcNode(&node); err != nil {
 			log.Sugar.Errorf("[TRON-BLOCK] init: %v, retrying...", err)
 			time.Sleep(10 * time.Second)
 			continue
 		}
 		scanner.Run()
-		log.Sugar.Warn("[TRON-BLOCK] scanner stopped, restarting...")
 		time.Sleep(3 * time.Second)
 	}
 }
