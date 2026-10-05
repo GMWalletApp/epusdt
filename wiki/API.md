@@ -207,12 +207,14 @@ function epaySign(array $params, string $secretKey): string
 | `order_id` | string | 商户订单号。 |
 | `amount` | number | 商户提交的法币金额。 |
 | `currency` | string | 法币币种。 |
-| `actual_amount` | number | 实际需支付的加密货币数量。 |
+| `actual_amount` | number | 收款地址需到账的加密货币数量。 |
 | `receive_address` | string | 收款地址。 |
 | `token` | string | 收款币种。 |
 | `status` | integer | 订单状态。状态 `4` 表示等待用户选择 `token/network`。 |
 | `expiration_time` | integer | 订单过期时间，秒级时间戳。 |
 | `payment_url` | string | 收银台地址。该地址会跳转到前端收银台。 |
+
+链上订单的 `actual_amount` 是收款地址必须收到的数量，不是交易所的提现输入数量。交易所提现手续费由交易所决定；用户应确认交易所显示的到账数量与 `actual_amount` 完全一致。Epusdt 按收款地址、币种和到账数量匹配订单。
 
 状态 `4` 占位订单的 `actual_amount` 为 `0`，`receive_address` 和 `token` 为空；过期任务或后台关闭只会把它改为状态 `3`，不会执行交易金额解锁。第一次成功调用 `/pay/switch-network` 时，如果选择普通链上 `token/network`，同一个父订单会原地补全链上字段并变为状态 `1`，此时才会创建真实交易锁；如果选择 `network=okpay`，同一个父订单会原地变为 OkPay 订单并返回 OkPay 托管支付链接，不创建子订单，也不会分配本系统钱包地址或链上锁。占位父单首次补全后 `is_selected` 仍为 `false`，后续同目标选择才会把父单标记为已选中；如果后续切到其它支付目标，则创建唯一一条子订单。
 

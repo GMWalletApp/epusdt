@@ -3,7 +3,7 @@ package response
 type CheckoutCounterResponse struct {
 	TradeId        string  `json:"trade_id" example:"3nQ9pL2xV7sK1mR8cT4yB_aZ"`                                     //  epusdt订单号
 	Amount         float64 `json:"amount" example:"100.0000"`                                                       //  订单金额，按 system.amount_precision 保留小数 法币金额
-	ActualAmount   float64 `json:"actual_amount" example:"14.2857"`                                                 //  订单实际需要支付的金额；status=4 占位订单返回 0
+	ActualAmount   float64 `json:"actual_amount" example:"14.2857"`                                                 //  收款地址需到账的加密货币数量；status=4 占位订单返回 0
 	Token          string  `json:"token" example:"USDT"`                                                            //  所属币种；status=4 占位订单为空
 	Currency       string  `json:"currency" example:"CNY"`                                                          //  法币币种 CNY USD ...
 	ReceiveAddress string  `json:"receive_address" example:"TTestTronAddress001"`                                   //  收款钱包地址；status=4 占位订单为空

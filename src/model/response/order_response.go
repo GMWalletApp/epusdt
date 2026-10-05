@@ -6,7 +6,7 @@ type CreateTransactionResponse struct {
 	OrderId        string  `json:"order_id" example:"ORD20260416001"`                                               //  客户交易id
 	Amount         float64 `json:"amount" example:"100.0000"`                                                       //  订单金额，按 system.amount_precision 保留小数
 	Currency       string  `json:"currency" example:"CNY"`                                                          //  订单货币类型 CNY USD......
-	ActualAmount   float64 `json:"actual_amount" example:"14.2857"`                                                 //  订单实际需要支付的金额，按 system.amount_precision 保留小数
+	ActualAmount   float64 `json:"actual_amount" example:"14.2857"`                                                 //  收款地址需到账的加密货币数量，按 system.amount_precision 保留小数
 	ReceiveAddress string  `json:"receive_address" example:"TTestTronAddress001"`                                   //  收款钱包地址
 	Token          string  `json:"token" example:"USDT"`                                                            // 所属币种 TRX USDT......
 	Status         int     `json:"status" enums:"1,2,3,4" example:"1"`                                              // 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种
@@ -20,7 +20,7 @@ type OrderNotifyResponse struct {
 	TradeId            string  `json:"trade_id" example:"3nQ9pL2xV7sK1mR8cT4yB_aZ"`                                          //  epusdt订单号
 	OrderId            string  `json:"order_id" example:"ORD20260416001"`                                                    //  客户交易id
 	Amount             float64 `json:"amount" example:"100.0000"`                                                            //  订单金额，按 system.amount_precision 保留小数
-	ActualAmount       float64 `json:"actual_amount" example:"14.2857"`                                                      //  订单实际需要支付的金额，按 system.amount_precision 保留小数
+	ActualAmount       float64 `json:"actual_amount" example:"14.2857"`                                                      //  收款地址实际到账的加密货币数量，按 system.amount_precision 保留小数
 	ReceiveAddress     string  `json:"receive_address" example:"TTestTronAddress001"`                                        //  收款钱包地址
 	Token              string  `json:"token" example:"USDT"`                                                                 // 所属币种 TRX USDT......
 	BlockTransactionId string  `json:"block_transaction_id" example:"0xabc123..."`                                           // 区块id
