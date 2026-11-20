@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -115,11 +116,10 @@ func (p *paymentSubscriptions) waitForCursor(network string) error {
 // embeddedWorker adapts EPUSDT's live node selection to the same scanner
 // engine used by the standalone service. Only this worker owns the source.
 type embeddedWorker struct {
-	name   string
-	store  *scanner.Store
-	src    scanner.Source
-	active scanner.Network
-	nodeID uint64
+	name  string
+	store *scanner.Store
+	src   *scanner.SourcePool
+	ids   map[scanner.Network]uint64
 }
 
 func (w *embeddedWorker) close() {
@@ -127,6 +127,13 @@ func (w *embeddedWorker) close() {
 		w.src.Close()
 		w.src = nil
 	}
+}
+
+func (w *embeddedWorker) wakeups() <-chan struct{} {
+	if w.src == nil {
+		return nil
+	}
+	return w.src.Wakeups()
 }
 
 func runEmbeddedNetwork(ctx context.Context, name string, store *scanner.Store) {
@@ -146,7 +153,7 @@ func runActivePaymentNetwork(ctx context.Context, name string, store *scanner.St
 		select {
 		case <-ctx.Done():
 			return
-		case <-scanner.Wakeups(worker.src):
+		case <-worker.wakeups():
 		case <-time.After(delay):
 		}
 	}
@@ -185,43 +192,49 @@ func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
 	if err != nil {
 		return delay, err
 	}
-	var node *mdb.RpcNode
-	var n scanner.Network
-	for i := range nodes {
-		candidate, ok := scannerNodeConfig(nodes[i], nodes)
-		if ok {
-			node = &nodes[i]
-			n = candidate
-			break
+	var configs []scanner.Network
+	w.ids = map[scanner.Network]uint64{}
+	for _, node := range nodes {
+		if node.Network != w.name {
+			continue
 		}
+		candidate, ok := scannerNodeConfig(node, nodes)
+		if !ok {
+			continue
+		}
+		if len(configs) > 0 && strings.HasPrefix(configs[0].Protocol, "solidity-") && !strings.HasPrefix(candidate.Protocol, "solidity-") {
+			continue
+		}
+		candidate.Confirmations = int64(chain.MinConfirmations)
+		configs = append(configs, candidate)
+		w.ids[candidate] = node.ID
 	}
-	if node == nil {
+	if len(configs) == 0 {
 		w.close()
 		return delay, nil
 	}
-	n.Confirmations = int64(chain.MinConfirmations)
-	if n != w.active || node.ID != w.nodeID {
-		w.close()
-		w.active = n
-		w.nodeID = node.ID
-	}
 	if w.src == nil {
-		w.src, err = scanner.NewSource(ctx, n)
+		w.src = scanner.NewSourcePool(ctx, w.name)
+		w.src.Report = func(n scanner.Network, success bool) {
+			id := w.ids[n]
+			if success {
+				data.RecordRpcNodeSuccess(id)
+			} else {
+				data.RecordRpcNodeFailure(id)
+			}
+		}
 	}
-	var behind bool
-	if err == nil {
-		behind, err = w.store.Step(ctx, n, w.src)
+	if err = w.src.SetNodes(configs); err != nil {
+		return delay, err
 	}
+	behind, err := w.store.Step(ctx, configs[0], w.src)
 	if err != nil {
-		w.close()
 		if ctx.Err() != nil {
 			return delay, nil
 		}
-		data.RecordRpcNodeFailure(node.ID)
 		data.RecordRpcFailure(w.name)
-		return delay, fmt.Errorf("node %d failed, cursor retained (%T)", node.ID, err)
+		return delay, fmt.Errorf("%s scan stopped at the last committed range: %w", w.name, err)
 	}
-	data.RecordRpcNodeSuccess(node.ID)
 	data.RecordRpcSuccess(w.name)
 	if h, err := w.store.Height(ctx, w.name); err == nil && h >= 0 {
 		data.RecordRpcBlockHeight(w.name, h)

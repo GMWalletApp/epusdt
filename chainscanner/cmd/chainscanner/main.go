@@ -75,6 +75,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	var wg sync.WaitGroup
+	wg.Go(func() { registry.RunChainList(ctx) })
 	for _, n := range c.Networks {
 		wg.Add(1)
 		go func() { defer wg.Done(); registry.Run(ctx, n) }()

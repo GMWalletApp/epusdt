@@ -91,13 +91,21 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
 	}))
 	defer rpc.Close()
-	n := scanner.Network{Name: net, URL: rpc.URL, Confirmations: 2}
-	src, err := scanner.NewSource(ctx, n)
-	if err != nil {
+	// Drive the payment worker through its normal database node selection.
+	if err = dao.Mdb.Model(&mdb.RpcNode{}).Where("network = ?", net).Update("enabled", false).Error; err != nil {
 		t.Fatal(err)
 	}
-	defer src.Close()
-	if _, err = store.Step(ctx, n, src); err != nil {
+	unavailable := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "busy", http.StatusTooManyRequests) }))
+	defer unavailable.Close()
+	for i, url := range []string{unavailable.URL, rpc.URL} {
+		node := mdb.RpcNode{Network: net, Type: "http", Url: url, Enabled: true, Weight: 100 - i}
+		if err = data.CreateRpcNode(&node); err != nil {
+			t.Fatal(err)
+		}
+	}
+	worker := embeddedWorker{name: net, store: store}
+	defer worker.close()
+	if _, err = worker.step(ctx); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {

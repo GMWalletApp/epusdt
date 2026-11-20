@@ -1,0 +1,146 @@
+package chains
+
+import (
+	"context"
+	"errors"
+	"io"
+	"net"
+	"net/http"
+	"net/netip"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/gorilla/websocket"
+)
+
+// ChainList entries are third-party input. Apply the same dial policy during
+// discovery, admin tests and actual scanning, including websocket reconnects.
+func PublicRPCProtocol(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || len(raw) > 4096 || u.User != nil || u.Hostname() == "" || u.Fragment != "" || strings.ContainsAny(raw, "{}<>$") {
+		return ""
+	}
+	switch u.Scheme {
+	case "https":
+		return "http"
+	case "wss":
+		return "ws"
+	}
+	return ""
+}
+
+var specialRoutes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"), netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"), netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("192.88.99.0/24"), netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"), netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("168.63.129.16/32"), netip.MustParsePrefix("240.0.0.0/4"), netip.MustParsePrefix("2001::/23"),
+	netip.MustParsePrefix("2001:db8::/32"), netip.MustParsePrefix("2002::/16"),
+}
+var globalIPv6 = netip.MustParsePrefix("2000::/3")
+
+func publicAddress(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	if ip.Zone() != "" || !ip.IsGlobalUnicast() || ip.IsPrivate() || (ip.Is6() && !globalIPv6.Contains(ip)) {
+		return false
+	}
+	for _, p := range specialRoutes {
+		if p.Contains(ip) {
+			return false
+		}
+	}
+	return true
+}
+
+func dialPublic(ctx context.Context, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil {
+		return nil, err
+	}
+	var dialer net.Dialer
+	err = errors.New("no public address for RPC endpoint")
+	for _, ip := range ips {
+		if !publicAddress(ip) {
+			continue
+		}
+		var conn net.Conn
+		// Dial the checked IP directly; TLS still validates the URL hostname.
+		conn, err = dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+		if err == nil {
+			return conn, nil
+		}
+	}
+	return nil, err
+}
+
+type limitedRPCTransport struct{ *http.Transport }
+type boundedBody struct {
+	io.Reader
+	io.Closer
+}
+
+func (t limitedRPCTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	res, err := t.Transport.RoundTrip(req)
+	if err == nil {
+		res.Body = boundedBody{io.LimitReader(res.Body, 64<<20), res.Body}
+	}
+	return res, err
+}
+
+func publicRPCOptions(client *http.Client) []rpc.ClientOption {
+	transport := &http.Transport{
+		DialContext: dialPublic, ForceAttemptHTTP2: true,
+		IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 8 * time.Second,
+	}
+	client.Transport = limitedRPCTransport{transport}
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return []rpc.ClientOption{rpc.WithHTTPClient(client), rpc.WithWebsocketDialer(websocket.Dialer{NetDialContext: dialPublic, HandshakeTimeout: 8 * time.Second}), rpc.WithWebsocketMessageSizeLimit(64 << 20)}
+}
+
+func openPublicRPC(ctx context.Context, n Network, watch bool) (Source, error) {
+	protocol := PublicRPCProtocol(n.URL)
+	if !IsEVM(n.Name) || protocol == "" || protocol != n.Protocol || n.APIKey != "" || n.HistoryURL != "" {
+		return nil, errors.New("invalid public EVM endpoint")
+	}
+	return newSource(ctx, n, true, watch)
+}
+
+func NewPublicSource(ctx context.Context, n Network) (Source, error) {
+	return openPublicRPC(ctx, n, true)
+}
+
+// Probe a recent numbered block, catching stuck nodes and endpoints that
+// answer a height request but cannot serve even the corresponding header.
+func ProbePublicRPC(ctx context.Context, n Network) (int64, error) {
+	src, err := openPublicRPC(ctx, n, false)
+	if err != nil {
+		return 0, err
+	}
+	defer src.Close()
+	return src.(*jsonSource).recentHead(ctx)
+}
+
+func (s *jsonSource) recentHead(ctx context.Context) (int64, error) {
+	height, err := s.Head(ctx)
+	if err != nil {
+		return 0, err
+	}
+	label := "0x" + strconv.FormatInt(height, 16)
+	header, err := s.call(ctx, "eth_getBlockByNumber", label, false)
+	if err != nil {
+		return 0, err
+	}
+	stamp, err := strconv.ParseInt(header.Get("timestamp").String(), 0, 64)
+	age := time.Since(time.Unix(stamp, 0))
+	if height <= 0 || err != nil || header.Get("number").String() != label || len(header.Get("hash").String()) != 66 || age > 5*time.Minute || age < -time.Minute {
+		return 0, errors.New("stale or invalid EVM header")
+	}
+	return height, nil
+}
