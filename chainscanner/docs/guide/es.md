@@ -63,14 +63,20 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 
 Las 12 redes EVM comparten adaptador. Indica la red concreta en cada suscripción y nodo; se verifica el chain ID de ejecución. Todas admiten JSON-RPC por HTTP o WebSocket, IPC local y GraphQL compatible con Geth. Ethereum también admite Beacon SSE con HTTP de ejecución.
 
-| Red | ID | Chain ID | Red | ID | Chain ID |
-| --- | --- | --- | --- | --- | --- |
-| Ethereum | `ethereum` | 1 | Base | `base` | 8453 |
-| Arbitrum One | `arbitrum` | 42161 | HyperEVM | `hyperevm` | 999 |
-| BNB Smart Chain | `binance` | 56 | Monad | `monad` | 143 |
-| Avalanche C-Chain | `avalanche` | 43114 | Arc | `arc` | 5042 |
-| Polygon PoS | `polygon` | 137 | Plasma | `plasma` | 9745 |
-| OP Mainnet | `optimism` | 10 | Robinhood Chain | `robinhood` | 4663 |
+| Red | ID | Chain ID |
+| --- | --- | --- |
+| Ethereum | `ethereum` | 1 |
+| Arbitrum One | `arbitrum` | 42161 |
+| BNB Smart Chain | `binance` | 56 |
+| Avalanche C-Chain | `avalanche` | 43114 |
+| Polygon PoS | `polygon` | 137 |
+| OP Mainnet | `optimism` | 10 |
+| Base | `base` | 8453 |
+| HyperEVM | `hyperevm` | 999 |
+| Monad | `monad` | 143 |
+| Arc | `arc` | 5042 |
+| Plasma | `plasma` | 9745 |
+| Robinhood Chain | `robinhood` | 4663 |
 
 | Red | Protocolos | Actividad e historial |
 | --- | --- | --- |

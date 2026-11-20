@@ -63,14 +63,20 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 
 12 mạng chính EVM dùng chung bộ đọc. Mỗi đăng ký và mỗi nút phải chỉ rõ mạng; kết nối sẽ kiểm tra chain ID. Tất cả hỗ trợ JSON-RPC qua HTTP hoặc WebSocket, IPC cục bộ và GraphQL tương thích Geth. Ethereum còn hỗ trợ Beacon SSE ghép với HTTP tầng thực thi.
 
-| Mạng | ID | Chain ID | Mạng | ID | Chain ID |
-| --- | --- | --- | --- | --- | --- |
-| Ethereum | `ethereum` | 1 | Base | `base` | 8453 |
-| Arbitrum One | `arbitrum` | 42161 | HyperEVM | `hyperevm` | 999 |
-| BNB Smart Chain | `binance` | 56 | Monad | `monad` | 143 |
-| Avalanche C-Chain | `avalanche` | 43114 | Arc | `arc` | 5042 |
-| Polygon PoS | `polygon` | 137 | Plasma | `plasma` | 9745 |
-| OP Mainnet | `optimism` | 10 | Robinhood Chain | `robinhood` | 4663 |
+| Mạng | ID | Chain ID |
+| --- | --- | --- |
+| Ethereum | `ethereum` | 1 |
+| Arbitrum One | `arbitrum` | 42161 |
+| BNB Smart Chain | `binance` | 56 |
+| Avalanche C-Chain | `avalanche` | 43114 |
+| Polygon PoS | `polygon` | 137 |
+| OP Mainnet | `optimism` | 10 |
+| Base | `base` | 8453 |
+| HyperEVM | `hyperevm` | 999 |
+| Monad | `monad` | 143 |
+| Arc | `arc` | 5042 |
+| Plasma | `plasma` | 9745 |
+| Robinhood Chain | `robinhood` | 4663 |
 
 | Mạng | Giao thức | Hoạt động và lịch sử |
 | --- | --- | --- |
