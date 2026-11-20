@@ -75,7 +75,7 @@ var ErrRateLimited = errors.New("RPC HTTP 429")
 
 // RPC credentials belong to one origin, including provider-specific headers.
 func newNodeHTTPClient(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	return &http.Client{Timeout: timeout, Transport: rpcNodeTransport{http.DefaultTransport}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 || req.URL.Scheme != via[0].URL.Scheme || req.URL.Host != via[0].URL.Host {
 			return http.ErrUseLastResponse
 		}
@@ -90,6 +90,7 @@ type jsonSource struct {
 	heads         *headSignals
 	finalizedSlot atomic.Int64
 	slots         atomic.Pointer[slotWindow]
+	catchup       pairedReads
 }
 
 func NewSource(ctx context.Context, n Network) (Source, error) {
@@ -108,10 +109,10 @@ func newSource(ctx context.Context, n Network, discovered, watch bool) (Source, 
 		return newPaired(ctx, n, u, p)
 	}
 	if n.Name == "sui" {
-		return newSui(ctx, n, u)
+		return newSui(ctx, n, u, discovered, watch)
 	}
 	if n.Name == "ton" && p != "lite" {
-		return newTonCenter(ctx, n, p)
+		return newTonCenter(ctx, n, p, discovered)
 	}
 	if n.Name == "ton" {
 		return newTON(ctx, n)
@@ -120,11 +121,14 @@ func newSource(ctx context.Context, n Network, discovered, watch bool) (Source, 
 		return newTronGRPC(ctx, n, u)
 	}
 	s := &jsonSource{n: n, http: newNodeHTTPClient(25 * time.Second)}
+	if discovered {
+		securePublicHTTP(s.http)
+	}
 	switch {
 	case IsEVM(n.Name) || n.Name == "solana":
 		opts := []rpc.ClientOption{rpc.WithHTTPClient(s.http)}
 		if discovered {
-			opts = publicRPCOptions(s.http)
+			opts = append(opts, publicSocketOptions()...)
 		}
 		if n.APIKey != "" {
 			opts = append(opts, rpc.WithHeader("Authorization", "Bearer "+n.APIKey))
@@ -198,8 +202,12 @@ func (s *jsonSource) request(ctx context.Context, path string, post any) (gjson.
 	if err != nil {
 		return gjson.Result{}, err
 	}
-	if s.n.Name == "aptos" && strings.HasSuffix(strings.TrimRight(base.Path, "/"), "/v1") {
-		path = strings.TrimPrefix(path, "/v1")
+	if s.n.Name == "aptos" {
+		root := strings.TrimRight(base.Path, "/")
+		// OnFinality exposes the versioned REST API directly at /v1/public.
+		if strings.HasSuffix(root, "/v1") || (strings.EqualFold(base.Hostname(), "aptos.api.onfinality.io") && root == "/v1/public") {
+			path = strings.TrimPrefix(path, "/v1")
+		}
 	}
 	method := "GET"
 	var body io.Reader

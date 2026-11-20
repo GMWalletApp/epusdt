@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"time"
 
@@ -24,8 +25,12 @@ type suiSource struct {
 	key    string
 }
 
-func newSui(ctx context.Context, n Network, u *url.URL) (Source, error) {
-	c, err := dialGRPC(u)
+func newSui(ctx context.Context, n Network, u *url.URL, discovered, watch bool) (Source, error) {
+	var opts []grpc.DialOption
+	if discovered {
+		opts = append(opts, grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) { return dialPublic(ctx, "tcp", addr) }))
+	}
+	c, err := dialGRPC(u, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -33,6 +38,9 @@ func newSui(ctx context.Context, n Network, u *url.URL) (Source, error) {
 	if _, err = s.Head(ctx); err != nil {
 		c.Close()
 		return nil, err
+	}
+	if !watch {
+		return s, nil
 	}
 	s.heads = startSignals(ctx, func(ctx context.Context, wake func()) error {
 		stream, err := pb.NewSubscriptionServiceClient(c).SubscribeCheckpoints(s.auth(ctx), &pb.SubscribeCheckpointsRequest{ReadMask: &fieldmaskpb.FieldMask{Paths: []string{"sequence_number"}}})
@@ -48,7 +56,7 @@ func newSui(ctx context.Context, n Network, u *url.URL) (Source, error) {
 	})
 	return s, nil
 }
-func dialGRPC(u *url.URL) (*grpc.ClientConn, error) {
+func dialGRPC(u *url.URL, options ...grpc.DialOption) (*grpc.ClientConn, error) {
 	var creds credentials.TransportCredentials
 	switch u.Scheme {
 	case "https", "grpcs":
@@ -69,7 +77,12 @@ func dialGRPC(u *url.URL) (*grpc.ClientConn, error) {
 		}
 		host += ":" + port
 	}
-	return grpc.NewClient("dns:///"+host, grpc.WithTransportCredentials(creds), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64<<20)))
+	target := "dns:///" + host
+	if len(options) > 0 {
+		target = "passthrough:///" + host
+	}
+	options = append(options, grpc.WithTransportCredentials(creds), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64<<20)))
+	return grpc.NewClient(target, options...)
 }
 func (s *suiSource) auth(ctx context.Context) context.Context {
 	if s.key != "" {
@@ -77,8 +90,18 @@ func (s *suiSource) auth(ctx context.Context) context.Context {
 	}
 	return ctx
 }
-func (s *suiSource) wakeups() <-chan struct{} { return s.heads.ch }
-func (s *suiSource) Close()                   { s.heads.stop(); s.conn.Close() }
+func (s *suiSource) wakeups() <-chan struct{} {
+	if s.heads == nil {
+		return nil
+	}
+	return s.heads.ch
+}
+func (s *suiSource) Close() {
+	if s.heads != nil {
+		s.heads.stop()
+	}
+	s.conn.Close()
+}
 func (s *suiSource) Head(ctx context.Context) (int64, error) {
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()

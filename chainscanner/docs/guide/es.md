@@ -111,6 +111,8 @@ Cada tres fallos consecutivos de la misma operación, el nodo entra en pausa dur
 
 El servidor independiente actualiza ChainList al arrancar y cada 15 minutos, incluso sin suscripciones. Comprueba nodos EVM públicos HTTPS/WSS, su chain ID y cabeceras recientes. Conserva las entradas del operador y, si falla la descarga, el catálogo anterior. La entrada Bitcoin de UniSat solo permite consultar altura.
 
+OpenChainBench complementa a ChainList para Solana, Sui, Aptos y TON. Cada 15 minutos el servidor consulta la API HTTP pública y las definiciones de los índices y verifica transacciones recientes. Cada directorio gestiona sus propios nodos. Si la prueba falla o el proveedor retira un nodo, se elimina de la lista activa. Si falla la descarga del directorio, se conserva la última lista de esa cadena. [OpenChainBench](https://openchainbench.com/benchmarks)
+
 <details>
 <summary>Protocolos de los nodos</summary>
 

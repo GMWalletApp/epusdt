@@ -105,7 +105,7 @@ func (p *SourcePool) SetNodes(configs []chains.Network) error {
 			if history == "" {
 				history = cfg.URL
 			}
-			n = &endpoint{cfg: cfg, tip: -1, historyKey: canonicalNodeURL(history)}
+			n = &endpoint{cfg: cfg, tip: -1, historyKey: historyLane(cfg.Name, history)}
 		}
 		next = append(next, n)
 	}

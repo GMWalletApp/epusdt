@@ -320,12 +320,12 @@ admin "$BASE/v1/admin/nodes?network=base"
 | --- | --- | --- |
 | `id, network` | `int64, string` | 稳定的数值 ID 和具体网络。 |
 | `protocol, url` | `string, string` | 选定的接口及节点 URL。 |
-| `origin` | `string` | 来源可为 `builtin`、`config`、`custom`、`chainlist`, `fallback`。 |
+| `origin` | `string` | 来源可为 `builtin`、`config`、`custom`、`chainlist`、`openchainbench`、`fallback`。 |
 | `status` | `string` | 可为 `untested`、`ok`、`timeout`、`unavailable`，探测后检查此字段。 |
 | `height, height_unit` | `int64? , string` | 上游高度或 null。单位可为 `block`、`slot`、`checkpoint`、`ledger_version`、`beacon_slot`。 |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | 探测开始的 Unix 毫秒时间戳和耗时毫秒数。首次探测前均为 null。 |
 | `read_failure, read_retry_at_ms` | `string?, int64?` | 读块失败时，扫描节点显示 `status: unavailable` 并给出失败原因。查高度成功会更新高度，读块成功才清除失败记录。冷却期间还会返回截止时间（Unix 毫秒）。 |
-| `scannable` | `bool` | 节点能否用于交易扫描。UniSat 只能报告 Bitcoin 高度。 |
+| `scannable` | `bool` | 节点能否扫描完整交易。仅能查询高度的端点不会收到扫块任务。 |
 
 <a id="add"></a>
 

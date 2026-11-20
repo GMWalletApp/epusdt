@@ -320,12 +320,12 @@ admin "$BASE/v1/admin/nodes?network=base"
 | --- | --- | --- |
 | `id, network` | `int64, string` | ID số ổn định và mạng cụ thể. |
 | `protocol, url` | `string, string` | Giao thức và URL nút. |
-| `origin` | `string` | Nguồn: `builtin`, `config`, `custom`, `chainlist`, `fallback`. |
+| `origin` | `string` | Nguồn: `builtin`, `config`, `custom`, `chainlist`, `openchainbench`, `fallback`. |
 | `status` | `string` | Một trong `untested`, `ok`, `timeout`, `unavailable`. Kiểm tra trường này sau khi thăm dò. |
 | `height, height_unit` | `int64? , string` | Độ cao của nút hoặc null. Đơn vị là `block`, `slot`, `checkpoint`, `ledger_version` hoặc `beacon_slot`. |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | Thời điểm bắt đầu theo mili giây Unix và thời lượng theo mili giây. Cả hai là null nếu chưa kiểm tra. |
 | `read_failure, read_retry_at_ms` | `string?, int64?` | Khi đọc khối thất bại, trạng thái là `unavailable`. Kiểm tra độ cao thành công vẫn giữ lý do lỗi cho đến khi đọc khối thành công. Thời điểm hết tạm dừng tính bằng mili giây Unix. |
-| `scannable` | `bool` | Khả năng quét giao dịch. UniSat chỉ báo độ cao Bitcoin. |
+| `scannable` | `bool` | Cho biết nút có thể quét giao dịch hay không. Nút chỉ báo độ cao sẽ không nhận tác vụ quét. |
 
 <a id="add"></a>
 

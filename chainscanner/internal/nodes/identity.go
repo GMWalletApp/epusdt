@@ -35,9 +35,36 @@ func canonicalNodeURL(raw string) string {
 }
 
 func (e NodeEndpoint) identity() NodeEndpoint {
+	if e.Protocol == "grpc" || e.Protocol == "solidity-grpc" {
+		if host, ok := strings.CutPrefix(e.URL, "grpcs://"); ok {
+			e.URL = "https://" + host
+		} else if host, ok := strings.CutPrefix(e.URL, "grpc://"); ok {
+			e.URL = "http://" + host
+		}
+	}
 	e.URL = canonicalNodeURL(e.URL)
+	if e.Network == "aptos" && (e.Protocol == "http" || e.Protocol == "rest") {
+		u, err := url.Parse(e.URL)
+		if err == nil && strings.HasSuffix(u.EscapedPath(), "/v1/") {
+			u.Path = strings.TrimSuffix(u.Path, "/")
+			u.RawPath = strings.TrimSuffix(u.RawPath, "/")
+			e.URL = u.String()
+		}
+	}
 	if chains.IsEVM(e.Network) && e.Protocol == "jsonrpc" {
 		e.Protocol = "http"
 	}
 	return e
+}
+
+// PublicNode advertises its execution HTTP and WS interfaces on the same
+// hostname. Reserve one history lane per gateway across both transports.
+func historyLane(network, raw string) string {
+	canonical := canonicalNodeURL(raw)
+	u, err := url.Parse(canonical)
+	if err == nil && chains.IsEVM(network) && u.Scheme == "wss" && strings.HasSuffix(u.Hostname(), ".publicnode.com") {
+		u.Scheme = "https"
+		return u.String()
+	}
+	return canonical
 }

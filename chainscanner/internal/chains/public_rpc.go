@@ -94,22 +94,53 @@ func (t limitedRPCTransport) RoundTrip(req *http.Request) (*http.Response, error
 	return res, err
 }
 
-func publicRPCOptions(client *http.Client) []rpc.ClientOption {
+func securePublicHTTP(client *http.Client) {
 	transport := &http.Transport{
 		DialContext: dialPublic, ForceAttemptHTTP2: true,
 		IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 8 * time.Second,
 	}
-	client.Transport = limitedRPCTransport{transport}
+	client.Transport = rpcNodeTransport{limitedRPCTransport{transport}}
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return []rpc.ClientOption{rpc.WithHTTPClient(client), rpc.WithWebsocketDialer(websocket.Dialer{NetDialContext: dialPublic, HandshakeTimeout: 8 * time.Second}), rpc.WithWebsocketMessageSizeLimit(64 << 20)}
+}
+func publicSocketOptions() []rpc.ClientOption {
+	return []rpc.ClientOption{rpc.WithWebsocketDialer(websocket.Dialer{NetDialContext: dialPublic, HandshakeTimeout: 8 * time.Second}), rpc.WithWebsocketMessageSizeLimit(64 << 20)}
 }
 
 func openPublicRPC(ctx context.Context, n Network, watch bool) (Source, error) {
-	protocol := PublicRPCProtocol(n.URL)
-	if !IsEVM(n.Name) || protocol == "" || protocol != n.Protocol || n.APIKey != "" || n.HistoryURL != "" {
-		return nil, errors.New("invalid public EVM endpoint")
+	p := PublicRPCProtocol(n.URL)
+	valid := false
+	switch {
+	case IsEVM(n.Name):
+		valid = p != "" && n.Protocol == p
+	case n.Name == "solana" || n.Name == "aptos":
+		valid = p == "http" && n.Protocol == "http"
+	case n.Name == "ton":
+		valid = p == "http" && n.Protocol == "jsonrpc"
+	case n.Name == "sui":
+		valid = p == "http" && n.Protocol == "grpc"
 	}
-	return newSource(ctx, n, true, watch)
+	if !valid || n.APIKey != "" || n.HistoryURL != "" || n.HistoryAPIKey != "" {
+		return nil, errors.New("invalid public endpoint")
+	}
+	src, err := newSource(ctx, n, true, watch)
+	if err != nil {
+		return nil, err
+	}
+	switch n.Name {
+	case "solana":
+		genesis, e := src.(*jsonSource).call(ctx, "getGenesisHash")
+		if e != nil || genesis.String() != "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d" {
+			src.Close()
+			return nil, errors.New("expected Solana mainnet")
+		}
+	case "aptos":
+		info, e := src.(*jsonSource).request(ctx, "/v1", nil)
+		if e != nil || info.Get("chain_id").Raw != "1" {
+			src.Close()
+			return nil, errors.New("expected Aptos mainnet")
+		}
+	}
+	return src, nil
 }
 
 func NewPublicSource(ctx context.Context, n Network) (Source, error) {
@@ -124,7 +155,27 @@ func ProbePublicRPC(ctx context.Context, n Network) (int64, error) {
 		return 0, err
 	}
 	defer src.Close()
-	return src.(*jsonSource).recentHead(ctx)
+	if IsEVM(n.Name) {
+		return src.(*jsonSource).recentHead(ctx)
+	}
+	h, err := src.Head(ctx)
+	if err != nil || h < 2 {
+		return 0, errors.New("missing public chain head")
+	}
+	span, _, events, err := ReadSpan(ctx, n.Name, src, Span{First: h - 1, Last: h - 1})
+	if err != nil {
+		return 0, err
+	}
+	if span.Last != h-1 {
+		return 0, errors.New("incomplete recent history")
+	}
+	for _, event := range events {
+		age := time.Since(time.UnixMilli(event.TimeMS))
+		if event.TxID != "" && age < 5*time.Minute && age > -time.Minute {
+			return h, nil
+		}
+	}
+	return 0, errors.New("no recent transaction in sampled history")
 }
 
 func (s *jsonSource) recentHead(ctx context.Context) (int64, error) {

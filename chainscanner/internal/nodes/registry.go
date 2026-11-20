@@ -42,6 +42,7 @@ type NodeOptions struct {
 type NodeRegistry struct {
 	db           *sql.DB
 	store        *engine.Store
+	builtins     map[NodeEndpoint]NodeEndpoint // stored spelling -> built-in route with default history
 	configured   map[NodeEndpoint]chains.Network
 	slots        chan struct{}
 	batch        sync.Mutex
@@ -50,7 +51,7 @@ type NodeRegistry struct {
 }
 
 func NewNodeRegistry(ctx context.Context, s *engine.Store, networks []chains.Network) (*NodeRegistry, error) {
-	r := &NodeRegistry{store: s, db: engine.Database(s), configured: map[NodeEndpoint]chains.Network{}, slots: make(chan struct{}, 8)}
+	r := &NodeRegistry{store: s, db: engine.Database(s), builtins: map[NodeEndpoint]NodeEndpoint{}, configured: map[NodeEndpoint]chains.Network{}, slots: make(chan struct{}, 8)}
 	enabled := map[string]chains.Network{}
 	for _, n := range networks {
 		if !chains.Supported(n.Name) {
@@ -74,12 +75,16 @@ func NewNodeRegistry(ctx context.Context, s *engine.Store, networks []chains.Net
 	if err != nil {
 		return nil, err
 	}
-	// Rows originally supplied by a removed config entry stop following it.
-	// Built-ins and custom entries keep their own lifecycle.
+	existing, err := loadSeedRows(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
 	for _, e := range builtinNodes {
-		if _, err = tx.ExecContext(ctx, seedNode, e.Network, e.Protocol, e.URL, "builtin"); err != nil {
+		stored, err := existing.seed(ctx, tx, e, "builtin")
+		if err != nil {
 			return nil, err
 		}
+		r.builtins[stored] = e
 	}
 	for _, n := range networks {
 		if n.URL == "" {
@@ -90,10 +95,11 @@ func NewNodeRegistry(ctx context.Context, s *engine.Store, networks []chains.Net
 			return nil, err
 		}
 		e := NodeEndpoint{n.Name, protocol, n.URL}
-		r.configured[e] = n
-		if _, err = tx.ExecContext(ctx, seedNode, e.Network, e.Protocol, e.URL, "config"); err != nil {
+		stored, err := existing.seed(ctx, tx, e, "config")
+		if err != nil {
 			return nil, err
 		}
+		r.configured[stored] = n
 	}
 	if err = tx.Commit(); err != nil {
 		return nil, err
@@ -111,7 +117,7 @@ func NewNodeRegistry(ctx context.Context, s *engine.Store, networks []chains.Net
 }
 
 const seedNode = `INSERT INTO rpc_nodes(network,protocol,url,origin) VALUES(?,?,?,?)
-ON CONFLICT(network,protocol,url) DO UPDATE SET origin=excluded.origin WHERE origin='chainlist'`
+ON CONFLICT(network,protocol,url) DO UPDATE SET origin=excluded.origin WHERE origin IN ('chainlist','openchainbench') OR (origin='config' AND excluded.origin='builtin')`
 const nodeFields = `id,network,protocol,url,origin,status,height,checked_at,latency,generation,api_key,history_url,history_key`
 
 func (r *NodeRegistry) scan(row interface{ Scan(...any) error }) (Node, error) {
@@ -124,7 +130,7 @@ func (r *NodeRegistry) scan(row interface{ Scan(...any) error }) (Node, error) {
 			n.ReadRetryAt = f.retry.UnixMilli()
 		}
 	}
-	n.Scannable = chains.Supported(n.Network)
+	n.Scannable = chains.Supported(n.Network) && !slices.Contains(heightOnlyNodes, n.NodeEndpoint.identity())
 	switch {
 	case n.Protocol == "sse":
 		n.HeightUnit = "beacon_slot"
@@ -161,7 +167,8 @@ func (r *NodeRegistry) List(ctx context.Context, network string) ([]Node, error)
 func (r *NodeRegistry) visible(n Node) bool {
 	_, configured := r.configured[n.NodeEndpoint]
 	if n.Origin == "builtin" && !configured {
-		return slices.Contains(builtinNodes, n.NodeEndpoint)
+		_, ok := r.builtins[n.NodeEndpoint]
+		return ok
 	}
 	return n.Origin != "config" || configured
 }
@@ -195,7 +202,7 @@ func (r *NodeRegistry) add(ctx context.Context, options NodeOptions, fallback bo
 		return Node{}, errInvalidNode
 	}
 	if e.Network == "bitcoin" {
-		if u.Hostname() == "" || options.HistoryURL != "" || options.HistoryAPIKey != "" || e.Protocol != "unisat" || (u.Scheme != "https" && u.Scheme != "http") {
+		if u.Hostname() == "" || options.HistoryURL != "" || options.HistoryAPIKey != "" || (e.Protocol != "unisat" && e.Protocol != "jsonrpc") || (u.Scheme != "https" && u.Scheme != "http") {
 			return Node{}, errInvalidNode
 		}
 	} else {
@@ -212,17 +219,22 @@ func (r *NodeRegistry) add(ctx context.Context, options NodeOptions, fallback bo
 		return Node{}, err
 	}
 	defer tx.Rollback()
-	// An equivalent URL spelling must not turn a repair-only node into a normal one.
-	rows, err := tx.QueryContext(ctx, "SELECT network,protocol,url FROM rpc_nodes WHERE network=? AND removed=0 AND (origin='fallback' OR ?)", e.Network, fallback)
+	// Check aliases as well as exact URLs, including built-in and discovered nodes.
+	rows, err := tx.QueryContext(ctx, "SELECT network,protocol,url,origin FROM rpc_nodes WHERE network=? AND removed=0", e.Network)
 	if err != nil {
 		return Node{}, err
 	}
 	for rows.Next() {
 		var peer NodeEndpoint
-		if err = rows.Scan(&peer.Network, &peer.Protocol, &peer.URL); err != nil {
+		var owner string
+		if err = rows.Scan(&peer.Network, &peer.Protocol, &peer.URL, &owner); err != nil {
 			break
 		}
 		if peer.identity() == e.identity() {
+			if _, current := r.configured[peer]; owner == "config" && !current && !fallback {
+				e = peer
+				continue
+			}
 			err = errDuplicateNode
 			break
 		}
@@ -279,6 +291,8 @@ func (r *NodeRegistry) network(n Node, settings chains.Network) chains.Network {
 	if configured, ok := r.configured[n.NodeEndpoint]; ok {
 		src = configured
 		src.Protocol = n.Protocol
+	} else if n.Origin == "builtin" && src.HistoryURL == "" {
+		src.HistoryURL = builtinHistory[r.builtins[n.NodeEndpoint]]
 	}
 	src.Confirmations = settings.Confirmations
 	src.Lookback = settings.Lookback
@@ -288,7 +302,7 @@ func (r *NodeRegistry) network(n Node, settings chains.Network) chains.Network {
 }
 
 func openNode(ctx context.Context, n Node, network chains.Network) (chains.Source, error) {
-	if n.Origin == "chainlist" {
+	if n.Origin == "chainlist" || n.Origin == "openchainbench" {
 		return chains.NewPublicSource(ctx, network)
 	}
 	return chains.NewSource(ctx, network)
@@ -314,7 +328,9 @@ func (r *NodeRegistry) Test(ctx context.Context, id int64) (Node, error) {
 	defer cancel()
 	src := r.network(n, chains.Network{})
 	var height int64
-	if n.Protocol == "unisat" {
+	if n.Network == "bitcoin" && n.Protocol == "jsonrpc" {
+		height, err = chains.BitcoinRPCHeight(probe, src)
+	} else if n.Protocol == "unisat" {
 		height, err = chains.UniSatHeight(probe, src)
 	} else {
 		var s chains.Source

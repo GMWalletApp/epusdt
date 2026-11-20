@@ -52,3 +52,21 @@ func UniSatHeight(ctx context.Context, n Network) (int64, error) {
 	}
 	return strconv.ParseInt(v.Get("data.blocks").Raw, 10, 64)
 }
+
+// Bitcoin Core nodes expose a mainnet height for the node inventory.
+func BitcoinRPCHeight(ctx context.Context, n Network) (int64, error) {
+	s := &jsonSource{n: n, http: newNodeHTTPClient(10 * time.Second)}
+	defer s.Close()
+	r, err := s.request(ctx, "", map[string]any{"jsonrpc": "2.0", "method": "getblockchaininfo", "params": []any{}, "id": 1})
+	if err != nil {
+		return 0, err
+	}
+	if e := r.Get("error"); (e.Exists() && e.Raw != "null") || r.Get("result.chain").String() != "main" {
+		return 0, errors.New("invalid Bitcoin mainnet response")
+	}
+	h, err := strconv.ParseInt(r.Get("result.blocks").Raw, 10, 64)
+	if err != nil || h < 0 {
+		return 0, errors.New("invalid Bitcoin block height")
+	}
+	return h, nil
+}

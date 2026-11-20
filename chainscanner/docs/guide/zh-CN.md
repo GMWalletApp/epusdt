@@ -115,6 +115,8 @@ flowchart LR
 
 独立服务启动时及之后每 15 分钟刷新 ChainList，即使没有地址订阅也会进行节点发现。它探测公开 EVM HTTPS/WSS 节点，校验 chain ID 和近期块头，保留手动配置的节点。目录下载失败时沿用上次清单。UniSat 的 Bitcoin 条目仅支持高度探测。
 
+Solana、Sui、Aptos 和 TON 还通过 OpenChainBench 发现节点。服务每 15 分钟请求其公开 HTTP 接口和榜单定义，验证节点能读取近期主网交易后才加入调度。每个目录独立管理自己的条目。节点验证失败或从上游下架后移出调度；目录下载失败时保留该链上一次的结果。 [OpenChainBench](https://openchainbench.com/benchmarks)
+
 <details>
 <summary>节点协议细节</summary>
 

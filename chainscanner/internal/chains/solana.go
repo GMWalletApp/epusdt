@@ -54,34 +54,53 @@ func (s *jsonSource) solana(ctx context.Context, start, head int64) (int64, []Ac
 	if err != nil {
 		return 0, nil, err
 	}
-	var out []Activity
-	for h := start; h <= end; h++ {
-		if !window.produced[h-window.start] {
-			continue
-		}
-		b, err := s.call(ctx, "getBlock", h, map[string]any{"commitment": "finalized", "encoding": "jsonParsed", "transactionDetails": "full", "rewards": false, "maxSupportedTransactionVersion": 1})
-		if err != nil {
-			return 0, nil, err
-		}
-		if b.Get("blockhash").String() == "" || !b.Get("transactions").IsArray() {
-			return 0, nil, errors.New("incomplete Solana block")
-		}
-		for _, tx := range b.Get("transactions").Array() {
-			id := tx.Get("transaction.signatures.0").String()
-			if id == "" {
-				return 0, nil, errors.New("missing Solana signature")
+	read := func(ctx context.Context, first, last int64) (int64, []Activity, error) {
+		var out []Activity
+		for h := first; h <= last; h++ {
+			if !window.produced[h-window.start] {
+				continue
 			}
-			e := Activity{Height: h, TxID: id, TimeMS: b.Get("blockTime").Int() * 1000, Data: json.RawMessage(tx.Raw)}
-			for _, k := range tx.Get("transaction.message.accountKeys").Array() {
-				addAddress(&e.Addresses, "solana", k.Get("pubkey").String())
+			events, err := s.solanaBlock(ctx, h)
+			if err != nil {
+				return 0, nil, err
 			}
-			for _, p := range []string{"meta.preTokenBalances", "meta.postTokenBalances"} {
-				for _, bal := range tx.Get(p).Array() {
-					addAddress(&e.Addresses, "solana", bal.Get("owner").String())
-				}
-			}
-			out = append(out, e)
+			out = append(out, events...)
 		}
+		return last, out, nil
 	}
-	return end, out, nil
+	if end == start+1 && s.catchup.enabled() && window.produced[start-window.start] && window.produced[end-window.start] {
+		return s.catchup.read(ctx, start, end, end, read)
+	}
+	return read(ctx, start, end)
+}
+
+func (s *jsonSource) solanaBlock(ctx context.Context, h int64) ([]Activity, error) {
+	b, err := s.call(ctx, "getBlock", h, map[string]any{"commitment": "finalized", "encoding": "jsonParsed", "transactionDetails": "full", "rewards": false, "maxSupportedTransactionVersion": 1})
+	if err != nil {
+		return nil, err
+	}
+	if b.Get("blockhash").String() == "" || !b.Get("transactions").IsArray() {
+		return nil, errors.New("incomplete Solana block")
+	}
+	stamp := b.Get("blockTime").Int() * 1000
+	txs := b.Get("transactions").Array()
+	out := make([]Activity, 0, len(txs))
+	cache := make(addressCache)
+	for _, tx := range txs {
+		id := tx.Get("transaction.signatures.0").String()
+		if id == "" {
+			return nil, errors.New("missing Solana signature")
+		}
+		e := Activity{Height: h, TxID: id, TimeMS: stamp, Data: json.RawMessage(tx.Raw)}
+		for _, k := range tx.Get("transaction.message.accountKeys").Array() {
+			cache.add(&e.Addresses, "solana", k.Get("pubkey").String())
+		}
+		for _, p := range []string{"meta.preTokenBalances", "meta.postTokenBalances"} {
+			for _, bal := range tx.Get(p).Array() {
+				cache.add(&e.Addresses, "solana", bal.Get("owner").String())
+			}
+		}
+		out = append(out, e)
+	}
+	return out, nil
 }

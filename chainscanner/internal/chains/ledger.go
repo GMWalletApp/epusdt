@@ -84,16 +84,24 @@ func tronActivities(h, stamp int64, txs []gjson.Result, rs gjson.Result) (int64,
 }
 
 func (s *jsonSource) aptos(ctx context.Context, start, head int64) (int64, []Activity, error) {
-	rows, err := s.request(ctx, fmt.Sprintf("/v1/transactions?start=%d&limit=%d", start, min(head-start+1, 100)), nil)
+	if head-start >= 100 && s.catchup.enabled() {
+		return s.catchup.read(ctx, start, start+100, start+min(head-start, 199), s.aptosPage)
+	}
+	return s.aptosPage(ctx, start, start+min(head-start, 99))
+}
+func (s *jsonSource) aptosPage(ctx context.Context, start, head int64) (int64, []Activity, error) {
+	rows, err := s.request(ctx, fmt.Sprintf("/v1/transactions?start=%d&limit=%d", start, head-start+1), nil)
 	if err != nil {
 		return 0, nil, err
 	}
-	if !rows.IsArray() || len(rows.Array()) == 0 {
+	txs := rows.Array()
+	if !rows.IsArray() || len(txs) == 0 || int64(len(txs)) > head-start+1 {
 		return 0, nil, errors.New("missing Aptos versions")
 	}
 	end := start - 1
-	var out []Activity
-	for _, tx := range rows.Array() {
+	out := make([]Activity, 0, len(txs))
+	cache := make(addressCache)
+	for _, tx := range txs {
 		if !tx.Get("version").Exists() || tx.Get("version").Int() != end+1 || tx.Get("hash").String() == "" {
 			return 0, nil, errors.New("non-contiguous Aptos versions")
 		}
@@ -107,7 +115,7 @@ func (s *jsonSource) aptos(ctx context.Context, start, head int64) (int64, []Act
 				v.ForEach(func(_, x gjson.Result) bool { walk(x); return true })
 			} else if v.Type == gjson.String && strings.HasPrefix(v.Str, "0x") {
 				a, _, _ := strings.Cut(v.Str, "::")
-				addAddress(&e.Addresses, "aptos", a)
+				cache.add(&e.Addresses, "aptos", a)
 			}
 		}
 		for _, p := range []string{"sender", "signature", "payload", "events", "changes", "fee_payer_address"} {

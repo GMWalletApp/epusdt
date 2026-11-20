@@ -111,6 +111,8 @@ Cứ ba lần lỗi liên tiếp của cùng thao tác, nút tạm nghỉ lần 
 
 Máy chủ độc lập cập nhật ChainList lúc khởi động và mỗi 15 phút, kể cả khi bộ quét đang nghỉ. Nó kiểm tra nút EVM HTTPS/WSS công khai, chain ID và header gần đây, đồng thời giữ các mục của người vận hành. Nếu tải danh mục lỗi, danh sách trước vẫn có hiệu lực. Mục Bitcoin UniSat chỉ dùng để kiểm tra độ cao.
 
+OpenChainBench bổ sung nguồn nút cho Solana, Sui, Aptos và TON. Cứ 15 phút, máy chủ gọi API HTTP công khai, tải định nghĩa bảng xếp hạng và kiểm tra khả năng đọc giao dịch gần đây. Mỗi danh mục quản lý các nút của riêng mình. Nút bị loại khỏi nhóm quét nếu kiểm tra thất bại hoặc nguồn đã gỡ bỏ nút. Nếu tải danh mục thất bại, máy chủ giữ danh sách trước đó của chuỗi. [OpenChainBench](https://openchainbench.com/benchmarks)
+
 <details>
 <summary>Giao thức của nút</summary>
 

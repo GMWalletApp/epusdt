@@ -320,12 +320,12 @@ admin "$BASE/v1/admin/nodes?network=base"
 | --- | --- | --- |
 | `id, network` | `int64, string` | Stable numeric ID and concrete network. |
 | `protocol, url` | `string, string` | Selected transport and endpoint URL. |
-| `origin` | `string` | One of `builtin`, `config`, `custom`, `chainlist`, `fallback`. |
+| `origin` | `string` | One of `builtin`, `config`, `custom`, `chainlist`, `openchainbench`, `fallback`. |
 | `status` | `string` | One of `untested`, `ok`, `timeout`, `unavailable`. Inspect this field after probing. |
 | `height, height_unit` | `int64? , string` | Observed upstream height, or null. Unit is `block`, `slot`, `checkpoint`, `ledger_version` or `beacon_slot`. |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | Unix milliseconds of probe start and elapsed milliseconds. Both are null before the first test. |
 | `read_failure, read_retry_at_ms` | `string?, int64?` | An active scanner reports a failed read as `status: unavailable`. The reason survives successful height probes until a read succeeds. The optional retry time is the cooldown deadline in Unix milliseconds. |
-| `scannable` | `bool` | Whether transaction scanning is supported. UniSat can report Bitcoin height only. |
+| `scannable` | `bool` | Whether the endpoint can scan transactions. Height-only endpoints never receive scan tasks. |
 
 <a id="add"></a>
 

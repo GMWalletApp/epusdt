@@ -320,12 +320,12 @@ admin "$BASE/v1/admin/nodes?network=base"
 | --- | --- | --- |
 | `id, network` | `int64, string` | Стабильный числовой ID и конкретная сеть. |
 | `protocol, url` | `string, string` | Выбранный транспорт и URL узла. |
-| `origin` | `string` | Источник: `builtin`, `config`, `custom` или `chainlist`, `fallback`. |
+| `origin` | `string` | Источник: `builtin`, `config`, `custom` или `chainlist`, `openchainbench`, `fallback`. |
 | `status` | `string` | Одно из значений `untested`, `ok`, `timeout`, `unavailable`. Проверьте это поле после запроса. |
 | `height, height_unit` | `int64? , string` | Высота узла или null. Единица: `block`, `slot`, `checkpoint`, `ledger_version` или `beacon_slot`. |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | Время начала в миллисекундах Unix и длительность в миллисекундах. До первой проверки оба поля равны null. |
 | `read_failure, read_retry_at_ms` | `string?, int64?` | При ошибке чтения статус узла — `unavailable`. Успешная проверка высоты сохраняет причину ошибки до успешного чтения блока. На время паузы возвращается время её окончания в миллисекундах Unix. |
-| `scannable` | `bool` | Возможность сканирования транзакций. UniSat сообщает только высоту Bitcoin. |
+| `scannable` | `bool` | Может ли узел сканировать транзакции. Узлы, которые сообщают только высоту, не получают задачи сканирования. |
 
 <a id="add"></a>
 

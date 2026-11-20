@@ -21,8 +21,11 @@ type tonCenter struct {
 	protocol string
 }
 
-func newTonCenter(ctx context.Context, n Network, p string) (Source, error) {
+func newTonCenter(ctx context.Context, n Network, p string, discovered bool) (Source, error) {
 	s := &tonCenter{&jsonSource{n: n, http: newNodeHTTPClient(25 * time.Second)}, p}
+	if discovered {
+		securePublicHTTP(s.http)
+	}
 	if _, e := s.Head(ctx); e != nil {
 		s.Close()
 		return nil, e

@@ -62,12 +62,17 @@ func (s *Store) planAvailable(ctx context.Context, network string, high, head in
 	}
 	retries := len(work)
 	assigned = high
-	for assigned < head && len(work) < limit {
-		width := int64(1)
-		if network == "aptos" {
-			width = min(100, head-assigned)
+	width := int64(1)
+	switch network {
+	case "aptos":
+		width = 200
+	case "solana":
+		if head-high >= max(4, int64(limit/2)) {
+			width = 2
 		}
-		r := chains.Span{First: assigned + 1, Last: assigned + width}
+	}
+	for assigned < head && len(work) < limit {
+		r := chains.Span{First: assigned + 1, Last: assigned + min(width, head-assigned)}
 		work = append(work, r)
 		assigned = r.Last
 	}

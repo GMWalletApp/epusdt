@@ -320,12 +320,12 @@ admin "$BASE/v1/admin/nodes?network=base"
 | --- | --- | --- |
 | `id, network` | `int64, string` | ID numérico estable y red concreta. |
 | `protocol, url` | `string, string` | Transporte seleccionado y URL del nodo. |
-| `origin` | `string` | Origen: `builtin`, `config`, `custom` o `chainlist`, `fallback`. |
+| `origin` | `string` | Origen: `builtin`, `config`, `custom` o `chainlist`, `openchainbench`, `fallback`. |
 | `status` | `string` | Uno de `untested`, `ok`, `timeout`, `unavailable`. Compruébalo después de la prueba. |
 | `height, height_unit` | `int64? , string` | Altura del nodo o null. La unidad es `block`, `slot`, `checkpoint`, `ledger_version` o `beacon_slot`. |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | Tiempo de inicio en milisegundos Unix y duración en milisegundos. Ambos son null antes de la primera prueba. |
 | `read_failure, read_retry_at_ms` | `string?, int64?` | Un fallo de lectura da `status: unavailable`. La causa se conserva tras consultar la altura y se borra cuando una lectura tiene éxito. Durante la pausa se incluye su fin en milisegundos Unix. |
-| `scannable` | `bool` | Si permite escanear transacciones. UniSat solo informa la altura de Bitcoin. |
+| `scannable` | `bool` | Indica si el nodo puede escanear transacciones. Los nodos que solo informan de la altura no reciben tareas de escaneo. |
 
 <a id="add"></a>
 

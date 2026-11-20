@@ -20,6 +20,9 @@ const chainListURL = "https://chainlist.org/rpcs.json"
 // RunChainList refreshes the node inventory independently of the scan workers.
 func (r *NodeRegistry) RunChainList(ctx context.Context) {
 	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	var wg sync.WaitGroup
+	wg.Go(func() { runChainListSchedule(ctx, func(ctx context.Context) { r.refreshOpenChainBench(ctx, client) }) })
+	defer wg.Wait()
 	runChainListSchedule(ctx, func(ctx context.Context) {
 		round, cancel := context.WithTimeout(ctx, 15*time.Minute)
 		count, err := r.refreshChainList(round, client, chainListURL, chains.ProbePublicRPC)
@@ -117,7 +120,11 @@ func (r *NodeRegistry) refreshChainList(ctx context.Context, client *http.Client
 	if err != nil {
 		return 0, err
 	}
-	excluded, _, err := discoveryInventory(ctx, r.db)
+	return r.refreshCandidates(ctx, "chainlist", "", candidates, probe)
+}
+
+func (r *NodeRegistry) refreshCandidates(ctx context.Context, origin, network string, candidates []NodeEndpoint, probe func(context.Context, chains.Network) (int64, error)) (int, error) {
+	excluded, _, err := discoveryInventory(ctx, r.db, origin)
 	if err != nil {
 		return 0, err
 	}
@@ -130,7 +137,11 @@ func (r *NodeRegistry) refreshChainList(ctx context.Context, client *http.Client
 			for i := range jobs {
 				e := candidates[i]
 				start := time.Now()
-				attempt, cancel := context.WithTimeout(ctx, 10*time.Second)
+				timeout := 10 * time.Second
+				if origin == "openchainbench" {
+					timeout = 35 * time.Second
+				}
+				attempt, cancel := context.WithTimeout(ctx, timeout)
 				h, err := probe(attempt, chains.Network{Name: e.Network, Protocol: e.Protocol, URL: e.URL})
 				cancel()
 				if err == nil && h > 0 {
@@ -153,7 +164,7 @@ func (r *NodeRegistry) refreshChainList(ctx context.Context, client *http.Client
 	if ctx.Err() != nil {
 		return 0, ctx.Err()
 	}
-	return r.applyChainList(ctx, results)
+	return r.applyCatalog(ctx, origin, network, results)
 }
 
 // Protected identities include all built-ins, private entries and tombstones.
@@ -161,7 +172,7 @@ func (r *NodeRegistry) refreshChainList(ctx context.Context, client *http.Client
 // while discovery is waiting on network probes.
 func discoveryInventory(ctx context.Context, db interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-}) (map[NodeEndpoint]bool, map[NodeEndpoint]NodeEndpoint, error) {
+}, originName string) (map[NodeEndpoint]bool, map[NodeEndpoint]NodeEndpoint, error) {
 	rows, err := db.QueryContext(ctx, "SELECT network,protocol,url,origin,removed FROM rpc_nodes ORDER BY id")
 	if err != nil {
 		return nil, nil, err
@@ -177,7 +188,7 @@ func discoveryInventory(ctx context.Context, db interface {
 			return nil, nil, err
 		}
 		key := e.identity()
-		if removed || origin != "chainlist" {
+		if removed || origin != originName {
 			protected[key] = true
 			continue
 		}
@@ -188,13 +199,13 @@ func discoveryInventory(ctx context.Context, db interface {
 	return protected, existing, rows.Err()
 }
 
-func (r *NodeRegistry) applyChainList(ctx context.Context, results []observation) (int, error) {
+func (r *NodeRegistry) applyCatalog(ctx context.Context, origin, network string, results []observation) (int, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback()
-	protected, existing, err := discoveryInventory(ctx, tx)
+	protected, existing, err := discoveryInventory(ctx, tx, origin)
 	if err != nil {
 		return 0, err
 	}
@@ -212,17 +223,17 @@ func (r *NodeRegistry) applyChainList(ctx context.Context, results []observation
 			e = key
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO rpc_nodes(network,protocol,url,origin,status,height,checked_at,latency)
-        VALUES(?,?,?,'chainlist','ok',?,?,?) ON CONFLICT(network,protocol,url) DO UPDATE SET
+        VALUES(?,?,?,?,'ok',?,?,?) ON CONFLICT(network,protocol,url) DO UPDATE SET
         status='ok',height=excluded.height,checked_at=excluded.checked_at,latency=excluded.latency
-        WHERE origin='chainlist' AND removed=0 AND (checked_at IS NULL OR checked_at<=excluded.checked_at)`, e.Network, e.Protocol, e.URL, obs.height, obs.at.UnixMilli(), obs.latency.Milliseconds())
+        WHERE origin=excluded.origin AND removed=0 AND (checked_at IS NULL OR checked_at<=excluded.checked_at)`, e.Network, e.Protocol, e.URL, origin, obs.height, obs.at.UnixMilli(), obs.latency.Milliseconds())
 		if err != nil {
 			return 0, err
 		}
 		keep[e] = true
 	}
-	// Physically retire only discovery-owned rows. Operator deletions remain
+	// Retire only this directory's rows in the refreshed network. Operator deletions remain
 	// tombstones, so a future catalog cannot resurrect an explicitly removed URL.
-	rows, err := tx.QueryContext(ctx, "SELECT id,network,protocol,url FROM rpc_nodes WHERE origin='chainlist' AND removed=0")
+	rows, err := tx.QueryContext(ctx, "SELECT id,network,protocol,url FROM rpc_nodes WHERE origin=? AND removed=0 AND (?='' OR network=?)", origin, network, network)
 	if err != nil {
 		return 0, err
 	}
