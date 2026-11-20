@@ -28,6 +28,14 @@
 
 ---
 
+## Edge 系列
+
+- **[GMPay Edge](https://github.com/GMWalletApp/gmpay-edge)**  
+  基于 Cloudflare Workers 的多链、多币种支付网关，提供商户 API、聚合收银台、支付管理与 Webhook 投递
+
+- **[GMShop Edge](https://github.com/GMWalletApp/gmshop-edge)**  
+  基于 Cloudflare Workers 的数字商品商城，支持卡密、私有下载、自动化商品及自动交付
+  
 ## What is Epusdt?
 
 **Epusdt** (Easy Payment USDT) 是一个基于 Go 构建、支持私有化部署的 **多链多币种 Crypto 支付网关**。它从最初的 TRC20 单链方案逐步演进为完整的 **多链收款平台**，让任意网站或应用都能快速接入多条链、多种代币的加密支付能力。没有第三方托管，没有平台抽成，资金直接进入你的钱包。
