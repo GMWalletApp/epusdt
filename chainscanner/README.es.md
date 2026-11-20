@@ -23,6 +23,17 @@ curl -fsS -X PUT http://127.0.0.1:9081/v1/subscriptions \
 
 La respuesta indica en `from_height` el primer bloque que cubre la suscripción. [Recibir y confirmar transacciones](docs/api/es.md#streaming)
 
+## Nodo de respaldo recomendado
+
+Registra en cada red de pago un nodo fiable de un operador distinto. Puede recuperar bloques fallidos y tiene prioridad para uno de los dos puestos de la consulta estricta. Tras dos rondas fallidas, el pago pasa a revisión manual. [API](docs/api/es.md#fallback)
+
+```sh
+curl -fsS -X POST "$BASE/v1/admin/nodes/fallback" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
+```
+
 ## Gracias por usar ChainScanner
 
 Si tu proyecto usa ChainScanner o se inspira en su diseño, te agradeceríamos que enlazaras el repositorio en tu README. Tu recomendación significa mucho para nuestro equipo y ayuda a otros desarrolladores a encontrarnos. ¡Nos alegra haberte ayudado!

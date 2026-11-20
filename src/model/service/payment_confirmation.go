@@ -22,6 +22,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+type StrictPair func(context.Context, string, string, string) (json.RawMessage, string, error)
+
 type StrictLookup func(context.Context, string, string) (json.RawMessage, error)
 
 // Installed during startup for subscription and manual on-chain payment checks.
@@ -64,11 +66,17 @@ func queueConfirmation(order *mdb.Orders, e scanner.Activity) error {
 	})
 }
 
+// ErrStrictRoundUnsupported marks a scanner response that may have already used both rounds.
+var ErrStrictRoundUnsupported = errors.New("scanner did not acknowledge single-round mode")
+
+var errRoundLimit = errors.New("both strict rounds have been used")
+var errPaymentMismatch = errors.New("strict result does not match order")
+
 var errInactiveCandidate = errors.New("payment candidate no longer active")
 
 // Each worker claims one due transfer. A crash releases the claim at its deadline.
 // Failed lookups leave other orders and subsequent feed deliveries free to proceed.
-func RunPaymentConfirmations(ctx context.Context, feed scanner.Feed, lookup StrictLookup) {
+func RunPaymentConfirmations(ctx context.Context, feed scanner.Feed, lookup StrictPair) {
 	for ctx.Err() == nil {
 		worked, err := processDueConfirmation(ctx, feed, lookup)
 		if err != nil && ctx.Err() == nil {
@@ -85,7 +93,7 @@ func RunPaymentConfirmations(ctx context.Context, feed scanner.Feed, lookup Stri
 	}
 }
 
-func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup StrictLookup) (bool, error) {
+func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup StrictPair) (bool, error) {
 	db := dao.Mdb.WithContext(ctx)
 	var job mdb.PaymentConfirmation
 	now := time.Now()
@@ -103,8 +111,47 @@ func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup Stric
 	}
 	call, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	err = ConfirmPayment(call, feed, lookup, job)
+	// Reserve a round before I/O. Crashes consume the reserved round. A saved
+	// quorum response can be replayed after a database or order-processing failure.
+	claimed := func() *gorm.DB {
+		return db.Model(&mdb.PaymentConfirmation{}).Where("id = ? AND retry_at = ?", job.ID, lease)
+	}
+	attempted := false
+	err = ConfirmPayment(call, feed, func(ctx context.Context, network, hash string) (json.RawMessage, error) {
+		if job.VerifiedResult != "" {
+			return json.RawMessage(job.VerifiedResult), nil
+		}
+		if job.Attempts >= 2 {
+			return nil, errRoundLimit
+		}
+		q := claimed().Where("attempts = ?", job.Attempts).Update("attempts", job.Attempts+1)
+		if q.Error != nil {
+			return nil, q.Error
+		}
+		if q.RowsAffected != 1 {
+			return nil, errors.New("confirmation lease changed")
+		}
+		job.Attempts++
+		v, pair, readErr := lookup(ctx, network, hash, job.PreviousPair)
+		q = claimed().Updates(map[string]any{"previous_pair": pair, "verified_result": string(v)})
+		if q.Error != nil {
+			return nil, q.Error
+		}
+		if q.RowsAffected != 1 {
+			return nil, errors.New("confirmation lease changed")
+		}
+		attempted = readErr != nil
+		return v, readErr
+	}, job)
+	if errors.Is(err, ErrStrictRoundUnsupported) || errors.Is(err, errRoundLimit) || job.Attempts >= 2 && (attempted || errors.Is(err, errPaymentMismatch)) {
+		return true, markPaymentForReview(db, job, lease)
+	}
 	if err != nil && !errors.Is(err, errInactiveCandidate) {
+		if attempted || errors.Is(err, errPaymentMismatch) {
+			if e := claimed().Updates(map[string]any{"verified_result": "", "retry_at": time.Now().Add(time.Second).UnixMilli()}).Error; e != nil {
+				return false, e
+			}
+		}
 		return true, fmt.Errorf("order=%d tx=%s: %w", job.OrderID, job.Hash, err)
 	}
 	err = db.Where("id = ? AND retry_at = ?", job.ID, lease).Delete(&mdb.PaymentConfirmation{}).Error
@@ -115,6 +162,15 @@ func ConfirmPayment(ctx context.Context, feed scanner.Feed, lookup StrictLookup,
 	var order mdb.Orders
 	if err := dao.Mdb.WithContext(ctx).Where("id = ?", job.OrderID).Take(&order).Error; err != nil {
 		return err
+	}
+	if order.ParentTradeId != "" {
+		var parent mdb.Orders
+		if err := dao.Mdb.WithContext(ctx).Select("status").Where("trade_id = ?", order.ParentTradeId).Take(&parent).Error; err != nil {
+			return err
+		}
+		if parent.Status != mdb.StatusConfirming {
+			return errInactiveCandidate
+		}
 	}
 	if order.Status != mdb.StatusConfirming {
 		return errInactiveCandidate
@@ -151,7 +207,7 @@ func ConfirmPayment(ctx context.Context, feed scanner.Feed, lookup StrictLookup,
 	}
 	verified, err := strictActivity(e, result)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", errPaymentMismatch, err)
 	}
 	blockID, err := verifiedOrderCredit(ctx, &order, verified)
 	if err != nil {
@@ -185,7 +241,30 @@ func verifiedOrderCredit(ctx context.Context, order *mdb.Orders, e scanner.Activ
 		return "", err
 	}
 	if blockID == "" {
-		return "", errors.New("strict transfer does not match payment address, asset and amount")
+		return "", errPaymentMismatch
 	}
 	return blockID, nil
+}
+
+func markPaymentForReview(db *gorm.DB, job mdb.PaymentConfirmation, lease int64) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		q := tx.Where("id = ? AND retry_at = ?", job.ID, lease).Delete(&mdb.PaymentConfirmation{})
+		if q.Error != nil || q.RowsAffected == 0 {
+			return q.Error
+		}
+		var o mdb.Orders
+		if err := tx.Select("trade_id", "parent_trade_id").Where("id = ?", job.OrderID).Take(&o).Error; err != nil {
+			return err
+		}
+		ids := []string{o.TradeId}
+		if o.ParentTradeId != "" {
+			ids = []string{o.ParentTradeId, o.TradeId}
+		}
+		for _, id := range ids {
+			if err := tx.Model(&mdb.Orders{}).Where("trade_id = ? AND status = ?", id, mdb.StatusConfirming).Updates(map[string]any{"status": mdb.StatusManualReview, "review_transaction_hash": job.Hash}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

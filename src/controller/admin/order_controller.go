@@ -135,10 +135,10 @@ func (c *BaseAdminController) CloseOrder(ctx echo.Context) error {
 	return c.SucJson(ctx, nil)
 }
 
-// MarkOrderPaid manually marks a waiting or expired on-chain order paid
+// MarkOrderPaid manually marks a waiting, expired or manual-review on-chain order paid
 // (operator补单) after verifying the submitted chain transaction.
 // @Summary      Mark order paid
-// @Description  Manually mark a waiting or expired on-chain order as paid (operator补单)
+// @Description  Manually mark a waiting, expired or manual-review on-chain order as paid (operator补单)
 // @Description  TON accepts canonical ton:<receive_raw>:<lt>:<hash>, lt:hash, or a unique recent hash-only reference for the order receive address.
 // @Description  Aptos accepts a transaction hash.
 // @Description  Aptos automatic scanning polls fullnode ledger-version transaction ranges with a runtime cursor.

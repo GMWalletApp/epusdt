@@ -17,23 +17,25 @@ func Start() {
 	ctx := context.Background()
 	var store *scanner.Store
 	var feed scanner.Feed
+	var verifier *strictClient
 	if url := os.Getenv("CHAINSCANNER_URL"); url != "" {
 		client := scanner.Client{URL: url, Token: os.Getenv("CHAINSCANNER_TOKEN")}
 		feed = client
-		service.StrictTransaction = strictLookup(client, nil)
+		verifier = newStrictClient(client, nil)
 	} else {
 		var err error
 		store, err = scanner.Open(config.GetRuntimeSqlitePath() + ".chainscanner")
 		if err != nil {
 			panic(err)
 		}
-		service.StrictTransaction, err = embeddedStrictLookup(ctx, store)
+		verifier, err = embeddedStrictLookup(ctx, store)
 		if err != nil {
 			panic(err)
 		}
 		configureEmbedded(store)
 		feed = store
 	}
+	service.StrictTransaction = verifier.full
 	subscriptions := &paymentSubscriptions{feed: feed}
 	service.EnsurePaymentWatch = subscriptions.ensure
 	go func() {
@@ -43,7 +45,7 @@ func Start() {
 			}
 		}
 		for range 4 {
-			go service.RunPaymentConfirmations(ctx, feed, service.StrictTransaction)
+			go service.RunPaymentConfirmations(ctx, feed, verifier.round)
 		}
 		go consumeScanner(ctx, feed)
 		for {

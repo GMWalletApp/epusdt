@@ -199,10 +199,11 @@ func OrderSuccessWithStatusesWithTransaction(tx *gorm.DB, req *request.OrderProc
 		Where("trade_id = ?", req.TradeId).
 		Where("status IN ?", allowedStatuses).
 		Updates(map[string]interface{}{
-			"settlement_key":       hex.EncodeToString(key[:]),
-			"block_transaction_id": req.BlockTransactionId,
-			"status":               mdb.StatusPaySuccess,
-			"callback_confirm":     mdb.CallBackConfirmNo,
+			"review_transaction_hash": "",
+			"settlement_key":          hex.EncodeToString(key[:]),
+			"block_transaction_id":    req.BlockTransactionId,
+			"status":                  mdb.StatusPaySuccess,
+			"callback_confirm":        mdb.CallBackConfirmNo,
 		})
 	return result.RowsAffected > 0, result.Error
 }
@@ -311,9 +312,10 @@ func MarkParentOrderSuccessWithStatusesWithTransaction(tx *gorm.DB, parentTradeI
 		Where("trade_id = ?", parentTradeId).
 		Where("status IN ?", allowedStatuses).
 		Updates(map[string]interface{}{
-			"status":           mdb.StatusPaySuccess,
-			"callback_confirm": mdb.CallBackConfirmNo,
-			"pay_by_sub_id":    sub.ID,
+			"status":                  mdb.StatusPaySuccess,
+			"callback_confirm":        mdb.CallBackConfirmNo,
+			"review_transaction_hash": "",
+			"pay_by_sub_id":           sub.ID,
 		})
 	return result.RowsAffected > 0, result.Error
 }

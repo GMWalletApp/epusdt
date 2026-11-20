@@ -47,9 +47,9 @@ Gửi mã xác thực của dịch vụ và ID mạng đã cấu hình. Không c
 
 Truy vấn thường chọn ngẫu nhiên một nút rảnh, ưu tiên nút đang hoạt động tốt. Truy vấn nghiêm ngặt gửi yêu cầu đồng thời đến hai nút khác nhau. Nếu cả hai trả về cùng một kết quả giao dịch đầy đủ, dịch vụ trả kết quả. Nếu không, dịch vụ thử lại một lần với hai nút chưa dùng. Lỗi và phản hồi không tìm thấy giao dịch không được tính. Thứ tự khóa JSON và khoảng trắng không ảnh hưởng đến so sánh.
 
-Các địa chỉ cùng máy chủ và cổng chỉ được tính một lần. Cả hai lượt đều ưu tiên nút rảnh. Khi thiếu, truy vấn nghiêm ngặt bổ sung các nút đang bận, tối đa một truy vấn bổ sung mỗi nút mà không dừng quét. Nút dự phòng và nút đang tạm dừng được bỏ qua. Mỗi lượt có tối đa 4 giây để chọn nút và 9 giây để tra giao dịch. HTTP 400 là đầu vào sai, 401 là lỗi xác thực, 404 là không tìm thấy khi tra thường, 502 là truy vấn lỗi hoặc kết quả khác nhau và 503 là thiếu nút khả dụng.
+Chế độ nghiêm ngặt ưu tiên một nút dự phòng và yêu cầu một nút khác để đối chiếu. Tra cứu thường bỏ qua nút dự phòng. Cả hai chế độ bỏ qua các nút đang tạm dừng. Mỗi lượt có tối đa 4 giây để chọn nút và 9 giây để tra giao dịch. HTTP 400 là đầu vào sai, 401 là lỗi xác thực, 404 là không tìm thấy khi tra thường, 502 là truy vấn lỗi hoặc kết quả khác nhau và 503 là thiếu nút khả dụng.
 
-TON dùng bộ chỉ mục `toncenter-v3` có URL cơ sở `/api/v3`. Có sẵn một nút. Mỗi lượt cần ít nhất hai bộ chỉ mục khác nhau. Lượt thử lại cần ít nhất hai bộ chỉ mục chưa dùng.
+Trên TON, chỉ mục v3 cung cấp vị trí giao dịch. Hai LiteServer ADNL trực tiếp có máy chủ và khóa khác nhau kiểm tra bằng chứng giao dịch nằm trong khối. Kết quả gồm BOC, mã băm, tài khoản, LT, thời gian và hai mã băm gốc của khối shard và masterchain. Nếu không đủ hai LiteServer, hai chỉ mục v3 khác nhau có thể đối chiếu bản ghi đầy đủ.
 
 ```sh
 consumer "$BASE/v1/transactions/plasma/$TX_HASH"
@@ -360,7 +360,7 @@ admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http"
 
 ### `POST /v1/admin/nodes/fallback`
 
-Đăng ký nút lịch sử trả phí cho một mạng bằng các trường và token quản trị như khi thêm nút thường. Phản hồi **201** có `origin: fallback`. Khi đọc khối thất bại, nút dự phòng đang rảnh có thể nhận khoảng đó ngay và kiểm tra độ cao xác nhận. Nút này cũng quét bù các khoảng lỗi đã lưu trong SQLite sau khi khởi động lại. Nút thường đảm nhiệm khối mới, mốc đăng ký và việc kiểm tra đầu chuỗi định kỳ. Kiểm tra thủ công có thể dùng hạn mức trả phí. Lỗi quét bù giữ nguyên khoảng cần thử lại, ba lỗi liên tiếp kích hoạt thời gian tạm dừng tăng dần. Dùng ID trả về để kiểm tra hoặc xóa nút.
+Đăng ký nút lịch sử trả phí cho một mạng bằng các trường và token quản trị như khi thêm nút thường. Phản hồi **201** có `origin: fallback`. Khi đọc khối thất bại, nút dự phòng đang rảnh có thể nhận khoảng đó ngay và kiểm tra độ cao xác nhận. Nút này cũng quét bù các khoảng lỗi đã lưu trong SQLite sau khi khởi động lại. Nút thường đảm nhiệm khối mới, mốc đăng ký và việc kiểm tra đầu chuỗi định kỳ. Kiểm tra thủ công có thể dùng hạn mức trả phí. Lỗi quét bù giữ nguyên khoảng cần thử lại, ba lỗi liên tiếp kích hoạt thời gian tạm dừng tăng dần. Dùng ID trả về để kiểm tra hoặc xóa nút. Chế độ nghiêm ngặt ưu tiên một nút dự phòng và yêu cầu một nút khác để đối chiếu. Tra cứu thường bỏ qua nút dự phòng. Cả hai chế độ bỏ qua các nút đang tạm dừng.
 
 ```sh
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'

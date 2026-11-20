@@ -39,7 +39,7 @@ var (
 
 var (
 	manualPaymentWaitPayStatuses = []int{mdb.StatusWaitPay}
-	adminManualPaymentStatuses   = []int{mdb.StatusWaitPay, mdb.StatusExpired}
+	adminManualPaymentStatuses   = []int{mdb.StatusWaitPay, mdb.StatusExpired, mdb.StatusManualReview}
 )
 
 // apiKeyID safely extracts the primary key from an ApiKey row.

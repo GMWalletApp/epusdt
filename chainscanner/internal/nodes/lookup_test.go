@@ -211,3 +211,73 @@ func TestUnreachableIdleNodeDoesNotReceiveHash(t *testing.T) {
 	}
 	group[0].release()
 }
+
+func TestStrictReservesFallbackAndRejectsDuplicateTONVoters(t *testing.T) {
+	l := transactionLookup{probe: func(context.Context, chains.Network, bool) error { return nil }}
+	candidates := []lookupCandidate{{key: "free1", healthy: true}, {key: "free2", healthy: true}, {key: "paid", fallback: true}}
+	busy := l.lanes.scan("paid")
+	defer busy()
+	g := l.group(t.Context(), candidates, map[string]bool{}, 2)
+	if len(g) != 2 || !g[0].fallback || g[1].fallback {
+		t.Fatal("expected a fallback and a general endpoint", g)
+	}
+	for _, n := range g {
+		n.release()
+	}
+	g = l.group(t.Context(), candidates[2:], map[string]bool{}, 1)
+	if len(g) != 0 {
+		t.Fatal("ordinary lookup borrowed paid capacity")
+	}
+	alias := []lookupCandidate{{key: "hostA", peerID: "keyA", healthy: true}, {key: "hostB", peerID: "keyA", healthy: true}, {key: "hostA", peerID: "keyB", healthy: true}}
+	if g := l.group(t.Context(), alias, map[string]bool{}, 2); len(g) != 0 {
+		t.Fatal("one host or one public key provided two votes", g)
+	}
+}
+
+func TestSingleStrictRoundRetriesWithTwoNewProviders(t *testing.T) {
+	ctx := t.Context()
+	s, err := engine.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	r, err := NewNodeRegistry(ctx, s, []chains.Network{{Name: "base"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = r.db.Exec("UPDATE rpc_nodes SET removed=1"); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 4 {
+		_, err = r.add(ctx, NodeOptions{NodeEndpoint: NodeEndpoint{"base", "http", fmt.Sprintf("https://p%d.example", i)}}, i == 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.lookup.probe = func(context.Context, chains.Network, bool) error { return nil }
+	var mu sync.Mutex
+	seen := map[string]int{}
+	r.lookup.read = func(_ context.Context, n chains.Network, _ string, _ bool) (json.RawMessage, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		seen[n.URL]++
+		return nil, chains.ErrTransactionMissing
+	}
+	token := "unique-local-strict-round-token"
+	h, err := r.Handler(map[string]string{"user": token}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := ""
+	for round := range 2 {
+		q := httptest.NewRequest("GET", "/v1/transactions/base/0x"+strings.Repeat("ab", 32)+"/strict?rounds=1", nil)
+		q.Header.Set("Authorization", "Bearer "+token)
+		q.Header.Set("X-ChainScanner-Exclude", previous)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, q)
+		previous = w.Header().Get("X-ChainScanner-Pair")
+		if w.Code != 502 || w.Header().Get("X-ChainScanner-Strict-Rounds") != "1" || len(strings.Split(previous, ",")) != 2 || len(seen) != 2*(round+1) || seen["https://p0.example"] != 1 {
+			t.Fatal(w.Code, w.Header(), seen)
+		}
+	}
+}

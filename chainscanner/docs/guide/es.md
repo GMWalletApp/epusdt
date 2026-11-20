@@ -84,7 +84,7 @@ Las 12 redes EVM comparten adaptador. Indica la red concreta en cada suscripció
 | `solana` | `http` · `jsonrpc` · `ws` · `grpc` | Slots finalizados, cuentas de transacciones y titulares de SPL. PubSub y Yellowstone necesitan historial HTTP para bloques completos y slots omitidos. |
 | `sui` | `grpc` · `graphql` | Checkpoints nativos de Move, remitentes, patrocinadores, propietarios y eventos. HTTPS usa gRPC v2 por defecto. |
 | `aptos` | `http` · `rest` · `grpc` · `graphql` | Versiones del libro mayor Move, firmantes, eventos y conjuntos de escritura. RawData gRPC e Indexer GraphQL requieren historial REST de un nodo completo. |
-| `ton` | `lite` · `rest` · `jsonrpc` | Actividad de la masterchain y sus shards, cuentas y extremos de mensajes. Lite usa una URL de configuración global. TON Center v2 usa `/api/v2` o `/api/v2/jsonRPC` y debe servir los BOC de los bloques. |
+| `ton` | `lite` · `rest` · `jsonrpc` | Actividad de la masterchain y sus shards, cuentas y extremos de mensajes. Lite acepta una URL de configuración global o un nodo individual con el formato `adnl://IP:puerto/clave-pública-base64url`. Cada nodo integrado mantiene su propio estado y sus reintentos. TON Center v2 usa `/api/v2` o `/api/v2/jsonRPC` y debe servir los BOC de los bloques. |
 
 ```json
 {

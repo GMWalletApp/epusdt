@@ -47,9 +47,9 @@ Usa el token del consumidor y una red configurada. No se necesita una suscripci�
 
 La ruta normal elige un nodo libre al azar y da prioridad a los sanos. La ruta estricta consulta dos nodos distintos en paralelo. Si ambos devuelven el mismo resultado completo, lo devuelve. En caso contrario, prueba una vez más con dos nodos nuevos. Los errores y las transacciones ausentes no cuentan como votos. El orden de las claves JSON y los espacios no afectan la comparación.
 
-Los alias con el mismo host y puerto cuentan una vez. En ambas rondas se prefieren nodos libres. La ruta estricta completa el grupo con nodos ocupados y permite una petición adicional por nodo sin detener el escaneo. Se excluyen nodos en pausa y de respaldo. Cada ronda permite hasta 4 segundos para seleccionar nodos y 9 para consultar la transacción. 400 indica datos inválidos, 401 acceso denegado, 404 ausencia en la consulta normal, 502 fallo de consulta o consenso y 503 falta de nodos disponibles.
+El modo estricto da prioridad a un nodo de respaldo y requiere otro nodo distinto. La consulta normal omite los de respaldo. Ambos modos omiten nodos en pausa. Cada ronda permite hasta 4 segundos para seleccionar nodos y 9 para consultar la transacción. 400 indica datos inválidos, 401 acceso denegado, 404 ausencia en la consulta normal, 502 fallo de consulta o consenso y 503 falta de nodos disponibles.
 
-TON necesita índices `toncenter-v3` con URL base `/api/v3`. Se incluye uno. Cada intento estricto requiere al menos dos índices distintos. Para repetir se necesitan al menos dos índices nuevos.
+En TON, un índice v3 localiza la transacción. Dos LiteServers ADNL directos con hosts y claves diferentes verifican la inclusión. Se devuelven el BOC, el hash, la cuenta, LT, la fecha y las raíces de ambos bloques. Si no hay un par de LiteServers, dos índices v3 distintos pueden cotejar el registro completo.
 
 ```sh
 consumer "$BASE/v1/transactions/plasma/$TX_HASH"
@@ -360,7 +360,7 @@ admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http"
 
 ### `POST /v1/admin/nodes/fallback`
 
-Registra un nodo de historial de pago para una red con los mismos campos y el token de administrador de la ruta normal. Devuelve **201** con `origin: fallback`. Tras un fallo de lectura, un nodo de respaldo libre puede tomar el intervalo y verificar sus confirmaciones. También repara huecos guardados en SQLite tras reiniciar. Las lecturas iniciales y las consultas de altura para suscripciones usan nodos ordinarios. Las pruebas manuales pueden consumir cuota. Los huecos pendientes se reintentan y tres fallos consecutivos activan la pausa progresiva. Usa el ID devuelto para probar o eliminar el nodo.
+Registra un nodo de historial de pago para una red con los mismos campos y el token de administrador de la ruta normal. Devuelve **201** con `origin: fallback`. Tras un fallo de lectura, un nodo de respaldo libre puede tomar el intervalo y verificar sus confirmaciones. También repara huecos guardados en SQLite tras reiniciar. Las lecturas iniciales y las consultas de altura para suscripciones usan nodos ordinarios. Las pruebas manuales pueden consumir cuota. Los huecos pendientes se reintentan y tres fallos consecutivos activan la pausa progresiva. Usa el ID devuelto para probar o eliminar el nodo. El modo estricto da prioridad a un nodo de respaldo y requiere otro nodo distinto. La consulta normal omite los de respaldo. Ambos modos omiten nodos en pausa.
 
 ```sh
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'

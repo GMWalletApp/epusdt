@@ -3,10 +3,14 @@ package nodes
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"math/rand/v2"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,11 +23,13 @@ var errCapacity = errors.New("insufficient available transaction nodes")
 var errAgreement = errors.New("transaction lookup failed")
 
 type lookupCandidate struct {
-	healthy bool
-	cfg     chains.Network
-	public  bool
-	version nodeVersion
-	key     string
+	healthy  bool
+	fallback bool
+	peerID   string
+	cfg      chains.Network
+	public   bool
+	version  nodeVersion
+	key      string
 }
 type lookupPenalty struct {
 	streak                   failureStreak
@@ -66,7 +72,7 @@ func (l *transactionLookup) record(id nodeVersion, err error) {
 	l.penalties[id] = p
 }
 
-func (r *NodeRegistry) lookupCandidates(ctx context.Context, network string) ([]lookupCandidate, error) {
+func (r *NodeRegistry) lookupCandidates(ctx context.Context, network string, strict bool) ([]lookupCandidate, error) {
 	rows, err := r.List(ctx, network)
 	if err != nil {
 		return nil, err
@@ -74,17 +80,22 @@ func (r *NodeRegistry) lookupCandidates(ctx context.Context, network string) ([]
 	now := time.Now()
 	var candidates []lookupCandidate
 	for _, n := range rows {
-		if n.Origin == "fallback" || (!n.Scannable && n.Protocol != "toncenter-v3") || n.ReadRetryAt > now.UnixMilli() {
+		if n.Origin == "fallback" && !strict || (!n.Scannable && n.Protocol != "toncenter-v3") || n.ReadRetryAt > now.UnixMilli() {
 			continue
 		}
 		if n.Status != "ok" && n.Status != "untested" && n.CheckedAt != nil && now.Sub(time.UnixMilli(*n.CheckedAt)) < time.Minute {
 			continue
 		}
 		cfg, ok := chains.LookupRoute(r.network(n, chains.Network{}))
-		if !ok {
+		host, peerID, peer := chains.TONVoter(cfg)
+		if !ok && !(strict && peer) {
 			continue
 		}
-		candidates = append(candidates, lookupCandidate{healthy: n.Status == "ok" && n.CheckedAt != nil && now.Sub(time.UnixMilli(*n.CheckedAt)) < time.Minute, cfg: cfg, public: isDiscoveryOrigin(n.Origin), version: n.version(), key: providerKey(cfg)})
+		key := providerKey(cfg)
+		if peer {
+			key = "ton|" + host
+		}
+		candidates = append(candidates, lookupCandidate{healthy: n.Status == "ok" && n.CheckedAt != nil && now.Sub(time.UnixMilli(*n.CheckedAt)) < time.Minute, cfg: cfg, public: isDiscoveryOrigin(n.Origin), version: n.version(), key: key, peerID: peerID, fallback: n.Origin == "fallback"})
 	}
 	rand.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
 
@@ -101,11 +112,14 @@ func (l *transactionLookup) take(candidates []lookupCandidate, used map[string]b
 	defer l.reserve.Unlock()
 	var group []lookupLease
 	for _, c := range candidates {
-		if used[c.key] || !l.ready(c.version, time.Now()) {
+		if used[c.key] || c.peerID != "" && used[c.peerID] || !l.ready(c.version, time.Now()) {
 			continue
 		}
 		if release, ok := l.lanes.tryLookup(c.key, allowBusy); ok {
 			used[c.key] = true
+			if c.peerID != "" {
+				used[c.peerID] = true
+			}
 			group = append(group, lookupLease{c, release})
 			if len(group) == count {
 				return group
@@ -118,10 +132,19 @@ func (l *transactionLookup) take(candidates []lookupCandidate, used map[string]b
 func (l *transactionLookup) group(ctx context.Context, candidates []lookupCandidate, used map[string]bool, count int) []lookupLease {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	var fresh, cold []lookupCandidate
+	var fresh, cold, paidFresh, paidCold []lookupCandidate
 	l.mu.Lock()
 	for _, c := range candidates {
-		if c.healthy || time.Now().Before(l.penalties[c.version].verified) {
+		healthy := c.healthy || time.Now().Before(l.penalties[c.version].verified)
+		if c.fallback {
+			if healthy {
+				paidFresh = append(paidFresh, c)
+			} else {
+				paidCold = append(paidCold, c)
+			}
+			continue
+		}
+		if healthy {
 			fresh = append(fresh, c)
 		} else {
 			cold = append(cold, c)
@@ -133,10 +156,18 @@ func (l *transactionLookup) group(ctx context.Context, candidates []lookupCandid
 		idleWindow = 2 * time.Second
 	}
 	idleCtx, stop := context.WithTimeout(ctx, idleWindow)
-	group := l.fill(idleCtx, fresh, cold, used, count, false)
+	var group []lookupLease
+	if count == strictGroupSize && len(paidFresh)+len(paidCold) > 0 {
+		// Reserve at most one preferred slot before admitting general providers.
+		group = l.fill(idleCtx, paidFresh, paidCold, used, 1, true)
+	}
+	group = append(group, l.fill(idleCtx, fresh, cold, used, count-len(group), false)...)
 	stop()
 	if count == strictGroupSize && len(group) < count {
 		group = append(group, l.fill(ctx, fresh, cold, used, count-len(group), true)...)
+		if len(group) < count {
+			group = append(group, l.fill(ctx, paidFresh, paidCold, used, count-len(group), true)...)
+		}
 	}
 
 	if len(group) == count {
@@ -180,7 +211,9 @@ func (l *transactionLookup) fill(ctx context.Context, fresh, cold []lookupCandid
 	return group
 }
 
-func (l *transactionLookup) round(ctx context.Context, group []lookupLease, hash string) (json.RawMessage, error) {
+type transactionReader func(context.Context, chains.Network, string, bool) (json.RawMessage, error)
+
+func (l *transactionLookup) round(ctx context.Context, group []lookupLease, hash string, read transactionReader) (json.RawMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, 9*time.Second)
 	defer cancel()
 	type result struct {
@@ -192,7 +225,7 @@ func (l *transactionLookup) round(ctx context.Context, group []lookupLease, hash
 	for i, lease := range group {
 		wg.Go(func() {
 			defer lease.release()
-			v, err := l.read(ctx, lease.cfg, hash, lease.public)
+			v, err := read(ctx, lease.cfg, hash, lease.public)
 			if ctx.Err() == nil || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				l.record(lease.version, err)
 			}
@@ -231,22 +264,78 @@ func (r *NodeRegistry) transactionHandler(configured map[string]chains.Network) 
 			if strict {
 				count, rounds = strictGroupSize, 2
 			}
+			single := strict && req.URL.Query().Get("rounds") == "1"
+			if strict && req.URL.Query().Has("rounds") && !single {
+				http.Error(w, "rounds must be 1 when supplied", 400)
+				return
+			}
+			omitted := map[string]bool{}
+			if single {
+				rounds = 1
+				if prior := req.Header.Get("X-ChainScanner-Exclude"); prior != "" {
+					tokens := strings.Split(prior, ",")
+					if len(tokens) > 4 {
+						http.Error(w, "invalid previous pair", 400)
+						return
+					}
+					for _, v := range tokens {
+						b, e := hex.DecodeString(v)
+						if e != nil || len(b) != sha256.Size {
+							http.Error(w, "invalid previous pair", 400)
+							return
+						}
+						omitted[v] = true
+					}
+				}
+			}
+			if strict {
+				_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(45 * time.Second))
+			}
 			used := map[string]bool{}
-			for range rounds {
+			lastStatus := http.StatusBadGateway
+
+			for attempt := 1; attempt <= rounds; attempt++ {
 				if ctx.Err() != nil {
 					return
 				}
-				nodes, err := r.lookupCandidates(ctx, n)
+				if strict {
+					w.Header().Set("X-ChainScanner-Strict-Rounds", strconv.Itoa(attempt))
+				}
+				candidates, err := r.lookupCandidates(ctx, n, strict)
 				if err != nil {
-					http.Error(w, "node inventory unavailable", 503)
-					return
+					lastStatus = http.StatusServiceUnavailable
+					continue
 				}
-				group := r.lookup.group(ctx, nodes, used, count)
+				if len(omitted) > 0 {
+					for _, c := range candidates {
+						if omitted[voterToken(c.key)] || c.peerID != "" && omitted[voterToken(c.peerID)] {
+							used[c.key] = true
+						}
+					}
+				}
+				var group []lookupLease
+				read := transactionReader(r.lookup.read)
+				if strict && n == "ton" {
+					group, read = r.tonGroup(ctx, candidates, used, hash)
+				} else {
+					group = r.lookup.group(ctx, candidates, used, count)
+				}
 				if len(group) == 0 {
-					http.Error(w, errCapacity.Error(), 503)
-					return
+					lastStatus = http.StatusServiceUnavailable
+					continue
 				}
-				v, err := r.lookup.round(ctx, group, hash)
+				if single {
+					var tokens []string
+					for _, c := range group {
+						tokens = append(tokens, voterToken(c.key))
+						if c.peerID != "" {
+							tokens = append(tokens, voterToken(c.peerID))
+						}
+					}
+					w.Header().Set("X-ChainScanner-Pair", strings.Join(tokens, ","))
+				}
+				v, err := r.lookup.round(ctx, group, hash, read)
+				lastStatus = http.StatusBadGateway
 				if err == nil {
 					w.Header().Set("Content-Type", "application/json")
 					json.NewEncoder(w).Encode(struct {
@@ -261,10 +350,59 @@ func (r *NodeRegistry) transactionHandler(configured map[string]chains.Network) 
 					return
 				}
 			}
-			http.Error(w, errAgreement.Error(), 502)
+			if strict && !single {
+				w.Header().Set("X-ChainScanner-Manual-Review", "required")
+			}
+			if lastStatus == http.StatusServiceUnavailable {
+				http.Error(w, errCapacity.Error(), lastStatus)
+			} else {
+				http.Error(w, errAgreement.Error(), lastStatus)
+			}
 		}
 	}
 	mux.HandleFunc("GET /v1/transactions/{network}/{hash}", query(false))
 	mux.HandleFunc("GET /v1/transactions/{network}/{hash}/strict", query(true))
 	return mux
 }
+
+// Prefer a proven LiteServer pair. Two independent v3 indexes can still
+// serve strict lookups when the deployment has no available proof pair.
+func (r *NodeRegistry) tonGroup(ctx context.Context, candidates []lookupCandidate, used map[string]bool, hash string) ([]lookupLease, transactionReader) {
+	var peers, indexes []lookupCandidate
+	for _, c := range candidates {
+		if c.peerID != "" {
+			peers = append(peers, c)
+		} else {
+			indexes = append(indexes, c)
+		}
+	}
+	if len(peers) >= 2 {
+		var location *chains.TONLocation
+		locate, stop := context.WithTimeout(ctx, 3*time.Second)
+		for _, idx := range indexes {
+			if !r.lookup.ready(idx.version, time.Now()) {
+				continue
+			}
+			hint, err := chains.LocateTON(locate, idx.cfg, hash)
+			if err == nil {
+				location = &hint
+				break
+			}
+			if locate.Err() != nil {
+				break
+			}
+		}
+		stop()
+		if hint := location; hint != nil {
+			g := r.lookup.group(ctx, peers, used, strictGroupSize)
+			if len(g) > 0 {
+				return g, func(ctx context.Context, n chains.Network, h string, _ bool) (json.RawMessage, error) {
+					return chains.VerifyTON(ctx, n, h, *hint)
+				}
+			}
+		}
+	}
+	return r.lookup.group(ctx, indexes, used, strictGroupSize), r.lookup.read
+}
+
+func voterToken(key string) string { h := sha256.Sum256([]byte(key)); return hex.EncodeToString(h[:]) }

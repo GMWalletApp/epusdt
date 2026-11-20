@@ -75,6 +75,11 @@ func (n Network) endpoint() (*url.URL, string, error) {
 	httpURL := u.Scheme == "http" || u.Scheme == "https"
 	valid := httpURL
 	switch p {
+	case "lite":
+		if u.Scheme == "adnl" {
+			_, err := tonPeerKey(u)
+			valid = err == nil
+		}
 	case "grpc", "solidity-grpc":
 		valid = (httpURL || u.Scheme == "grpc" || u.Scheme == "grpcs") && (u.Path == "" || u.Path == "/") && u.RawQuery == ""
 	case "ipc":

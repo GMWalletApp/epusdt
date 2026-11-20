@@ -13,7 +13,7 @@ import (
 
 // CheckoutCounter 收银台
 // @Summary      Checkout counter page
-// @Description  Return checkout initialization data when the order exists. This endpoint only confirms order existence and returns base order data; call /pay/check-status/{trade_id} for the current order status (1=waiting payment, 2=paid, 3=expired, 4=waiting token/network selection, 5=confirming on-chain payment).
+// @Description  Return checkout initialization data when the order exists. This endpoint only confirms order existence and returns base order data; call /pay/check-status/{trade_id} for the current order status (1=waiting payment, 2=paid, 3=expired, 4=waiting token/network selection, 5=confirming on-chain payment, 6=manual review required).
 // @Description  When status=4, actual_amount is 0 and token/network/receive_address are empty; this state is produced by GMPay placeholders or EPay submit.php when no token/network request values or defaults resolve to a concrete payment asset. The cashier should guide the payer to choose an on-chain token/network or OkPay and then call /pay/switch-network.
 // @Description  For EPay orders with a merchant return_url, the response redirect_url is rewritten to the internal /pay/return/{trade_id} hop; the database still stores the merchant's raw return_url.
 // @Tags         Payment
@@ -58,7 +58,7 @@ func (c *BaseCommController) ReturnToMerchant(ctx echo.Context) error {
 
 // CheckStatus 支付状态检测
 // @Summary      Check payment status
-// @Description  Return the current order status by trade ID. Status: 1=waiting payment, 2=paid, 3=expired, 4=waiting token/network selection, 5=confirming on-chain payment.
+// @Description  Return the current order status by trade ID. Status: 1=waiting payment, 2=paid, 3=expired, 4=waiting token/network selection, 5=confirming on-chain payment, 6=manual review required.
 // @Tags         Payment
 // @Produce      json
 // @Param        trade_id path string true "Trade ID"

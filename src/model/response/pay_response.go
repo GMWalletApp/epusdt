@@ -8,7 +8,7 @@ type CheckoutCounterResponse struct {
 	Currency       string  `json:"currency" example:"CNY"`                                                          //  法币币种 CNY USD ...
 	ReceiveAddress string  `json:"receive_address" example:"TTestTronAddress001"`                                   //  收款钱包地址；status=4 占位订单为空
 	Network        string  `json:"network" example:"tron"`                                                          //  网络 TRON ETH；status=4 占位订单为空
-	Status         int     `json:"status" enums:"1,2,3,4,5" example:"1"`                                              // 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中；status=4 时前端应引导选择链上 token/network 或 OkPay
+	Status         int     `json:"status" enums:"1,2,3,4,5,6" example:"1"`                                              // 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核；status=4 时前端应引导选择链上 token/network 或 OkPay
 	PaymentType    string  `json:"payment_type" enums:"gmpay,epay" example:"gmpay"`                                 // 支付接入类型；底层 Epay/Gmpay 转为小写 epay/gmpay 返回
 	ExpirationTime int64   `json:"expiration_time" example:"1713264600"`                                            // 过期时间 时间戳
 	RedirectUrl    string  `json:"redirect_url" example:"https://example.com/success"`                              // 非 EPay 时为商户原始回跳地址；EPay 时为内部中转地址 /pay/return/{trade_id}
@@ -20,8 +20,8 @@ type CheckoutCounterResponse struct {
 
 type CheckStatusResponse struct {
 	TradeId string `json:"trade_id" example:"3nQ9pL2xV7sK1mR8cT4yB_aZ"` //  epusdt订单号
-	// 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中
-	Status int `json:"status" enums:"1,2,3,4,5" example:"1"`
+	// 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
+	Status int `json:"status" enums:"1,2,3,4,5,6" example:"1"`
 }
 
 type ManualPaymentResponse struct {

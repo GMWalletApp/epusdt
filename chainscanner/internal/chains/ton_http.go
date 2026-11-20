@@ -62,7 +62,7 @@ func (s *tonCenter) Head(ctx context.Context) (int64, error) {
 	if e != nil {
 		return 0, e
 	}
-	if r.Get("init.root_hash").String() != "F6OpKZKqvqeFp6CQmFomXNMfMj2EnaUSOXN+Mh+wVWk=" {
+	if r.Get("init.root_hash").String() != tonMainnetRoot {
 		return 0, errors.New("unexpected TON genesis")
 	}
 	id, e := tonID(r.Get("last"))

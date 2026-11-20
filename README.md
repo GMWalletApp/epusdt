@@ -228,6 +228,8 @@ Good Morning Technology, LLC 为依据美国法律设立的主体，并将在适
 
 多个支付实例或其他业务共享监听时，独立运行一个 ChainScanner，给不同业务配置独立令牌，再为 EPUSDT 进程设置环境变量 `CHAINSCANNER_URL` 和 `CHAINSCANNER_TOKEN`。此模式由独立服务持有 RPC 和游标。EPUSDT 注册启用的钱包，在展示新收款地址前确认订阅，并在持久化支付结果后确认事件。TON Jetton 入账使用后台配置的 LiteServer 或 TON Center v2 节点，在交易所属的历史主链区块校验 Jetton 钱包归属。独立服务默认使用内存，重启后 EPUSDT 会重新提交钱包订阅；中断期间的交易及尚未确认投递的事件需由消费方对账。需要跨重启自动恢复时，在独立服务配置中指定 `database` 文件。
 
+独立部署时，ChainScanner 的版本应与本仓库 `chainscanner.rev` 记录的版本同步，以支持支付端的单轮查询和跨轮节点排除。建议在独立部署的 ChainScanner 中，为每条收款链配置一个与普通节点不同运营商的兜底节点。它可接手失败区块的补扫，并优先承担严格哈希查询的一个核验名额。两轮核验失败后，EPUSDT 将订单置为待人工复核（状态 `6`），保留候选交易哈希，停止自动查询并暂停到账回调。[兜底节点配置示例](chainscanner/docs/api/zh-CN.md#fallback)
+
 上游为 [GMWalletApp/ChainScanner](https://github.com/GMWalletApp/ChainScanner)。`chainscanner/` 保存完整源码，`chainscanner.rev` 记录上游提交。运行 `scripts/sync-chainscanner <commit>` 可同步指定版本。GitHub Actions 每天检查上游并提交更新 PR，需要在仓库 Actions 设置中允许创建 PR。
 
 新增网络包括 Sui、Arbitrum One、HyperEVM、Monad、Arc 主网、Avalanche C-Chain、OP Mainnet 和 Base 主网。各链预置原生资产和 Circle USDC；Arc 原生币就是 USDC，支付端分别按原生转账的 18 位和 ERC-20 的 6 位解析。Sui 按完整 Move coin type 区分资产。同名跨链资产通过实际到账的链和合约或 coin type 匹配订单。

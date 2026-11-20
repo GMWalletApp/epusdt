@@ -28,6 +28,10 @@
 
 ---
 
+## Payment verification
+
+Use the ChainScanner revision pinned in `chainscanner.rev` for standalone deployments so single-round queries and cross-round exclusions are supported. For standalone ChainScanner, configure one fallback per payment network with a different operator from your general nodes. It can repair failed block reads and is preferred for one of the two strict lookup votes. After two unsuccessful rounds, EPUSDT stops automatic verification and exposes status `6` and the candidate hash for manual review. Merchant callbacks require successful verification. [Configure a fallback node](chainscanner/docs/api/en.md#fallback)
+
 ## What is Epusdt?
 
 **Epusdt** (Easy Payment USDT) is a self-hosted **multi-chain, multi-token crypto payment gateway** built with Go. It started as a TRC20-only solution and evolved into a broader **multi-chain receiving platform**, allowing websites and applications to accept crypto payments across multiple networks and token types. No third-party custody, no platform fees — funds go directly into your wallet.

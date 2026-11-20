@@ -84,7 +84,7 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 | `solana` | `http` · `jsonrpc` · `ws` · `grpc` | 按最终确认的 slot 扫描交易账户与 SPL 所有者。PubSub 和 Yellowstone 需配对 HTTP 节点查询完整区块并识别跳过的 slot。 |
 | `sui` | `grpc` · `graphql` | 原生 Move 检查点、发送方、赞助方、所有者和事件。HTTPS 默认使用 gRPC v2。 |
 | `aptos` | `http` · `rest` · `grpc` · `graphql` | 原生 Move 账本版本、签名人、事件及写集。RawData gRPC 和 Indexer GraphQL 都需配对全节点 REST 历史接口。 |
-| `ton` | `lite` · `rest` · `jsonrpc` | 主链和分片中的交易账户及消息端点。Lite 使用全局配置 URL；TON Center v2 使用 `/api/v2` 或 `/api/v2/jsonRPC`，节点需提供区块 BOC。 |
+| `ton` | `lite` · `rest` · `jsonrpc` | 主链和分片中的交易账户及消息端点。Lite 支持全局配置 URL，也可用 `adnl://IP:端口/base64url公钥` 直连。每个内置主网节点独立记录健康状态和重试时间。TON Center v2 使用 `/api/v2` 或 `/api/v2/jsonRPC`，节点需提供区块 BOC。 |
 
 ```json
 {

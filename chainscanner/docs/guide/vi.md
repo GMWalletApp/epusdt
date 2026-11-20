@@ -84,7 +84,7 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 | `solana` | `http` · `jsonrpc` · `ws` · `grpc` | Quét slot đã hoàn tất, tài khoản giao dịch và chủ sở hữu SPL. PubSub và Yellowstone cần lịch sử HTTP để đọc khối đầy đủ và nhận biết slot bị bỏ qua. |
 | `sui` | `grpc` · `graphql` | Checkpoint Move gốc, người gửi, nhà tài trợ, chủ sở hữu và sự kiện. HTTPS dùng gRPC v2 theo mặc định. |
 | `aptos` | `http` · `rest` · `grpc` · `graphql` | Phiên bản sổ cái Move gốc, bên ký, sự kiện và tập thay đổi. RawData gRPC và Indexer GraphQL đều cần REST của fullnode để đọc lịch sử. |
-| `ton` | `lite` · `rest` · `jsonrpc` | Hoạt động masterchain và shard, tài khoản và hai đầu thông điệp. Lite dùng URL cấu hình toàn cục. TON Center v2 dùng `/api/v2` hoặc `/api/v2/jsonRPC` và phải trả về BOC của khối. |
+| `ton` | `lite` · `rest` · `jsonrpc` | Hoạt động masterchain và shard, tài khoản và hai đầu thông điệp. Lite nhận URL cấu hình toàn cục hoặc một nút theo mẫu `adnl://IP:cổng/khóa-công-khai-base64url`. Mỗi nút tích hợp có trạng thái và lịch thử lại riêng. TON Center v2 dùng `/api/v2` hoặc `/api/v2/jsonRPC` và phải trả về BOC của khối. |
 
 ```json
 {

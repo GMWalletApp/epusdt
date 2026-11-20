@@ -84,7 +84,7 @@ EVM mainnets share an adapter. Set the exact network ID in every watch and node 
 | `solana` | `http` · `jsonrpc` · `ws` · `grpc` | Finalized slots, transaction accounts and SPL owners. PubSub and Yellowstone require HTTP history for full blocks and skipped slots. |
 | `sui` | `grpc` · `graphql` | Native Move checkpoints, senders, sponsors, owners and events. The HTTPS default uses gRPC v2. |
 | `aptos` | `http` · `rest` · `grpc` · `graphql` | Native Move ledger versions, signers, events and write sets. Both RawData gRPC and Indexer GraphQL need fullnode REST history. |
-| `ton` | `lite` · `rest` · `jsonrpc` | Masterchain and shard activity, accounts and message endpoints. Lite uses a global config URL. TON Center v2 uses `/api/v2` or `/api/v2/jsonRPC` and must serve block BOCs. |
+| `ton` | `lite` · `rest` · `jsonrpc` | Masterchain and shard activity, accounts and message endpoints. Lite accepts a global config URL or a single peer in the form `adnl://IP:port/base64url-public-key`. The built-in mainnet peers have independent health and retry records. TON Center v2 uses `/api/v2` or `/api/v2/jsonRPC` and must serve block BOCs. |
 
 ```json
 {

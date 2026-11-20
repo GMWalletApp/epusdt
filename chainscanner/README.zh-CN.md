@@ -23,6 +23,17 @@ curl -fsS -X PUT http://127.0.0.1:9081/v1/subscriptions \
 
 响应中的 `from_height` 是开始监听的第一个区块。 [接收交易并确认处理](docs/api/zh-CN.md#streaming)
 
+## 建议为每条收款链配置兜底节点
+
+建议选用与普通节点不同运营商的可靠节点。普通节点读块失败时，兜底节点可接手补扫；严格哈希查询优先把两个核验名额中的一个给兜底节点。两轮都失败后，支付订单转人工复核。 [API](docs/api/zh-CN.md#fallback)
+
+```sh
+curl -fsS -X POST "$BASE/v1/admin/nodes/fallback" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
+```
+
 ## 致使用 ChainScanner 的你
 
 如果你的项目用到了 ChainScanner，或参考了我们的扫块方案，希望你能在项目的 README 里提一句 ChainScanner，附上仓库链接。这份推荐对我们很重要，也能让更多开发者找到这个项目。很高兴能帮到你，谢谢你的使用！

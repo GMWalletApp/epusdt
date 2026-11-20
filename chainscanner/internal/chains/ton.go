@@ -2,12 +2,18 @@ package chains
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"net/netip"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/liteclient"
+	"github.com/xssnick/tonutils-go/tl"
 	"github.com/xssnick/tonutils-go/tlb"
 	"github.com/xssnick/tonutils-go/ton"
 )
@@ -22,20 +28,63 @@ type tonSource struct {
 	api  ton.APIClientWrapped
 }
 
+const tonMainnetRoot = "F6OpKZKqvqeFp6CQmFomXNMfMj2EnaUSOXN+Mh+wVWk="
+
+// Direct peers use adnl://IP:port/<base64url Ed25519 public key>.
+func tonPeerKey(u *url.URL) ([]byte, error) {
+	addr, err := netip.ParseAddrPort(u.Host)
+	if err != nil || addr.Port() == 0 || u.RawQuery != "" || u.ForceQuery || u.RawPath != "" {
+		return nil, errors.New("invalid TON peer address")
+	}
+	key, err := base64.RawURLEncoding.Strict().DecodeString(strings.TrimPrefix(u.Path, "/"))
+	if err != nil || len(key) != ed25519.PublicKeySize {
+		return nil, errors.New("invalid TON peer public key")
+	}
+	return key, nil
+}
+
+func connectTONPeer(ctx context.Context, pool *liteclient.ConnectionPool, u *url.URL) error {
+	key, err := tonPeerKey(u)
+	if err != nil {
+		return err
+	}
+	if err = pool.AddConnection(ctx, u.Host, base64.StdEncoding.EncodeToString(key)); err != nil {
+		return err
+	}
+	var resp tl.Serializable
+	if err = pool.QueryLiteserver(ctx, ton.GetMasterchainInf{}, &resp); err != nil {
+		return err
+	}
+	info, ok := resp.(ton.MasterchainInfo)
+	if !ok || info.Init == nil || info.Init.Workchain != -1 || base64.StdEncoding.EncodeToString(info.Init.RootHash) != tonMainnetRoot {
+		return errors.New("expected TON mainnet")
+	}
+	return nil
+}
+
 func newTON(ctx context.Context, n Network) (Source, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	cfg, err := liteclient.GetConfigFromUrl(ctx, n.URL)
+	u, err := url.Parse(n.URL)
 	if err != nil {
 		return nil, err
 	}
 	pool := liteclient.NewConnectionPool()
-	if err = pool.AddConnectionsFromConfig(ctx, cfg); err != nil {
+	client := ton.NewAPIClient(pool, ton.ProofCheckPolicyFast)
+	if u.Scheme == "adnl" {
+		err = connectTONPeer(ctx, pool, u)
+	} else {
+		var cfg *liteclient.GlobalConfig
+		cfg, err = liteclient.GetConfigFromUrl(ctx, n.URL)
+		if err == nil {
+			client.SetTrustedBlockFromConfig(cfg)
+			err = pool.AddConnectionsFromConfig(ctx, cfg)
+		}
+	}
+	if err != nil {
 		pool.Stop()
 		return nil, err
 	}
-	client := ton.NewAPIClient(pool, ton.ProofCheckPolicyFast)
-	client.SetTrustedBlockFromConfig(cfg)
 	return &tonSource{pool, client.WithRetry(2).WithTimeout(15 * time.Second)}, nil
 }
 func (s *tonSource) Close() { s.pool.Stop() }

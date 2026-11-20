@@ -23,6 +23,17 @@ curl -fsS -X PUT http://127.0.0.1:9081/v1/subscriptions \
 
 Trường `from_height` trong phản hồi cho biết khối đầu tiên được theo dõi. [Nhận và xác nhận giao dịch](docs/api/vi.md#streaming)
 
+## Nút dự phòng được khuyến nghị
+
+Với mỗi mạng nhận thanh toán, hãy đăng ký một nút tin cậy của nhà vận hành khác. Nút này có thể đọc lại khối bị lỗi và được ưu tiên cho một trong hai vị trí tra cứu nghiêm ngặt. Sau hai lượt thất bại, đơn chuyển sang kiểm tra thủ công. [API](docs/api/vi.md#fallback)
+
+```sh
+curl -fsS -X POST "$BASE/v1/admin/nodes/fallback" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
+```
+
 ## Lời cảm ơn
 
 Nếu dự án của bạn dùng ChainScanner hoặc tham khảo thiết kế của chúng tôi, mong bạn nhắc đến ChainScanner và thêm liên kết trong README của dự án. Lời giới thiệu của bạn có ý nghĩa rất lớn với nhóm và giúp các lập trình viên khác tìm thấy dự án. Chúng tôi rất vui vì đã giúp được bạn. Cảm ơn bạn đã dùng ChainScanner!

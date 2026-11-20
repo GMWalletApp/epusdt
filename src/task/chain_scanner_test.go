@@ -161,8 +161,8 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 	}
 	api := httptest.NewServer(h)
 	defer api.Close()
-	remote := strictLookup(scanner.Client{URL: api.URL, Token: token}, nil)
-	embedded := strictLookup(scanner.Client{Token: token}, h)
+	remote := newStrictClient(scanner.Client{URL: api.URL, Token: token}, nil)
+	embedded := newStrictClient(scanner.Client{Token: token}, h)
 	var mode atomic.Int32
 	counts := [2]atomic.Int32{}
 	for i := range 2 {
@@ -207,7 +207,7 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 			lookup = embedded
 		}
 		if phase < 2 {
-			if err := service.ConfirmPayment(ctx, client, lookup, job); err == nil {
+			if err := service.ConfirmPayment(ctx, client, lookup.full, job); err == nil {
 				t.Fatalf("phase %d accepted unverified transfer", phase)
 			}
 			expired, err := data.UpdateOrderIsExpirationById(order.ID, time.Now().Add(time.Hour))
@@ -218,7 +218,7 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 			// Start a new worker with no in-memory event after the queue was acknowledged.
 			run, cancel := context.WithTimeout(ctx, 5*time.Second)
 			stopped := make(chan struct{})
-			go func() { defer close(stopped); service.RunPaymentConfirmations(run, client, lookup) }()
+			go func() { defer close(stopped); service.RunPaymentConfirmations(run, client, lookup.round) }()
 			var left int64
 			for {
 				if err := dao.Mdb.Model(&mdb.PaymentConfirmation{}).Count(&left).Error; err != nil {
@@ -255,7 +255,7 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 	if counts[0].Load() != 3 || counts[1].Load() != 3 {
 		t.Fatal("strict requests", counts[0].Load(), counts[1].Load())
 	}
-	if err := service.ConfirmPayment(ctx, client, remote, job); err == nil {
+	if err := service.ConfirmPayment(ctx, client, remote.full, job); err == nil {
 		t.Fatal("settled twice")
 	}
 

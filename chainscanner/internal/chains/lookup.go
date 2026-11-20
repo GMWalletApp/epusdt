@@ -221,6 +221,10 @@ func lookupTON(ctx context.Context, n Network, hash string) (json.RawMessage, er
 	if _, err := s.tonIndexHeight(ctx); err != nil {
 		return nil, err
 	}
+	return s.tonIndexTransaction(ctx, hash)
+}
+
+func (s *jsonSource) tonIndexTransaction(ctx context.Context, hash string) (json.RawMessage, error) {
 	v, err := s.request(ctx, "/transactions?hash="+url.QueryEscape(hash)+"&limit=1", nil)
 	if err != nil {
 		return nil, err

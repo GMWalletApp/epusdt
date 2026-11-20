@@ -80,7 +80,7 @@ func validateManualOrderPaymentDefault(order *mdb.Orders, blockTransactionID str
 	if StrictTransaction == nil {
 		return "", fmt.Errorf("strict lookup unavailable")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	if err := confirmManualTransfer(ctx, order, id, StrictTransaction); err != nil {
 		return "", err

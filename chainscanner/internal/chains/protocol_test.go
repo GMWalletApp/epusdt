@@ -33,6 +33,8 @@ func TestProtocolMatrix(t *testing.T) {
 	for _, n := range []Network{
 		{Name: "aptos", Protocol: "jsonrpc", URL: "https://node"},
 		{Name: "ton", Protocol: "grpc", URL: "grpcs://node"},
+		{Name: "ton", Protocol: "lite", URL: "adnl://192.0.2.1:1234/short"},
+		{Name: "ton", Protocol: "lite", URL: "adnl://192.0.2.1/key"},
 		{Name: "solana", Protocol: "ws", URL: "wss://node"},
 		{Name: "sui", Protocol: "grpc", URL: "https://node/graphql"},
 		{Name: "monad", Protocol: "graphql", TraceCalls: true, URL: "https://node/graphql"},

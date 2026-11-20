@@ -23,6 +23,17 @@ curl -fsS -X PUT http://127.0.0.1:9081/v1/subscriptions \
 
 The response includes `from_height`, the first block covered. [Receive and acknowledge transactions](docs/api/en.md#streaming)
 
+## Recommended fallback node
+
+For each network you accept payments on, register a reliable fallback from a different operator than your other nodes. It can repair a failed block read and gets priority for one of the two strict transaction lookup slots. If two rounds fail, send the payment to manual review. [API](docs/api/en.md#fallback)
+
+```sh
+curl -fsS -X POST "$BASE/v1/admin/nodes/fallback" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
+```
+
 ## A note from the maintainers
 
 If your project uses ChainScanner or builds on its design, we’d appreciate a link in your README. Your recommendation helps other developers find us and means a lot to our team. We’re glad we could help. Thank you for using ChainScanner!
