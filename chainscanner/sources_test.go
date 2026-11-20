@@ -110,7 +110,7 @@ func TestTRONIncompleteReceiptsRetainCursor(t *testing.T) {
 	}))
 	defer srv.Close()
 	ctx := context.Background()
-	n := Network{Name: "tron", URL: srv.URL}
+	n := Network{Name: "tron", URL: srv.URL, Lookback: 1}
 	src, err := NewSource(ctx, n)
 	if err != nil {
 		t.Fatal(err)
@@ -121,6 +121,9 @@ func TestTRONIncompleteReceiptsRetainCursor(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
+	if err = s.Subscribe(ctx, "merchant", []Watch{{"tron", "41" + strings.Repeat("1", 40)}}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = s.Step(ctx, n, src); err == nil {
 		t.Fatal("accepted missing receipt")
 	}

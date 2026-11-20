@@ -72,19 +72,44 @@ func (p *paymentSubscriptions) ensure(network, address string) error {
 	}
 	w := scanner.Watch{Network: network, Address: a}
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.registered[w] {
-		return nil
+	_, remote := p.feed.(scanner.Client)
+	if !p.registered[w] || remote {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err = p.syncLocked(ctx)
+		cancel()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err = p.syncLocked(ctx); err != nil {
+	registered := p.registered[w]
+	p.mu.Unlock()
+	if err != nil {
 		return err
 	}
-	if !p.registered[w] {
+	if !registered {
 		return errors.New("payment address is not registered with ChainScanner")
 	}
-	return nil
+	return p.waitForCursor(network)
+}
+
+// Orders can expose a payment address as soon as registration returns.
+// The worker for this exact network must first have observed its ledger boundary.
+func (p *paymentSubscriptions) waitForCursor(network string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	tick := time.NewTicker(200 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		h, e := p.feed.Height(ctx, network)
+		if e != nil {
+			return e
+		}
+		if h >= 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%s scanner cursor unavailable: %w", network, ctx.Err())
+		case <-tick.C:
+		}
+	}
 }
 
 // embeddedWorker adapts EPUSDT's live node selection to the same scanner
@@ -95,7 +120,6 @@ type embeddedWorker struct {
 	src    scanner.Source
 	active scanner.Network
 	nodeID uint64
-	seeded bool
 }
 
 func (w *embeddedWorker) close() {
@@ -106,6 +130,9 @@ func (w *embeddedWorker) close() {
 }
 
 func runEmbeddedNetwork(ctx context.Context, name string, store *scanner.Store) {
+	store.WhileWatched(ctx, name, func(live context.Context) { runActivePaymentNetwork(live, name, store) })
+}
+func runActivePaymentNetwork(ctx context.Context, name string, store *scanner.Store) {
 	worker := embeddedWorker{name: name, store: store}
 	defer worker.close()
 	for ctx.Err() == nil {
@@ -173,25 +200,6 @@ func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
 		return delay, nil
 	}
 	n.Confirmations = int64(chain.MinConfirmations)
-	if scanner.IsEVM(w.name) {
-		if scanner.NativeAsset(w.name) == "" {
-			n.Lookback = 2048
-		}
-		if !w.seeded {
-			old, err := data.GetEvmScanCursor(w.name)
-			if err != nil {
-				return delay, err
-			}
-			if old.ID != 0 {
-				if err = w.store.SeedCursor(ctx, w.name, old.LastBlock); err != nil {
-					return delay, err
-				}
-			}
-			w.seeded = true
-		}
-	} else if w.name == mdb.NetworkAptos {
-		n.Lookback = 100
-	}
 	if n != w.active || node.ID != w.nodeID {
 		w.close()
 		w.active = n
@@ -206,6 +214,9 @@ func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
 	}
 	if err != nil {
 		w.close()
+		if ctx.Err() != nil {
+			return delay, nil
+		}
 		data.RecordRpcNodeFailure(node.ID)
 		data.RecordRpcFailure(w.name)
 		return delay, fmt.Errorf("node %d failed, cursor retained (%T)", node.ID, err)

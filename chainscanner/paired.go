@@ -21,9 +21,10 @@ import (
 
 type pairedSource struct {
 	*jsonSource
-	tip     *rpc.Client
-	conn    *grpc.ClientConn
-	indexer *graphSource
+	verifiedVersion int64
+	tip             *rpc.Client
+	conn            *grpc.ClientConn
+	indexer         *graphSource
 }
 
 func (s *pairedSource) Close() {
@@ -59,7 +60,9 @@ func newPaired(ctx context.Context, n Network, u *url.URL, p string) (Source, er
 		if err = beaconHeads(probe, n, nil); err != nil {
 			return nil, err
 		}
-		s.heads = startSignals(ctx, func(ctx context.Context, wake func()) error { return beaconHeads(ctx, n, wake) })
+		s.heads = startSignals(ctx, func(ctx context.Context, wake func()) error {
+			return beaconHeads(ctx, n, func(int64) bool { wake(); return false })
+		})
 	} else if n.Name == "tron" {
 		opts := []rpc.ClientOption{rpc.WithHTTPClient(s.http)}
 		if n.APIKey != "" {
@@ -95,7 +98,9 @@ func newPaired(ctx context.Context, n Network, u *url.URL, p string) (Source, er
 				return nil, e
 			}
 			check.Close()
-			stream = func(ctx context.Context, wake func()) error { return solanaRoots(ctx, n, wake) }
+			stream = func(ctx context.Context, wake func()) error {
+				return solanaRoots(ctx, n, func(int64) bool { wake(); return false })
+			}
 		case "grpc":
 			s.conn, err = dialGRPC(u)
 			if err != nil {
@@ -150,14 +155,7 @@ func grpcAuth(ctx context.Context, header, key string) context.Context {
 }
 func (s *pairedSource) Head(ctx context.Context) (int64, error) {
 	if s.indexer != nil {
-		r, e := s.indexer.query(ctx, "{ledger_infos{chain_id} processor_status(order_by:{last_success_version:desc},limit:1){last_success_version}}", nil)
-		if e != nil {
-			return 0, e
-		}
-		if r.Get("ledger_infos.0.chain_id").Int() != 1 {
-			return 0, errors.New("expected Aptos mainnet indexer")
-		}
-		indexed, e := strconv.ParseInt(r.Get("processor_status.0.last_success_version").String(), 10, 64)
+		indexed, e := s.indexer.aptosVersion(ctx)
 		if e != nil {
 			return 0, e
 		}
@@ -226,7 +224,7 @@ func solanaSocket(ctx context.Context, n Network) (*websocket.Conn, string, erro
 	c.SetReadDeadline(time.Time{})
 	return c, id.Raw, nil
 }
-func solanaRoots(ctx context.Context, n Network, wake func()) error {
+func solanaRoots(ctx context.Context, n Network, onRoot func(int64) bool) error {
 	c, id, e := solanaSocket(ctx, n)
 	if e != nil {
 		return e
@@ -241,7 +239,21 @@ func solanaRoots(ctx context.Context, n Network, wake func()) error {
 		}
 		v := gjson.ParseBytes(b)
 		if v.Get("method").String() == "rootNotification" && v.Get("params.subscription").Raw == id && v.Get("params.result").Type == gjson.Number {
-			wake()
+			slot, err := strconv.ParseInt(v.Get("params.result").Raw, 10, 64)
+			if err == nil && slot >= 0 && onRoot(slot) {
+				return nil
+			}
 		}
 	}
+}
+
+func (s *graphSource) aptosVersion(ctx context.Context) (int64, error) {
+	r, e := s.query(ctx, "{ledger_infos{chain_id} processor_status(order_by:{last_success_version:desc},limit:1){last_success_version}}", nil)
+	if e != nil {
+		return 0, e
+	}
+	if r.Get("ledger_infos.0.chain_id").Int() != 1 {
+		return 0, errors.New("expected Aptos mainnet indexer")
+	}
+	return strconv.ParseInt(r.Get("processor_status.0.last_success_version").String(), 10, 64)
 }

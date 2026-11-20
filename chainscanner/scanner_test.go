@@ -16,11 +16,12 @@ const wallet = "0x1111111111111111111111111111111111111111"
 
 type chain struct {
 	height int64
+	heads  int
 	reads  int
 	fail   bool
 }
 
-func (c *chain) Head(context.Context) (int64, error) { return c.height, nil }
+func (c *chain) Head(context.Context) (int64, error) { c.heads++; return c.height, nil }
 func (c *chain) Close()                              {}
 func (c *chain) Read(_ context.Context, h, head int64) (int64, []Activity, error) {
 	c.reads++
@@ -43,7 +44,7 @@ func TestSharedReadDurableFanout(t *testing.T) {
 		}
 	}
 	src := &chain{height: 10}
-	n := Network{Name: "ethereum", Confirmations: 2}
+	n := Network{Name: "ethereum", Confirmations: 2, Lookback: 1}
 	if _, e = s.Step(ctx, n, src); e != nil {
 		t.Fatal(e)
 	}
@@ -90,8 +91,12 @@ func TestSharedReadDurableFanout(t *testing.T) {
 		t.Fatal(d)
 	}
 }
-func TestEmptySubscriptionContinuous(t *testing.T) {
-	for _, net := range []string{"ethereum", "binance", "polygon", "plasma", "tron", "solana", "ton", "aptos", "sui", "arbitrum", "hyperevm", "monad", "arc", "avalanche", "optimism", "base"} {
+func TestEmptySubscriptionMakesNoNodeCalls(t *testing.T) {
+	networks := []string{"tron", "solana", "ton", "aptos", "sui"}
+	for name := range evmIDs {
+		networks = append(networks, name)
+	}
+	for _, net := range networks {
 		t.Run(net, func(t *testing.T) {
 			s, e := Open(":memory:")
 			if e != nil {
@@ -108,7 +113,7 @@ func TestEmptySubscriptionContinuous(t *testing.T) {
 				}
 			}
 			h, ok, e := s.cursor(ctx, net)
-			if e != nil || !ok || h != 103 || src.reads != 3 {
+			if e != nil || ok || src.heads != 0 || src.reads != 0 {
 				t.Fatal(h, src.reads, e)
 			}
 		})
@@ -138,7 +143,7 @@ func TestAuthenticatedSubscription(t *testing.T) {
 	if e = c.Subscribe(ctx, "ignored", []Watch{{"ethereum", "bad"}}); e == nil {
 		t.Fatal("invalid watch accepted")
 	}
-	if _, e = s.Step(ctx, Network{Name: "ethereum"}, &chain{height: 25}); e != nil {
+	if _, e = s.Step(ctx, Network{Name: "ethereum", Lookback: 1}, &chain{height: 25}); e != nil {
 		t.Fatal(e)
 	}
 	d, e := c.Pending(ctx, "ignored")
@@ -191,10 +196,16 @@ func TestConcurrentStepsReadBlockOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
+	if err = s.Subscribe(context.Background(), "test", []Watch{{"ethereum", wallet}}); err != nil {
+		t.Fatal(err)
+	}
 	src := &chain{height: 100}
 	done := make(chan error, 8)
 	for range 8 {
-		go func() { _, err := s.Step(context.Background(), Network{Name: "ethereum"}, src); done <- err }()
+		go func() {
+			_, err := s.Step(context.Background(), Network{Name: "ethereum", Lookback: 1}, src)
+			done <- err
+		}()
 	}
 	for range 8 {
 		if err := <-done; err != nil {

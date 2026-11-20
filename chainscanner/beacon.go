@@ -8,12 +8,13 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
 // Beacon head events wake the execution reader. Slot numbers never enter
 // the execution cursor, including after missed slots or reconnects.
-func beaconHeads(ctx context.Context, n Network, wake func()) error {
+func beaconHeads(ctx context.Context, n Network, onHead func(int64) bool) error {
 	req, e := http.NewRequestWithContext(ctx, "GET", n.URL, nil)
 	if e != nil {
 		return e
@@ -34,7 +35,7 @@ func beaconHeads(ctx context.Context, n Network, wake func()) error {
 	if res.StatusCode != 200 || media != "text/event-stream" {
 		return errors.New("expected Beacon head event stream")
 	}
-	if wake == nil {
+	if onHead == nil {
 		return nil
 	}
 	lines := bufio.NewScanner(res.Body)
@@ -44,7 +45,10 @@ func beaconHeads(ctx context.Context, n Network, wake func()) error {
 		line := lines.Text()
 		if line == "" {
 			if event == "head" && gjson.Valid(data) && gjson.Get(data, "slot").Exists() {
-				wake()
+				slot, err := strconv.ParseInt(gjson.Get(data, "slot").String(), 10, 64)
+				if err == nil && slot >= 0 && onHead(slot) {
+					return nil
+				}
 			}
 			event, data = "", ""
 			continue

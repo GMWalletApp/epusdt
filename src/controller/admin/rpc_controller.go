@@ -236,11 +236,14 @@ func rpcNodePurposeFromRequest(raw string) (string, error) {
 
 func validateNodeEndpoint(network, rawURL, kind string) error {
 	network = strings.ToLower(strings.TrimSpace(network))
+	if !scanner.Supported(network) {
+		return constant.RpcNodeTypeErr
+	}
 	if kind == "http" || kind == "ws" || kind == "lite" {
 		if err := validateRpcNodeURLForType(rawURL, kind); err != nil {
 			return err
 		}
-		if kind == "http" && (network == "ton" || !scanner.Supported(network)) {
+		if kind == "http" && network == "ton" {
 			return nil
 		}
 	}

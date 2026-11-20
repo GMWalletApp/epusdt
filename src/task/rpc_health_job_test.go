@@ -212,6 +212,8 @@ func TestProbeRpcNode_EvmHTTPRequiresHistoricalLogs(t *testing.T) {
 	var sawLogs bool
 	server := newEvmHealthHTTPServer(t, func(method string, params json.RawMessage) (interface{}, *rpcHealthTestError) {
 		switch method {
+		case "eth_chainId":
+			return "0x38", nil
 		case "eth_blockNumber":
 			return "0x100", nil
 		case "eth_getLogs":
@@ -251,6 +253,9 @@ func TestProbeRpcNode_EvmHTTPRejectsBlockOnlyEndpoint(t *testing.T) {
 	seedEvmHealthProbeState(t)
 
 	server := newEvmHealthHTTPServer(t, func(method string, _ json.RawMessage) (interface{}, *rpcHealthTestError) {
+		if method == "eth_chainId" {
+			return "0x38", nil
+		}
 		if method == "eth_blockNumber" {
 			return "0x100", nil
 		}
@@ -370,6 +375,8 @@ func newEvmHealthWSServer(t *testing.T, rejectSubscription bool) (*httptest.Serv
 			}
 			resp := rpcHealthTestResponse{JSONRPC: "2.0", ID: req.ID}
 			switch req.Method {
+			case "eth_chainId":
+				resp.Result = "0x38"
 			case "eth_blockNumber":
 				resp.Result = "0x100"
 			case "eth_subscribe":
@@ -407,6 +414,8 @@ func TestManualVerificationNodeDoesNotRequireLogScanning(t *testing.T) {
 
 	server := newEvmHealthHTTPServer(t, func(method string, _ json.RawMessage) (interface{}, *rpcHealthTestError) {
 		switch method {
+		case "eth_chainId":
+			return "0x38", nil
 		case "eth_blockNumber":
 			return "0x100", nil
 		case "eth_getBlockByNumber":

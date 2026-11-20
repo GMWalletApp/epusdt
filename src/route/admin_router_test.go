@@ -2393,3 +2393,16 @@ func TestAdminRpcNodeProtocolSelection(t *testing.T) {
 		t.Fatal("accepted retired Sui JSON-RPC")
 	}
 }
+
+func TestRpcNodeMustNameConcreteNetwork(t *testing.T) {
+	e, token := setupAdminTestEnv(t)
+	for _, name := range []string{"", "evm", "unsupported"} {
+		r := doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]any{"network": name, "type": "http", "url": "https://node.example"}, token)
+		if r.Code == http.StatusOK {
+			t.Fatalf("accepted network %q", name)
+		}
+	}
+	for _, name := range []string{"base", "ethereum", "binance"} {
+		assertOK(t, doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]any{"network": name, "type": "http", "url": "https://" + name + ".example"}, token))
+	}
+}

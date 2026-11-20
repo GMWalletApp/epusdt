@@ -78,6 +78,7 @@ func (s *pairedSource) aptosStream(ctx context.Context, key string, wake func())
 			next++
 		}
 		if wake == nil {
+			s.verifiedVersion = int64(next - 1)
 			return nil
 		}
 		wake()

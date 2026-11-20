@@ -47,6 +47,12 @@ func Handler(s *Store, consumers map[string]string) (http.Handler, error) {
 				return
 			}
 			for _, v := range watches {
+				if r.URL.Path == "/v2/subscriptions" && s.configured != nil {
+					if _, ok := s.configured[v.Network]; !ok {
+						http.Error(w, "network has no configured node", 400)
+						return
+					}
+				}
 				if _, err := Canonical(v.Network, v.Address); err != nil {
 					http.Error(w, err.Error(), 400)
 					return

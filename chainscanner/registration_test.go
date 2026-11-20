@@ -74,8 +74,9 @@ func TestRegistrationBoundaries(t *testing.T) {
 	if err = s.Subscribe(ctx, "merchant", nil); err != nil {
 		t.Fatal(err)
 	}
+	s.resolve = func(context.Context, string) (int64, error) { return 299, nil }
 	rows, err = s.SubscribeFrom(ctx, "merchant", []Watch{w})
-	if err != nil || rows[0].FromHeight != 102 {
+	if err != nil || rows[0].FromHeight != 300 {
 		t.Fatal(rows, err)
 	}
 }
@@ -89,13 +90,15 @@ func TestConcurrentRegisterAndCommit(t *testing.T) {
 	if err = s.SeedCursor(ctx, "optimism", 0); err != nil {
 		t.Fatal(err)
 	}
-	var wg sync.WaitGroup
+	var wg, registered sync.WaitGroup
+	registered.Add(64)
 	for i := range 64 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			c := fmt.Sprint(i)
 			reg, err := s.SubscribeFrom(ctx, c, []Watch{{"optimism", wallet}})
+			registered.Done()
 			if err != nil {
 				t.Error(err)
 				return
@@ -111,6 +114,10 @@ func TestConcurrentRegisterAndCommit(t *testing.T) {
 			t.Fatal(err)
 		}
 		time.Sleep(time.Millisecond)
+	}
+	registered.Wait()
+	if err = s.commit(ctx, "optimism", 50, 51, []Activity{{Height: 51, TxID: "51", Addresses: []string{wallet}}}); err != nil {
+		t.Fatal(err)
 	}
 	wg.Wait()
 }

@@ -28,6 +28,16 @@ type Network struct {
 	TraceCalls      bool   `json:"trace_calls,omitempty"`
 }
 
+// The normal start is the next observed block. An explicit lookback opts in
+// to a bounded historical window on activation for clients doing recovery.
+func activationCursor(tip int64, n Network) int64 {
+	if n.Lookback <= 0 {
+		return tip
+	}
+	eligible := max(int64(-1), tip-max(n.Confirmations-1, 0))
+	return max(int64(-1), eligible-n.Lookback)
+}
+
 // Step commits the full batch and every matching delivery atomically.
 func (s *Store) Step(ctx context.Context, n Network, source Source) (bool, error) {
 	lock, _ := s.workers.LoadOrStore(n.Name, new(sync.Mutex))
@@ -36,6 +46,16 @@ func (s *Store) Step(ctx context.Context, n Network, source Source) (bool, error
 	defer worker.Unlock()
 	if err := ctx.Err(); err != nil {
 		return false, err
+	}
+	period, _ := s.period(n.Name)
+	if period == nil {
+		return false, nil
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(period, cancel)
+	defer func() { stop(); cancel() }()
+	if period.Err() != nil {
+		return false, nil
 	}
 	latest, err := source.Head(ctx)
 	if err != nil {
@@ -50,8 +70,15 @@ func (s *Store) Step(ctx context.Context, n Network, source Source) (bool, error
 		return false, err
 	}
 	if !ok {
-		prev = max(int64(-1), head-max(n.Lookback, 1))
-		if err = s.SeedCursor(ctx, n.Name, prev); err != nil {
+		prev = activationCursor(latest, n)
+		s.demandMu.Lock()
+		if s.periodLocked(n.Name).active != period {
+			s.demandMu.Unlock()
+			return false, nil
+		}
+		err = s.SeedCursor(ctx, n.Name, prev)
+		s.demandMu.Unlock()
+		if err != nil {
 			return false, err
 		}
 	}
@@ -71,12 +98,20 @@ func (s *Store) Step(ctx context.Context, n Network, source Source) (bool, error
 		}
 		events[i].Confirmations = latest - events[i].Height + 1
 	}
+	s.demandMu.Lock()
+	defer s.demandMu.Unlock()
+	if s.periodLocked(n.Name).active != period {
+		return false, nil
+	}
 	if err = s.commit(ctx, n.Name, prev, end, events); err != nil {
 		return false, err
 	}
 	return end < head, nil
 }
 func (s *Store) Run(ctx context.Context, n Network) {
+	s.WhileWatched(ctx, n.Name, func(live context.Context) { s.run(live, n, NewSource) })
+}
+func (s *Store) run(ctx context.Context, n Network, open func(context.Context, Network) (Source, error)) {
 	var src Source
 	defer func() {
 		if src != nil {
@@ -86,11 +121,14 @@ func (s *Store) Run(ctx context.Context, n Network) {
 	for ctx.Err() == nil {
 		var err error
 		if src == nil {
-			src, err = NewSource(ctx, n)
+			src, err = open(ctx, n)
 		}
 		var behind bool
 		if err == nil {
 			behind, err = s.Step(ctx, n, src)
+		}
+		if ctx.Err() != nil {
+			return
 		}
 		if err != nil && !errors.Is(err, context.Canceled) {
 			// RPC errors may contain provider tokens in URLs.

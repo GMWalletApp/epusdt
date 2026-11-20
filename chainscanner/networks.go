@@ -4,6 +4,7 @@ package scanner
 var evmIDs = map[string]int64{
 	"ethereum": 1, "binance": 56, "polygon": 137, "plasma": 9745,
 	"arbitrum": 42161, "hyperevm": 999, "monad": 143, "arc": 5042, "avalanche": 43114, "optimism": 10, "base": 8453,
+	"morph": 2818, "robinhood": 4663,
 }
 
 func IsEVM(name string) bool       { _, ok := evmIDs[name]; return ok }
@@ -16,7 +17,7 @@ func Supported(name string) bool {
 // the new EVM adapters. All use 18 decimals for JSON-RPC transaction value.
 func NativeAsset(name string) string {
 	switch name {
-	case "arbitrum", "optimism", "base":
+	case "arbitrum", "optimism", "base", "morph", "robinhood":
 		return "ETH"
 	case "hyperevm":
 		return "HYPE"

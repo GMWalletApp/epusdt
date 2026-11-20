@@ -30,7 +30,7 @@ func Start() {
 	subscriptions := &paymentSubscriptions{feed: feed}
 	service.EnsurePaymentWatch = subscriptions.ensure
 	go func() {
-		// Install the initial watch set before importing a cursor or reading a block.
+		// Install the initial watch set before starting chain workers.
 		for {
 			if err := subscriptions.refresh(ctx); err == nil {
 				break
@@ -53,7 +53,7 @@ func Start() {
 	}()
 	if store != nil {
 		c := cron.New()
-		if _, err := c.AddJob("@every 30s", RpcHealthJob{}); err != nil {
+		if _, err := c.AddJob("@every 30s", RpcHealthJob{watching: store.Watching}); err != nil {
 			panic(err)
 		}
 		c.Start()

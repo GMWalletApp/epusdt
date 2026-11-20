@@ -48,6 +48,10 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 	client := scanner.Client{URL: server.URL, Token: token}
+	// This fixture starts with a previous committed execution block.
+	if err = store.SeedCursor(ctx, net, 16); err != nil {
+		t.Fatal(err)
+	}
 	sub := paymentSubscriptions{feed: client}
 	if err = sub.ensure(net, wallet); err != nil {
 		t.Fatal(err)

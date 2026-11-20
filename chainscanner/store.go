@@ -4,7 +4,9 @@ package scanner
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,11 +38,15 @@ type Delivery struct {
 	Activity Activity `json:"activity"`
 }
 type Store struct {
-	waitMu  sync.Mutex
-	waiters map[queueKey]chan struct{}
-	db      *sql.DB
-	workers sync.Map
-	indexes sync.Map // network -> immutable address index, loaded inside the SQLite transaction
+	demandMu   sync.Mutex
+	periods    map[string]*demandPeriod
+	configured map[string]Network
+	resolve    func(context.Context, string) (int64, error)
+	waitMu     sync.Mutex
+	waiters    map[queueKey]chan struct{}
+	db         *sql.DB
+	workers    sync.Map
+	indexes    sync.Map // network -> immutable address index, loaded inside the SQLite transaction
 }
 
 func Open(path string) (*Store, error) {
@@ -80,9 +86,55 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Store{db: db, waiters: map[queueKey]chan struct{}{}}, nil
+	// A delayed ACK from an earlier stateless instance must not address a
+	// newly-created delivery with a small, reused autoincrement ID.
+	if path == ":memory:" {
+		var seed [8]byte
+		if _, err = rand.Read(seed[:]); err == nil {
+			offset := int64(binary.BigEndian.Uint64(seed[:]) & ((1 << 52) - 1))
+			_, err = db.Exec("INSERT INTO sqlite_sequence(name,seq) VALUES('deliveries',?)", offset)
+		}
+		if err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	_, err = db.Exec("DELETE FROM cursors WHERE NOT EXISTS (SELECT 1 FROM watches WHERE watches.network=cursors.network)")
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	st := &Store{db: db, waiters: map[queueKey]chan struct{}{}, periods: map[string]*demandPeriod{}}
+	rows, err := db.Query("SELECT DISTINCT network FROM watches")
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	for rows.Next() {
+		var name string
+		if err = rows.Scan(&name); err != nil {
+			break
+		}
+		st.setDemandLocked(name, true)
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	rows.Close()
+	if err != nil {
+		st.Close()
+		return nil, err
+	}
+	return st, nil
 }
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error {
+	s.demandMu.Lock()
+	defer s.demandMu.Unlock()
+	for name := range s.periods {
+		s.setDemandLocked(name, false)
+	}
+	return s.db.Close()
+}
 func (s *Store) Subscribe(ctx context.Context, consumer string, watches []Watch) error {
 	_, err := s.register(ctx, consumer, watches, false)
 	return err
@@ -117,6 +169,38 @@ func (s *Store) register(ctx context.Context, consumer string, watches []Watch, 
 			ordered = append(ordered, w)
 		}
 	}
+	// Resolve cold networks outside the transaction. An unrelated slow RPC
+	// must not block existing consumers from acknowledging deliveries.
+	boundaries := map[string]boundary{}
+	checked := map[string]bool{}
+	for _, w := range ordered {
+		if checked[w.Network] {
+			continue
+		}
+		checked[w.Network] = true
+		if requireHeight && s.configured != nil {
+			if _, ok := s.configured[w.Network]; !ok {
+				return nil, fmt.Errorf("%s: %w", w.Network, ErrNetworkNotConfigured)
+			}
+		}
+		if !requireHeight || s.resolve == nil {
+			continue
+		}
+		_, epoch := s.period(w.Network)
+		_, ok, err := s.cursor(ctx, w.Network)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			h, err := s.resolve(ctx, w.Network)
+			if err != nil || h < -1 {
+				return nil, fmt.Errorf("%s: %w", w.Network, ErrCursorNotReady)
+			}
+			boundaries[w.Network] = boundary{epoch, h}
+		}
+	}
+	s.demandMu.Lock()
+	defer s.demandMu.Unlock()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -141,12 +225,26 @@ func (s *Store) register(ctx context.Context, consumer string, watches []Watch, 
 	if err != nil {
 		return nil, err
 	}
+	touched := map[string]bool{}
+	for name, b := range boundaries {
+		if s.periodLocked(name).changed != b.period {
+			var exists bool
+			if err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM cursors WHERE network=?)", name).Scan(&exists); err != nil {
+				return nil, err
+			}
+			if !exists {
+				return nil, ErrCursorNotReady
+			}
+		} else if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO cursors(network,height) VALUES(?,?)", name, b.height); err != nil {
+			return nil, err
+		}
+	}
 	for w := range old {
 		if !wanted[w] {
 			if _, err = tx.ExecContext(ctx, "DELETE FROM watches WHERE consumer=? AND network=? AND address=?", consumer, w.Network, w.Address); err != nil {
 				return nil, err
 			}
-			s.indexes.Delete(w.Network)
+			touched[w.Network] = true
 		}
 	}
 	receipts := make([]Registration, 0, len(ordered))
@@ -172,15 +270,31 @@ func (s *Store) register(ctx context.Context, consumer string, watches []Watch, 
 				return nil, err
 			}
 			if !exists {
-				s.indexes.Delete(w.Network)
+				touched[w.Network] = true
 			}
 		}
 		if start.Valid {
 			receipts = append(receipts, Registration{w, start.Int64})
 		}
 	}
+	for n := range touched {
+		var active bool
+		if err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM watches WHERE network=?)", n).Scan(&active); err != nil {
+			return nil, err
+		}
+		touched[n] = active
+		if !active {
+			if _, err = tx.ExecContext(ctx, "DELETE FROM cursors WHERE network=?", n); err != nil {
+				return nil, err
+			}
+		}
+		s.indexes.Delete(n)
+	}
 	if err = tx.Commit(); err != nil {
 		return nil, err
+	}
+	for n, active := range touched {
+		s.setDemandLocked(n, active)
 	}
 	return receipts, nil
 }

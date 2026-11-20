@@ -283,6 +283,10 @@ func TestBeaconSignalsUseExecutionHeights(t *testing.T) {
 	if h, e := src.Head(ctx); e != nil || h != 66 {
 		t.Fatal(h, e)
 	}
+	if h, err := nodeHead(ctx, src, Network{Name: "ethereum", Protocol: "sse", URL: st.URL}); err != nil || h != 123456 {
+		t.Fatalf("expected primary beacon slot 123456, got %d (%v)", h, err)
+	}
+
 }
 func TestSuiGraphPageMustAdvance(t *testing.T) {
 	seen := map[string]bool{}

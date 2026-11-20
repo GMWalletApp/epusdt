@@ -21,6 +21,7 @@ type config struct {
 	Listen, Database string
 	Networks         []scanner.Network
 	Consumers        map[string]string
+	AdminToken       string `json:"admin_token"`
 }
 
 func run() error {
@@ -38,15 +39,19 @@ func run() error {
 		c.Listen = "127.0.0.1:9081"
 	}
 	if c.Database == "" {
-		c.Database = "chainscanner.sqlite"
+		c.Database = ":memory:"
 	}
 	seen := map[string]bool{}
 	for _, n := range c.Networks {
-		if seen[n.Name] || !scanner.Supported(n.Name) || n.URL == "" || n.Confirmations < 0 || n.Lookback < 0 {
+		if seen[n.Name] || !scanner.Supported(n.Name) || n.Confirmations < 0 || n.Lookback < 0 {
 			return fmt.Errorf("invalid or duplicate network %q", n.Name)
 		}
-		if err := scanner.ValidateNetwork(n); err != nil {
-			return fmt.Errorf("%s: %w", n.Name, err)
+		if n.URL != "" {
+			if err := scanner.ValidateNetwork(n); err != nil {
+				return fmt.Errorf("%s: %w", n.Name, err)
+			}
+		} else if n.APIKey != "" || n.Protocol != "" || n.HistoryURL != "" || n.HistoryAPIKey != "" {
+			return fmt.Errorf("%s: endpoint options require a url", n.Name)
 		}
 		seen[n.Name] = true
 	}
@@ -55,7 +60,11 @@ func run() error {
 		return err
 	}
 	defer s.Close()
-	handler, err := scanner.Handler(s, c.Consumers)
+	registry, err := scanner.NewNodeRegistry(context.Background(), s, c.Networks)
+	if err != nil {
+		return err
+	}
+	handler, err := registry.Handler(c.Consumers, c.AdminToken)
 	if err != nil {
 		return err
 	}
@@ -68,7 +77,7 @@ func run() error {
 	var wg sync.WaitGroup
 	for _, n := range c.Networks {
 		wg.Add(1)
-		go func() { defer wg.Done(); s.Run(ctx, n) }()
+		go func() { defer wg.Done(); registry.Run(ctx, n) }()
 	}
 	srv := http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
 	go func() { <-ctx.Done(); srv.Close() }()

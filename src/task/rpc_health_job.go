@@ -25,7 +25,7 @@ const rpcProbeTimeout = 5 * time.Second
 // RpcHealthJob periodically probes enabled general/both rpc_nodes rows.
 // Manual verification nodes are left for on-demand admin checks so paid
 // endpoints are not consumed by the scheduler.
-type RpcHealthJob struct{}
+type RpcHealthJob struct{ watching func(string) bool }
 
 var gRpcHealthJobLock sync.Mutex
 
@@ -40,7 +40,7 @@ func (r RpcHealthJob) Run() {
 	}
 	var wg sync.WaitGroup
 	for i := range nodes {
-		if !nodes[i].Enabled {
+		if !nodes[i].Enabled || r.watching != nil && !r.watching(nodes[i].Network) {
 			continue
 		}
 		wg.Add(1)
@@ -71,7 +71,9 @@ func probeReachability(node mdb.RpcNode) (string, int, error) {
 	client, err := ethclient.DialContext(ctx, node.Url)
 	if err == nil {
 		defer client.Close()
-		_, err = client.BlockNumber(ctx)
+		if err = verifyProbeChain(ctx, client, node.Network); err == nil {
+			_, err = client.BlockNumber(ctx)
+		}
 	}
 	if err != nil {
 		return mdb.RpcNodeStatusDown, -1, err
@@ -140,6 +142,16 @@ func probeRpcNode(node mdb.RpcNode) (string, int, error) {
 
 func isEvmRpcNetwork(network string) bool { return scanner.IsEVM(network) }
 
+func verifyProbeChain(ctx context.Context, client *ethclient.Client, name string) error {
+	id, err := client.ChainID(ctx)
+	if err != nil {
+		return err
+	}
+	if id.Cmp(big.NewInt(scanner.EVMChainID(name))) != 0 {
+		return fmt.Errorf("node chain ID %s differs from %s", id, name)
+	}
+	return nil
+}
 func probeEvmRpcNode(ctx context.Context, node mdb.RpcNode) error {
 	client, err := ethclient.DialContext(ctx, strings.TrimSpace(node.Url))
 	if err != nil {
@@ -147,6 +159,9 @@ func probeEvmRpcNode(ctx context.Context, node mdb.RpcNode) error {
 	}
 	defer client.Close()
 
+	if err = verifyProbeChain(ctx, client, node.Network); err != nil {
+		return err
+	}
 	// Manual verification reads receipts and block headers and does not scan logs.
 	if data.NormalizeRpcNodePurpose(node.Purpose) == mdb.RpcNodePurposeManualVerify {
 		_, err := client.HeaderByNumber(ctx, nil)
