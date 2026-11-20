@@ -13,7 +13,7 @@ import (
 func (p *SourcePool) ScanWindow() int {
 	active := map[string]bool{}
 	for _, n := range p.nodes {
-		if !p.now().Before(n.retry) {
+		if !n.fallback && !p.now().Before(n.retry) {
 			active[n.historyKey] = true
 		}
 		if len(active) == parallelism {
@@ -76,11 +76,7 @@ func (p *SourcePool) ScanPending(ctx context.Context, spans []chains.Span, finis
 			if j.running || j.done {
 				continue
 			}
-			var node *endpoint
-			var waiting bool
-			if j.failures < 3 {
-				node, waiting = p.pickNode(spans[i].Last, busy, j.excluded)
-			}
+			node, waiting := p.pickRange(spans[i], j.failures, busy, j.excluded)
 			if node == nil {
 				if waiting {
 					continue

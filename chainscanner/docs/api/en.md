@@ -32,6 +32,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Consumer | [`GET /v1/heights/{network}`](#height) | `200` |
 | Administrator | [`GET /v1/admin/nodes`](#list) | `200` |
 | Administrator | [`POST /v1/admin/nodes`](#add) | `201` |
+| Administrator | [`POST /v1/admin/nodes/fallback`](#fallback) | `201` |
 | Administrator | [`POST /v1/admin/nodes/{id}/test`](#test-one) | `200` |
 | Administrator | [`POST /v1/admin/nodes/test`](#test-all) | `200` |
 | Administrator | [`DELETE /v1/admin/nodes/{id}`](#delete) | `204` |
@@ -319,7 +320,7 @@ admin "$BASE/v1/admin/nodes?network=base"
 | --- | --- | --- |
 | `id, network` | `int64, string` | Stable numeric ID and concrete network. |
 | `protocol, url` | `string, string` | Selected transport and endpoint URL. |
-| `origin` | `string` | One of `builtin`, `config`, `custom`, `chainlist`. |
+| `origin` | `string` | One of `builtin`, `config`, `custom`, `chainlist`, `fallback`. |
 | `status` | `string` | One of `untested`, `ok`, `timeout`, `unavailable`. Inspect this field after probing. |
 | `height, height_unit` | `int64? , string` | Observed upstream height, or null. Unit is `block`, `slot`, `checkpoint`, `ledger_version` or `beacon_slot`. |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | Unix milliseconds of probe start and elapsed milliseconds. Both are null before the first test. |
@@ -334,6 +335,16 @@ Send `network` and `url`; specify `protocol` explicitly to select the intended i
 
 ```sh
 admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http","url":"https://rpc.example.org"}'
+```
+
+<a id="fallback"></a>
+
+### `POST /v1/admin/nodes/fallback`
+
+Register an operator-funded history endpoint for one network with the same fields and administrator token as normal node creation. The response is **201** with `origin: fallback`. After a normal range read fails, a free fallback can take that range immediately. It also handles previously failed ranges recovered from SQLite. The scheduler checks the fallback’s own confirmation height for the repair. Fresh blocks, subscription boundaries and automatic head polling use ordinary nodes. Explicit administrator tests can contact the paid endpoint. Failed repairs remain in the retry queue and the same three-failure cooldown applies. List, test and delete by the returned node ID.
+
+```sh
+admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
 ```
 
 <a id="test-one"></a>

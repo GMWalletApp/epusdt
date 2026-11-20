@@ -119,8 +119,19 @@ func (p *nodePool) refresh(ctx context.Context) error {
 		// active scanner's read cooldown for this node.
 		for _, n := range p.nodes {
 			row := origins[n.cfg]
+			n.fallback = row.Origin == "fallback"
 			if row.ReadRetryAt > 0 && time.UnixMilli(row.ReadRetryAt).After(n.retry) {
 				n.retry = time.UnixMilli(row.ReadRetryAt)
+			}
+		}
+		p.repairHead = nil
+		if slices.ContainsFunc(p.nodes, func(n *endpoint) bool { return n.fallback }) {
+			p.repairHead = func(ctx context.Context) (int64, error) {
+				last, err := p.registry.store.LastFailedHeight(ctx, p.network)
+				if err != nil || last < 0 {
+					return last, err
+				}
+				return last + max(0, p.settings.Confirmations-1), nil
 			}
 		}
 		p.open = func(ctx context.Context, cfg chains.Network) (chains.Source, error) {

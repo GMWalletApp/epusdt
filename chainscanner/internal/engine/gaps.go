@@ -30,7 +30,7 @@ func (s *Store) planAvailable(ctx context.Context, network string, high, head in
 	if high < head {
 		retryLimit = max(1, limit/2)
 	}
-	query := "SELECT first,last FROM scan_gaps WHERE network=? AND last<=?"
+	query := "SELECT first,last,attempted<>0 FROM scan_gaps WHERE network=? AND last<=?"
 	args := []any{network, head}
 	if len(owned) > 0 {
 		query += " AND first NOT IN (?" + strings.Repeat(",?", len(owned)-1) + ")"
@@ -49,7 +49,7 @@ func (s *Store) planAvailable(ctx context.Context, network string, high, head in
 	}
 	for rows.Next() {
 		var r chains.Span
-		if err = rows.Scan(&r.First, &r.Last); err != nil {
+		if err = rows.Scan(&r.First, &r.Last, &r.Failed); err != nil {
 			rows.Close()
 			return nil, high, err
 		}
@@ -176,4 +176,11 @@ func (s *Store) deferGap(ctx context.Context, network string, r chains.Span) err
 		}
 	}
 	return tx.Commit()
+}
+
+// LastFailedHeight bounds repairs when regular providers cannot report a head.
+func (s *Store) LastFailedHeight(ctx context.Context, network string) (int64, error) {
+	var last int64
+	err := s.db.QueryRowContext(ctx, "SELECT COALESCE(max(last),-1) FROM scan_gaps WHERE network=? AND attempted>0", network).Scan(&last)
+	return last, err
 }

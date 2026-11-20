@@ -32,6 +32,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Потребитель | [`GET /v1/heights/{network}`](#height) | `200` |
 | Администратор | [`GET /v1/admin/nodes`](#list) | `200` |
 | Администратор | [`POST /v1/admin/nodes`](#add) | `201` |
+| Администратор | [`POST /v1/admin/nodes/fallback`](#fallback) | `201` |
 | Администратор | [`POST /v1/admin/nodes/{id}/test`](#test-one) | `200` |
 | Администратор | [`POST /v1/admin/nodes/test`](#test-all) | `200` |
 | Администратор | [`DELETE /v1/admin/nodes/{id}`](#delete) | `204` |
@@ -319,7 +320,7 @@ admin "$BASE/v1/admin/nodes?network=base"
 | --- | --- | --- |
 | `id, network` | `int64, string` | Стабильный числовой ID и конкретная сеть. |
 | `protocol, url` | `string, string` | Выбранный транспорт и URL узла. |
-| `origin` | `string` | Источник: `builtin`, `config`, `custom` или `chainlist`. |
+| `origin` | `string` | Источник: `builtin`, `config`, `custom` или `chainlist`, `fallback`. |
 | `status` | `string` | Одно из значений `untested`, `ok`, `timeout`, `unavailable`. Проверьте это поле после запроса. |
 | `height, height_unit` | `int64? , string` | Высота узла или null. Единица: `block`, `slot`, `checkpoint`, `ledger_version` или `beacon_slot`. |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | Время начала в миллисекундах Unix и длительность в миллисекундах. До первой проверки оба поля равны null. |
@@ -334,6 +335,16 @@ admin "$BASE/v1/admin/nodes?network=base"
 
 ```sh
 admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http","url":"https://rpc.example.org"}'
+```
+
+<a id="fallback"></a>
+
+### `POST /v1/admin/nodes/fallback`
+
+Зарегистрируйте платный узел для чтения истории конкретной сети с теми же полями и токеном администратора, что и у обычного узла. Ответ **201** содержит `origin: fallback`. После ошибки чтения свободный резервный узел может сразу взять диапазон и проверить глубину подтверждения. Он также обрабатывает пропуски, сохранённые в SQLite до перезапуска. Новые блоки, границы подписок и обычный опрос высоты обслуживают основные узлы. Ручная проверка может расходовать квоту. Ошибки сохраняют диапазон для повтора, три ошибки подряд включают нарастающую паузу. Для проверки и удаления используйте полученный ID.
+
+```sh
+admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
 ```
 
 <a id="test-one"></a>

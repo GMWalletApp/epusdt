@@ -49,7 +49,7 @@ func (p *SourcePool) acceptHead(n *endpoint) {
 func (p *SourcePool) bestRecentTip(fallback int64, interval time.Duration) int64 {
 	floor := p.now().Add(-2 * interval)
 	for _, n := range p.nodes {
-		if h := n.accepted; h.err == nil && h.start.After(floor) {
+		if h := n.accepted; !n.fallback && h.err == nil && h.start.After(floor) {
 			fallback = max(fallback, h.height)
 		}
 	}

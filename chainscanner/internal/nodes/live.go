@@ -87,12 +87,26 @@ func (p *SourcePool) LiveWindow(ctx, period context.Context, interval time.Durat
 	q.interval = interval
 	// An idle worker may have woken from WS before its next polling tick.
 	if q.tip < 0 || (len(q.jobs) == 0 && q.probing == 0 && !q.fresh) {
-		h, err := p.Head(ctx)
-		if err != nil {
-			return 0, nil, 0, err
+		// Known failed blocks were already reserved at confirmation depth. Let
+		// them proceed while probeLive checks the ordinary head asynchronously.
+		repair := int64(-1)
+		var err error
+		if p.repairHead != nil {
+			repair, err = p.repairHead(ctx)
+			if err != nil {
+				return 0, nil, 0, err
+			}
 		}
-		q.tip = p.bestRecentTip(h, interval)
-		q.nextPoll = p.now().Add(interval)
+		if repair >= 0 {
+			q.tip = max(q.tip, repair)
+		} else {
+			h, err := p.Head(ctx)
+			if err != nil {
+				return 0, nil, 0, err
+			}
+			q.tip = p.bestRecentTip(h, interval)
+			q.nextPoll = p.now().Add(interval)
+		}
 	}
 	q.fresh = false
 	owned := make([]int64, 0, len(q.jobs))
@@ -140,7 +154,7 @@ func (p *SourcePool) probeLive() {
 	for k := range p.nodes {
 		i := (p.headNext + k) % len(p.nodes)
 		n := p.nodes[i]
-		if q.busy[n.historyKey] || p.now().Before(n.retry) {
+		if n.fallback || q.busy[n.historyKey] || p.now().Before(n.retry) {
 			continue
 		}
 		p.headNext = (i + 1) % len(p.nodes)
@@ -186,7 +200,7 @@ func (p *SourcePool) acceptLive(r liveResult, finish chains.FinishRange) error {
 		}
 	}
 	p.record(r.node, true, err)
-	if r.node.accepted.err == nil && r.node.accepted.start.After(p.now().Add(-q.interval)) {
+	if !r.node.fallback && r.node.accepted.err == nil && r.node.accepted.start.After(p.now().Add(-q.interval)) {
 		q.tip = p.bestRecentTip(r.node.accepted.height, q.interval)
 	}
 	if err == nil {
@@ -212,7 +226,7 @@ func (p *SourcePool) candidatesRemain(j *liveJob) bool {
 		return false
 	}
 	for _, n := range p.nodes {
-		if !j.tried[n] && !p.now().Before(n.retry) {
+		if !n.fallback && !j.tried[n] && !p.now().Before(n.retry) {
 			return true
 		}
 	}
@@ -239,7 +253,7 @@ func (p *SourcePool) warmLive() {
 		return
 	}
 	for _, n := range p.nodes {
-		if q.busy[n.historyKey] || now.Before(n.retry) || (!n.accepted.start.IsZero() && now.Sub(n.accepted.start) < q.interval) {
+		if n.fallback || q.busy[n.historyKey] || now.Before(n.retry) || (!n.accepted.start.IsZero() && now.Sub(n.accepted.start) < q.interval) {
 			continue
 		}
 		for _, j := range q.jobs {
@@ -281,11 +295,9 @@ func (p *SourcePool) AdvanceLive(ctx context.Context, spans []chains.Span, finis
 			if j.active {
 				continue
 			}
-			var n *endpoint
-			var waiting bool
-			if j.failures < 3 {
-				n, waiting = p.pickNode(j.span.Last, q.busy, func(n *endpoint) bool { return j.tried[n] || !n.covers(j.span.Last, p.now(), q.interval) })
-			}
+			n, waiting := p.pickRange(j.span, j.failures, q.busy, func(n *endpoint) bool {
+				return j.tried[n] || (!n.fallback && !n.covers(j.span.Last, p.now(), q.interval))
+			})
 			if n != nil {
 				p.startLive(n, j)
 				continue

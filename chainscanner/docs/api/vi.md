@@ -32,6 +32,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Dịch vụ | [`GET /v1/heights/{network}`](#height) | `200` |
 | Quản trị viên | [`GET /v1/admin/nodes`](#list) | `200` |
 | Quản trị viên | [`POST /v1/admin/nodes`](#add) | `201` |
+| Quản trị viên | [`POST /v1/admin/nodes/fallback`](#fallback) | `201` |
 | Quản trị viên | [`POST /v1/admin/nodes/{id}/test`](#test-one) | `200` |
 | Quản trị viên | [`POST /v1/admin/nodes/test`](#test-all) | `200` |
 | Quản trị viên | [`DELETE /v1/admin/nodes/{id}`](#delete) | `204` |
@@ -319,7 +320,7 @@ admin "$BASE/v1/admin/nodes?network=base"
 | --- | --- | --- |
 | `id, network` | `int64, string` | ID số ổn định và mạng cụ thể. |
 | `protocol, url` | `string, string` | Giao thức và URL nút. |
-| `origin` | `string` | Nguồn: `builtin`, `config`, `custom`, `chainlist`. |
+| `origin` | `string` | Nguồn: `builtin`, `config`, `custom`, `chainlist`, `fallback`. |
 | `status` | `string` | Một trong `untested`, `ok`, `timeout`, `unavailable`. Kiểm tra trường này sau khi thăm dò. |
 | `height, height_unit` | `int64? , string` | Độ cao của nút hoặc null. Đơn vị là `block`, `slot`, `checkpoint`, `ledger_version` hoặc `beacon_slot`. |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | Thời điểm bắt đầu theo mili giây Unix và thời lượng theo mili giây. Cả hai là null nếu chưa kiểm tra. |
@@ -334,6 +335,16 @@ Dùng các chuỗi JSON `network`, `url` và chỉ rõ `protocol`. Các chuỗi 
 
 ```sh
 admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http","url":"https://rpc.example.org"}'
+```
+
+<a id="fallback"></a>
+
+### `POST /v1/admin/nodes/fallback`
+
+Đăng ký nút lịch sử trả phí cho một mạng bằng các trường và token quản trị như khi thêm nút thường. Phản hồi **201** có `origin: fallback`. Khi đọc khối thất bại, nút dự phòng đang rảnh có thể nhận khoảng đó ngay và kiểm tra độ cao xác nhận. Nút này cũng quét bù các khoảng lỗi đã lưu trong SQLite sau khi khởi động lại. Nút thường đảm nhiệm khối mới, mốc đăng ký và việc kiểm tra đầu chuỗi định kỳ. Kiểm tra thủ công có thể dùng hạn mức trả phí. Lỗi quét bù giữ nguyên khoảng cần thử lại, ba lỗi liên tiếp kích hoạt thời gian tạm dừng tăng dần. Dùng ID trả về để kiểm tra hoặc xóa nút.
+
+```sh
+admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
 ```
 
 <a id="test-one"></a>

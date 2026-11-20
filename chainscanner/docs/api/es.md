@@ -32,6 +32,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Consumidor | [`GET /v1/heights/{network}`](#height) | `200` |
 | Administrador | [`GET /v1/admin/nodes`](#list) | `200` |
 | Administrador | [`POST /v1/admin/nodes`](#add) | `201` |
+| Administrador | [`POST /v1/admin/nodes/fallback`](#fallback) | `201` |
 | Administrador | [`POST /v1/admin/nodes/{id}/test`](#test-one) | `200` |
 | Administrador | [`POST /v1/admin/nodes/test`](#test-all) | `200` |
 | Administrador | [`DELETE /v1/admin/nodes/{id}`](#delete) | `204` |
@@ -319,7 +320,7 @@ admin "$BASE/v1/admin/nodes?network=base"
 | --- | --- | --- |
 | `id, network` | `int64, string` | ID numérico estable y red concreta. |
 | `protocol, url` | `string, string` | Transporte seleccionado y URL del nodo. |
-| `origin` | `string` | Origen: `builtin`, `config`, `custom` o `chainlist`. |
+| `origin` | `string` | Origen: `builtin`, `config`, `custom` o `chainlist`, `fallback`. |
 | `status` | `string` | Uno de `untested`, `ok`, `timeout`, `unavailable`. Compruébalo después de la prueba. |
 | `height, height_unit` | `int64? , string` | Altura del nodo o null. La unidad es `block`, `slot`, `checkpoint`, `ledger_version` o `beacon_slot`. |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | Tiempo de inicio en milisegundos Unix y duración en milisegundos. Ambos son null antes de la primera prueba. |
@@ -334,6 +335,16 @@ Envía las cadenas JSON `network`, `url` y especifica `protocol`. Las cadenas op
 
 ```sh
 admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http","url":"https://rpc.example.org"}'
+```
+
+<a id="fallback"></a>
+
+### `POST /v1/admin/nodes/fallback`
+
+Registra un nodo de historial de pago para una red con los mismos campos y el token de administrador de la ruta normal. Devuelve **201** con `origin: fallback`. Tras un fallo de lectura, un nodo de respaldo libre puede tomar el intervalo y verificar sus confirmaciones. También repara huecos guardados en SQLite tras reiniciar. Las lecturas iniciales y las consultas de altura para suscripciones usan nodos ordinarios. Las pruebas manuales pueden consumir cuota. Los huecos pendientes se reintentan y tres fallos consecutivos activan la pausa progresiva. Usa el ID devuelto para probar o eliminar el nodo.
+
+```sh
+admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
 ```
 
 <a id="test-one"></a>

@@ -88,7 +88,7 @@ func (p *SourcePool) checkSlowGap(j *segment, last int64, busy map[string]bool, 
 	now := p.now()
 	var wait time.Duration
 	for _, peer := range p.nodes {
-		if busy[peer.historyKey] || excluded(peer) || now.Before(peer.retry) {
+		if peer.fallback || busy[peer.historyKey] || excluded(peer) || now.Before(peer.retry) {
 			continue
 		}
 		if left := slowGapDelay - now.Sub(j.started); left > 0 {
@@ -117,16 +117,38 @@ func (n *endpoint) recentlyBehind(last int64, now time.Time) bool {
 	return n.tip >= 0 && n.tip < last+max(n.cfg.Confirmations-1, 0) && now.Sub(n.observed) < time.Second
 }
 
+// Fresh ranges start on ordinary nodes. After a failed attempt, prefer a free
+// repair endpoint; other healthy providers can still make progress if it is busy.
+func (p *SourcePool) pickRange(span chains.Span, failures int, busy map[string]bool, excluded func(*endpoint) bool) (*endpoint, bool) {
+	var repairBusy bool
+	if span.Failed || failures > 0 {
+		n, waiting := p.pickRole(span.Last, busy, excluded, true)
+		if n != nil {
+			return n, false
+		}
+		repairBusy = waiting
+	}
+	if failures >= 3 {
+		return nil, repairBusy
+	}
+	n, waiting := p.pickNode(span.Last, busy, excluded)
+	return n, waiting || repairBusy
+}
+
 // Round-robin across distinct history backends. The boolean reports that an
 // otherwise eligible backend is currently serving another request.
 func (p *SourcePool) pickNode(last int64, busy map[string]bool, excluded func(*endpoint) bool) (*endpoint, bool) {
+	return p.pickRole(last, busy, excluded, false)
+}
+
+func (p *SourcePool) pickRole(last int64, busy map[string]bool, excluded func(*endpoint) bool, fallback bool) (*endpoint, bool) {
 	selected := -1
 	waiting := false
 	now := p.now()
 	for offset := range p.nodes {
 		i := (p.next + offset) % len(p.nodes)
 		n := p.nodes[i]
-		if excluded(n) || now.Before(n.retry) {
+		if n.fallback != fallback || excluded(n) || now.Before(n.retry) {
 			continue
 		}
 		if busy[n.historyKey] {

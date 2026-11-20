@@ -34,10 +34,12 @@ type SourcePool struct {
 	// Report receives completed provider attempts. Reports from a Read are serialized.
 	Report      func(chains.Network, bool)
 	observe     func(chains.Network, headSample)
+	repairHead  func(context.Context) (int64, error)    // recover the height of durable failed work
 	observeRead func(chains.Network, string, time.Time) // failed read or recovery, serialized by the scheduler
 }
 
 type endpoint struct {
+	fallback                   bool // operator-funded history endpoint; failed ranges only
 	lastUse                    uint64
 	measured, accepted         headSample
 	published                  time.Time
@@ -162,7 +164,7 @@ func (p *SourcePool) trimConnections() {
 
 func (p *SourcePool) Wakeups() <-chan struct{} {
 	for _, n := range p.nodes {
-		if p.live != nil && p.live.running[n] != nil {
+		if n.fallback || (p.live != nil && p.live.running[n] != nil) {
 			continue
 		}
 		if ch := chains.Wakeups(n.src); ch != nil {
@@ -199,6 +201,11 @@ func (p *SourcePool) connect(ctx context.Context, n *endpoint) error {
 func (p *SourcePool) record(n *endpoint, read bool, err error) {
 	// fetch may have failed its prerequisite height check before issuing a read.
 	read = read && n.measured.err == nil
+	// A repair endpoint may open a stream when dialing. Close it when the
+	// request ends so an idle paid subscription cannot keep consuming traffic.
+	if n.fallback {
+		defer n.close()
+	}
 	hadReadFailure := n.readFailures != (failureStreak{})
 	p.acceptHead(n)
 	if errors.Is(err, errNodeBehind) {
@@ -266,7 +273,7 @@ func (p *SourcePool) Head(ctx context.Context) (int64, error) {
 		if err := ctx.Err(); err != nil {
 			return 0, err
 		}
-		if p.now().Before(n.retry) {
+		if n.fallback || p.now().Before(n.retry) {
 			continue
 		}
 		h, err := p.height(ctx, n)

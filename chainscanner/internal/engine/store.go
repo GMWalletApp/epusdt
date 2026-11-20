@@ -46,6 +46,7 @@ func Open(path string) (*Store, error) {
  CREATE TABLE IF NOT EXISTS cursors(network TEXT PRIMARY KEY,height INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS scan_gaps(network TEXT NOT NULL,first INTEGER NOT NULL,last INTEGER NOT NULL,attempted INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(network,first));
  CREATE INDEX IF NOT EXISTS gap_retry ON scan_gaps(network,attempted,first);
+ CREATE INDEX IF NOT EXISTS failed_gap_end ON scan_gaps(network,last) WHERE attempted>0;
  CREATE UNIQUE INDEX IF NOT EXISTS gap_end ON scan_gaps(network,last);
  CREATE TABLE IF NOT EXISTS scan_edges(network TEXT NOT NULL,height INTEGER NOT NULL,hash TEXT NOT NULL,PRIMARY KEY(network,height));
  CREATE TRIGGER IF NOT EXISTS clear_scan_work AFTER DELETE ON cursors BEGIN

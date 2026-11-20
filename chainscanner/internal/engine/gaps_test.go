@@ -192,7 +192,7 @@ func TestAptosPartialPageAndGapSplit(t *testing.T) {
 		t.Fatal(err)
 	}
 	jobs, _, err = s.plan(ctx, "aptos", 200, 201, 16)
-	want := []chains.Span{{First: 121, Last: 160}, {First: 201, Last: 201}, {First: 161, Last: 200}}
+	want := []chains.Span{{First: 121, Last: 160, Failed: true}, {First: 201, Last: 201}, {First: 161, Last: 200, Failed: true}}
 	if err != nil || !slices.Equal(jobs, want) {
 		t.Fatal(jobs, err)
 	}

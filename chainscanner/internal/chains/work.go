@@ -6,7 +6,10 @@ import (
 )
 
 // Span is an inclusive range of block heights (ledger versions on Aptos).
-type Span struct{ First, Last int64 }
+type Span struct {
+	First, Last int64
+	Failed      bool // a previous scan attempt for this range failed
+}
 
 type FinishRange = func(Span, BlockLink, []Activity, error) error
 

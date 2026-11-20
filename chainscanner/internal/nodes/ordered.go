@@ -23,7 +23,7 @@ func (p *SourcePool) scan(ctx context.Context, next, head int64, maxRanges int, 
 	}
 	distinct := map[string]bool{}
 	for _, n := range p.nodes {
-		if !p.now().Before(n.retry) {
+		if !n.fallback && !p.now().Before(n.retry) {
 			distinct[n.historyKey] = true
 		}
 	}

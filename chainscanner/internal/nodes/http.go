@@ -39,7 +39,7 @@ func (r *NodeRegistry) Handler(consumers map[string]string, token string) (http.
 		nodes, err := r.List(req.Context(), req.URL.Query().Get("network"))
 		nodeReply(w, 200, nodes, err)
 	})
-	admin.HandleFunc("POST /v1/admin/nodes", func(w http.ResponseWriter, req *http.Request) {
+	addNode := func(w http.ResponseWriter, req *http.Request) {
 		var e NodeOptions
 		d := json.NewDecoder(http.MaxBytesReader(w, req.Body, 8192))
 		d.DisallowUnknownFields()
@@ -47,9 +47,11 @@ func (r *NodeRegistry) Handler(consumers map[string]string, token string) (http.
 			nodeReply(w, 400, nil, errInvalidNode)
 			return
 		}
-		n, err := r.Add(req.Context(), e)
+		n, err := r.add(req.Context(), e, req.URL.Path == "/v1/admin/nodes/fallback")
 		nodeReply(w, 201, n, err)
-	})
+	}
+	admin.HandleFunc("POST /v1/admin/nodes", addNode)
+	admin.HandleFunc("POST /v1/admin/nodes/fallback", addNode)
 	admin.HandleFunc("DELETE /v1/admin/nodes/{id}", func(w http.ResponseWriter, req *http.Request) {
 		id, err := nodeID(req)
 		if err == nil {

@@ -177,7 +177,18 @@ var errInvalidNode = errors.New("invalid node endpoint")
 var errDuplicateNode = errors.New("node already exists")
 
 func (r *NodeRegistry) Add(ctx context.Context, options NodeOptions) (Node, error) {
+	return r.add(ctx, options, false)
+}
+
+func (r *NodeRegistry) add(ctx context.Context, options NodeOptions, fallback bool) (Node, error) {
 	e := options.NodeEndpoint
+	origin := "custom"
+	if fallback {
+		if !chains.Supported(e.Network) {
+			return Node{}, errInvalidNode
+		}
+		origin = "fallback"
+	}
 	e.URL = strings.TrimSpace(e.URL)
 	u, err := url.Parse(e.URL)
 	if err != nil || u.User != nil || u.Fragment != "" || len(e.URL) > 4096 {
@@ -196,14 +207,51 @@ func (r *NodeRegistry) Add(ctx context.Context, options NodeOptions) (Node, erro
 		e.Protocol = p
 	}
 	_, configured := r.configured[e]
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Node{}, err
+	}
+	defer tx.Rollback()
+	// An equivalent URL spelling must not turn a repair-only node into a normal one.
+	rows, err := tx.QueryContext(ctx, "SELECT network,protocol,url FROM rpc_nodes WHERE network=? AND removed=0 AND (origin='fallback' OR ?)", e.Network, fallback)
+	if err != nil {
+		return Node{}, err
+	}
+	for rows.Next() {
+		var peer NodeEndpoint
+		if err = rows.Scan(&peer.Network, &peer.Protocol, &peer.URL); err != nil {
+			break
+		}
+		if peer.identity() == e.identity() {
+			err = errDuplicateNode
+			break
+		}
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	rows.Close()
+	if err != nil {
+		return Node{}, err
+	}
+	if fallback {
+		for endpoint := range r.configured {
+			if endpoint.identity() == e.identity() {
+				return Node{}, errDuplicateNode
+			}
+		}
+	}
 	var id int64
-	err = r.db.QueryRowContext(ctx, `INSERT INTO rpc_nodes(network,protocol,url,api_key,history_url,history_key,origin) VALUES(?,?,?,?,?,?,'custom')
-	ON CONFLICT(network,protocol,url) DO UPDATE SET api_key=excluded.api_key,history_url=excluded.history_url,history_key=excluded.history_key,generation=generation+1, removed=0, status='untested',height=NULL,checked_at=NULL,latency=NULL,origin=CASE WHEN origin='builtin' THEN origin ELSE 'custom' END
-	WHERE removed=1 OR (origin='config' AND NOT ?) RETURNING id`, e.Network, e.Protocol, e.URL, options.APIKey, options.HistoryURL, options.HistoryAPIKey, configured).Scan(&id)
+	err = tx.QueryRowContext(ctx, `INSERT INTO rpc_nodes(network,protocol,url,api_key,history_url,history_key,origin) VALUES(?,?,?,?,?,?,?)
+	ON CONFLICT(network,protocol,url) DO UPDATE SET api_key=excluded.api_key,history_url=excluded.history_url,history_key=excluded.history_key,generation=generation+1, removed=0, status='untested',height=NULL,checked_at=NULL,latency=NULL,origin=CASE WHEN origin='builtin' AND excluded.origin='custom' THEN origin ELSE excluded.origin END
+	WHERE removed=1 OR (origin='config' AND NOT ?) RETURNING id`, e.Network, e.Protocol, e.URL, options.APIKey, options.HistoryURL, options.HistoryAPIKey, origin, configured).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Node{}, errDuplicateNode
 	}
 	if err != nil {
+		return Node{}, err
+	}
+	if err = tx.Commit(); err != nil {
 		return Node{}, err
 	}
 	r.revision.Add(1)

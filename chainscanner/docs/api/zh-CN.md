@@ -32,6 +32,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | 消费者 | [`GET /v1/heights/{network}`](#height) | `200` |
 | 管理员 | [`GET /v1/admin/nodes`](#list) | `200` |
 | 管理员 | [`POST /v1/admin/nodes`](#add) | `201` |
+| 管理员 | [`POST /v1/admin/nodes/fallback`](#fallback) | `201` |
 | 管理员 | [`POST /v1/admin/nodes/{id}/test`](#test-one) | `200` |
 | 管理员 | [`POST /v1/admin/nodes/test`](#test-all) | `200` |
 | 管理员 | [`DELETE /v1/admin/nodes/{id}`](#delete) | `204` |
@@ -319,7 +320,7 @@ admin "$BASE/v1/admin/nodes?network=base"
 | --- | --- | --- |
 | `id, network` | `int64, string` | 稳定的数值 ID 和具体网络。 |
 | `protocol, url` | `string, string` | 选定的接口及节点 URL。 |
-| `origin` | `string` | 来源可为 `builtin`、`config`、`custom`、`chainlist`。 |
+| `origin` | `string` | 来源可为 `builtin`、`config`、`custom`、`chainlist`, `fallback`。 |
 | `status` | `string` | 可为 `untested`、`ok`、`timeout`、`unavailable`，探测后检查此字段。 |
 | `height, height_unit` | `int64? , string` | 上游高度或 null。单位可为 `block`、`slot`、`checkpoint`、`ledger_version`、`beacon_slot`。 |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | 探测开始的 Unix 毫秒时间戳和耗时毫秒数。首次探测前均为 null。 |
@@ -334,6 +335,16 @@ JSON 字符串 `network`、`url` 标识网络与节点，建议显式发送 `pro
 
 ```sh
 admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http","url":"https://rpc.example.org"}'
+```
+
+<a id="fallback"></a>
+
+### `POST /v1/admin/nodes/fallback`
+
+使用管理员令牌为指定链登记付费历史节点，参数与普通节点相同。成功返回 **201**，节点的 `origin` 为 `fallback`。普通节点读块失败后，空闲的兜底节点可立即接手该区间；已记录到 SQLite 的缺块在重启后也可用它补扫。补扫前会核对该节点自身的高度与确认数。新块首扫、订阅边界查询和日常链头轮询均使用普通节点。管理员主动测试（含批量测试）会请求付费节点。补扫再次失败会保留缺块，节点同样遵循连续三次失败后的阶梯冷却。可用返回的节点 ID 查询列表、测试或删除。
+
+```sh
+admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
 ```
 
 <a id="test-one"></a>
