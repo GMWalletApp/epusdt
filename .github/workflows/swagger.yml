@@ -1,0 +1,38 @@
+name: swagger
+
+on:
+  pull_request:
+  push:
+    branches: [dev, master]
+
+permissions:
+  contents: read
+
+jobs:
+  check-swagger:
+    name: Swagger docs up to date
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+
+      - name: Install swag
+        run: go install github.com/swaggo/swag/cmd/swag@v1.16.6
+
+      - name: Generate swagger
+        working-directory: src
+        run: make swagger
+
+      - name: Check for drift
+        run: |
+          if ! git diff --exit-code -- src/docs || [ -n "$(git status --porcelain -- src/docs)" ]; then
+            echo "::error::src/docs is out of date. Run 'make swagger' in src/ (swag v1.16.6) and commit src/docs."
+            git status --porcelain -- src/docs
+            exit 1
+          fi
