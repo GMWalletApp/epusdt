@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	scanner "github.com/GMWalletApp/ChainScanner"
 	"io"
 	"math/big"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	scanner "github.com/GMWalletApp/ChainScanner"
 	tron "github.com/GMWalletApp/epusdt/crypto"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
@@ -73,6 +73,22 @@ func SetManualOrderPaymentValidatorForTest(fn func(*mdb.Orders, string) (string,
 }
 
 func validateManualOrderPaymentDefault(order *mdb.Orders, blockTransactionID string) (string, error) {
+	id, err := validateManualTransfer(order, blockTransactionID)
+	if err != nil {
+		return "", err
+	}
+	if StrictTransaction == nil {
+		return "", fmt.Errorf("strict lookup unavailable")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := confirmManualTransfer(ctx, order, id, StrictTransaction); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func validateManualTransfer(order *mdb.Orders, blockTransactionID string) (string, error) {
 	if order == nil || order.ID == 0 {
 		return "", fmt.Errorf("order not found")
 	}

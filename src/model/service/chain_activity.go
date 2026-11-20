@@ -15,8 +15,6 @@ import (
 	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
-	"github.com/GMWalletApp/epusdt/model/request"
-	"github.com/GMWalletApp/epusdt/util/constant"
 	"github.com/tidwall/gjson"
 	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/tlb"
@@ -27,9 +25,14 @@ import (
 
 const transferSignature = "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 
-// ApplyChainActivity interprets confirmed evidence and returns transient storage
-// and lookup errors to the queue so acknowledgement can follow durable settlement.
+type creditHandler func(scanner.Activity, string, mdb.ChainToken, *big.Int, string) error
+
+// ApplyChainActivity persists matching transfers for independent verification.
 func ApplyChainActivity(ctx context.Context, e scanner.Activity) error {
+	return visitCredits(ctx, e, observeCredit)
+}
+
+func visitCredits(ctx context.Context, e scanner.Activity, credit creditHandler) error {
 	if e.TimeMS <= 0 || e.TxID == "" || len(e.Addresses) == 0 {
 		return nil
 	}
@@ -45,7 +48,7 @@ func ApplyChainActivity(ctx context.Context, e scanner.Activity) error {
 		for _, t := range tokens {
 			for _, a := range e.Addresses {
 				if raw := suiCredit(e, a, t); raw != nil {
-					if err := settleActivity(e, a, t, raw, e.TxID); err != nil {
+					if err := credit(e, a, t, raw, e.TxID); err != nil {
 						return err
 					}
 				}
@@ -67,24 +70,24 @@ func ApplyChainActivity(ctx context.Context, e scanner.Activity) error {
 		}
 		for _, t := range transfers {
 			token := mdb.ChainToken{Symbol: t.Token, Decimals: t.Decimals, MinAmount: t.MinAmount}
-			if err = settleActivity(e, t.ReceiveAddress, token, t.RawAmount, t.TxID); err != nil {
+			if err = credit(e, t.ReceiveAddress, token, t.RawAmount, t.TxID); err != nil {
 				return err
 			}
 		}
 		return nil
 	case mdb.NetworkTon:
-		return applyTONActivity(ctx, e, tokens)
+		return applyTONActivity(ctx, e, tokens, credit)
 	case mdb.NetworkSolana:
-		return applySolanaActivity(e, tokens)
+		return applySolanaActivity(e, tokens, credit)
 	default:
 		if scanner.IsEVM(e.Network) || e.Network == mdb.NetworkTron {
-			return applyLogActivity(e, tokens)
+			return applyLogActivity(e, tokens, credit)
 		}
 	}
 	return fmt.Errorf("unknown scanner network %q", e.Network)
 }
 
-func applyLogActivity(e scanner.Activity, tokens []mdb.ChainToken) error {
+func applyLogActivity(e scanner.Activity, tokens []mdb.ChainToken, credit creditHandler) error {
 	var evidence scanner.Evidence
 	if err := json.Unmarshal(e.Data, &evidence); err != nil {
 		return err
@@ -125,7 +128,7 @@ func applyLogActivity(e scanner.Activity, tokens []mdb.ChainToken) error {
 				a, _ := scanner.Canonical(e.Network, v.Get("to_address").String())
 				raw, ok := new(big.Int).SetString(v.Get("amount").String(), 10)
 				if ok {
-					if err := settleActivity(e, a, *native, raw, e.TxID); err != nil {
+					if err := credit(e, a, *native, raw, e.TxID); err != nil {
 						return err
 					}
 				}
@@ -142,7 +145,7 @@ func applyLogActivity(e scanner.Activity, tokens []mdb.ChainToken) error {
 		raw, ok := new(big.Int).SetString(tx.Get("value").String(), 0)
 		to := tx.Get("to").String()
 		if ok && to != "" && r.Get("transactionHash").String() == e.TxID && r.Get("status").String() == "0x1" && !strings.EqualFold(tx.Get("from").String(), to) {
-			if err := settleActivity(e, to, *native, raw, e.TxID); err != nil {
+			if err := credit(e, to, *native, raw, e.TxID); err != nil {
 				return err
 			}
 		}
@@ -161,7 +164,7 @@ func applyLogActivity(e scanner.Activity, tokens []mdb.ChainToken) error {
 		if !ok {
 			continue
 		}
-		dest := strings.TrimPrefix(topics[2].String(), "0x")
+		dest := strings.TrimPrefix(strings.ToLower(topics[2].String()), "0x")
 		value := strings.TrimPrefix(l.Get("data").String(), "0x")
 		if len(dest) != 64 || !strings.HasPrefix(dest, strings.Repeat("0", 24)) || len(value) != 64 {
 			continue
@@ -174,14 +177,14 @@ func applyLogActivity(e scanner.Activity, tokens []mdb.ChainToken) error {
 		if !ok {
 			continue
 		}
-		if err = settleActivity(e, a, t, quantity, e.TxID); err != nil {
+		if err = credit(e, a, t, quantity, e.TxID); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func settleActivity(e scanner.Activity, recipient string, t mdb.ChainToken, raw *big.Int, blockID string) error {
+func observeCredit(e scanner.Activity, recipient string, t mdb.ChainToken, raw *big.Int, blockID string) error {
 	canonical, err := scanner.Canonical(e.Network, recipient)
 	if err != nil || !slices.Contains(e.Addresses, canonical) || raw == nil || raw.Sign() <= 0 || t.Decimals < 0 || t.Decimals > 255 {
 		return nil
@@ -212,19 +215,14 @@ func settleActivity(e scanner.Activity, recipient string, t mdb.ChainToken, raw 
 	if e.TimeMS < order.CreatedAt.TimestampMilli() || e.TimeMS > order.CreatedAt.AddMinutes(config.GetOrderExpirationTime()).TimestampMilli() {
 		return nil
 	}
-	req := &request.OrderProcessingRequest{ReceiveAddress: order.ReceiveAddress, Token: symbol, Network: e.Network, TradeId: order.TradeId, Amount: order.ActualAmount, BlockTransactionId: blockID}
-	err = orderProcessingWithAllowedStatuses(req, []int{mdb.StatusWaitPay, mdb.StatusExpired})
-	if errors.Is(err, constant.OrderBlockAlreadyProcess) || errors.Is(err, constant.OrderStatusConflict) {
+	err = queueConfirmation(order, e)
+	if errors.Is(err, errInactiveCandidate) {
 		return nil
 	}
-	if err != nil {
-		return err
-	}
-	sendPaymentNotification(order)
-	return nil
+	return err
 }
 
-func applySolanaActivity(e scanner.Activity, tokens []mdb.ChainToken) error {
+func applySolanaActivity(e scanner.Activity, tokens []mdb.ChainToken, credit creditHandler) error {
 	tx := gjson.ParseBytes(e.Data)
 	if tx.Get("transaction.signatures.0").String() != e.TxID || tx.Get("meta.err").Raw != "null" {
 		return nil
@@ -238,8 +236,13 @@ func applySolanaActivity(e scanner.Activity, tokens []mdb.ChainToken) error {
 		instructions = append(instructions, inner.Get("instructions").Array()...)
 	}
 	for _, ins := range instructions {
-		tr, err := ParseTransferInfoFromInstruction(ins, wrapped)
-		if err != nil || tr == nil {
+		var tr *TransferInfo
+		if ins.Get("programIdIndex").Exists() {
+			tr, err = compiledSolanaTransfer(ins, tx)
+		} else {
+			tr, err = ParseTransferInfoFromInstruction(ins, wrapped)
+		}
+		if err != nil || tr == nil || tr.Source == tr.Destination {
 			continue
 		}
 		for _, t := range tokens {
@@ -252,7 +255,7 @@ func applySolanaActivity(e scanner.Activity, tokens []mdb.ChainToken) error {
 			}
 			for _, a := range e.Addresses {
 				if (native && a == tr.Destination) || (!native && MatchAtaAddress(a, tr.Mint, tr.Destination)) {
-					if err = settleActivity(e, a, t, new(big.Int).SetUint64(tr.RawAmount), e.TxID); err != nil {
+					if err = credit(e, a, t, new(big.Int).SetUint64(tr.RawAmount), e.TxID); err != nil {
 						return err
 					}
 				}
@@ -262,7 +265,7 @@ func applySolanaActivity(e scanner.Activity, tokens []mdb.ChainToken) error {
 	return nil
 }
 
-func applyTONActivity(ctx context.Context, e scanner.Activity, tokens []mdb.ChainToken) error {
+func applyTONActivity(ctx context.Context, e scanner.Activity, tokens []mdb.ChainToken, credit creditHandler) error {
 	var d scanner.TONData
 	if err := json.Unmarshal(e.Data, &d); err != nil {
 		return err
@@ -309,7 +312,7 @@ func applyTONActivity(ctx context.Context, e scanner.Activity, tokens []mdb.Chai
 	if err != nil || tr == nil {
 		return err
 	}
-	return settleActivity(e, tr.ReceiveAddress, tr.Token, tr.RawAmount, tr.BlockID)
+	return credit(e, tr.ReceiveAddress, tr.Token, tr.RawAmount, tr.BlockID)
 }
 
 // Resolve each configured Jetton wallet at the master block from the activity.

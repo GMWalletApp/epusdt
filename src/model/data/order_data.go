@@ -1,6 +1,8 @@
 package data
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
@@ -192,10 +194,12 @@ func OrderSuccessWithStatusesWithTransaction(tx *gorm.DB, req *request.OrderProc
 	if len(allowedStatuses) == 0 {
 		return false, nil
 	}
+	key := sha256.Sum256([]byte(req.BlockTransactionId))
 	result := tx.Model(&mdb.Orders{}).
 		Where("trade_id = ?", req.TradeId).
 		Where("status IN ?", allowedStatuses).
 		Updates(map[string]interface{}{
+			"settlement_key":       hex.EncodeToString(key[:]),
 			"block_transaction_id": req.BlockTransactionId,
 			"status":               mdb.StatusPaySuccess,
 			"callback_confirm":     mdb.CallBackConfirmNo,
@@ -550,7 +554,7 @@ func GetOnChainOrderByWalletAddressAndAmountAndTokenBeforeTime(network string, a
 		Where("token = ?", token).
 		Where("actual_amount = ?", amount).
 		Where("created_at <= ?", before).
-		Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusExpired}).
+		Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusExpired, mdb.StatusConfirming}).
 		Where("(pay_provider = ? OR pay_provider = '')", mdb.PaymentProviderOnChain)
 	query = applyOrderReceiveAddressFilter(query, network, address)
 	err := query.Order("created_at desc, id desc").Limit(1).Find(order).Error

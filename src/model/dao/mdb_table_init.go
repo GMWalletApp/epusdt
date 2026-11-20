@@ -34,6 +34,7 @@ func MdbTableInit() {
 			model interface{}
 		}{
 			{"Orders", &mdb.Orders{}},
+			{"PaymentConfirmation", &mdb.PaymentConfirmation{}},
 			{"WalletAddress", &mdb.WalletAddress{}},
 			{"AdminUser", &mdb.AdminUser{}},
 			{"ApiKey", &mdb.ApiKey{}},

@@ -291,7 +291,7 @@ func consumeQueue(ctx context.Context, feed scanner.Feed, next func() (*scanner.
 	for ctx.Err() == nil {
 		d, err := next()
 		if err == nil && d != nil {
-			err = processConfirmedActivity(ctx, feed, d.Activity)
+			err = processScannerActivity(ctx, d.Activity)
 			if err == nil {
 				err = feed.Ack(ctx, paymentConsumer, d.ID)
 				if err == nil {
@@ -310,22 +310,13 @@ func consumeQueue(ctx context.Context, feed scanner.Feed, next func() (*scanner.
 	}
 }
 
-func processConfirmedActivity(ctx context.Context, feed scanner.Feed, e scanner.Activity) error {
+func processScannerActivity(ctx context.Context, e scanner.Activity) error {
 	chain, err := data.GetChainByNetwork(e.Network)
 	if err != nil {
 		return err
 	}
 	if chain.ID == 0 || !chain.Enabled {
 		return nil
-	}
-	if e.Confirmations < int64(chain.MinConfirmations) {
-		h, err := feed.Height(ctx, e.Network)
-		if err != nil {
-			return err
-		}
-		if h-e.Height+1 < int64(chain.MinConfirmations) {
-			return fmt.Errorf("%s waiting for confirmations at %d", e.Network, e.Height)
-		}
 	}
 	return service.ApplyChainActivity(ctx, e)
 }

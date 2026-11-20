@@ -4,20 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"testing"
+	"time"
+
 	scanner "github.com/GMWalletApp/ChainScanner"
 	"github.com/GMWalletApp/epusdt/internal/testutil"
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
-	"strings"
-	"testing"
-	"time"
 )
 
 func TestAdditionalNetworkSettlement(t *testing.T) {
 	for _, network := range []string{"arbitrum", "hyperevm", "monad", "arc", "avalanche", "optimism", "base", "sui"} {
 		t.Run(network, func(t *testing.T) {
 			defer testutil.SetupTestDatabases(t)()
+			chain := mdb.Chain{Network: network, DisplayName: network, Enabled: true, MinConfirmations: 1}
+			if err := dao.Mdb.Where("network = ?", network).Assign(map[string]any{"enabled": true}).FirstOrCreate(&chain).Error; err != nil {
+				t.Fatal(err)
+			}
+
 			address := "0x" + strings.Repeat("a", 40)
 			token := mdb.ChainToken{Network: network, Symbol: scanner.NativeAsset(network), Enabled: true, Decimals: 18}
 			if network == "sui" {
@@ -43,7 +49,7 @@ func TestAdditionalNetworkSettlement(t *testing.T) {
 			if err := data.LockTransaction(network, address, order.Token, order.TradeId, 1, time.Minute); err != nil {
 				t.Fatal(err)
 			}
-			e := scanner.Activity{Network: network, TxID: "digest", Addresses: []string{address}, TimeMS: time.Now().Add(time.Second).UnixMilli()}
+			e := scanner.Activity{Network: network, TxID: "digest", Height: 17, Confirmations: 1000, Addresses: []string{address}, TimeMS: time.Now().Add(time.Second).UnixMilli()}
 			for _, success := range []bool{false, true, true} {
 				if network == "sui" {
 					e.Data = json.RawMessage(fmt.Sprintf(`{"digest":"digest","transaction":{"sender":"0x1"},"effects":{"status":{"success":%t}},"balance_changes":[{"address":"0x1","coin_type":"0x2::sui::SUI","amount":"-1000001010"},{"address":%q,"coin_type":"0x2::sui::SUI","amount":"1000000000"}]}`, success, address))
@@ -67,12 +73,35 @@ func TestAdditionalNetworkSettlement(t *testing.T) {
 				}
 				want := mdb.StatusWaitPay
 				if success {
-					want = mdb.StatusPaySuccess
+					want = mdb.StatusConfirming
 				}
 				if got.Status != want {
 					t.Fatal("payment status", got.Status, want)
 				}
 			}
+			var job mdb.PaymentConfirmation
+			if err := dao.Mdb.Take(&job).Error; err != nil {
+				t.Fatal(err)
+			}
+			result := e.Data
+			if network == "sui" {
+				var fields map[string]json.RawMessage
+				if err := json.Unmarshal(result, &fields); err != nil {
+					t.Fatal(err)
+				}
+				fields["checkpoint"] = json.RawMessage("17")
+				result, _ = json.Marshal(fields)
+			} else {
+				result = json.RawMessage(fmt.Sprintf(`{"transaction":{"hash":"digest","from":"0x1111111111111111111111111111111111111111","to":%q,"value":"0xde0b6b3a7640000","blockHash":"block"},"receipt":{"transactionHash":"digest","blockHash":"block","blockNumber":"0x11","status":"0x1","logs":[]}}`, address))
+			}
+			if err := ConfirmPayment(t.Context(), nil, func(context.Context, string, string) (json.RawMessage, error) { return result, nil }, job); err != nil {
+				t.Fatal(err)
+			}
+			got, err := data.GetOrderInfoByTradeId(order.TradeId)
+			if err != nil || got.Status != mdb.StatusPaySuccess {
+				t.Fatal(got, err)
+			}
+
 		})
 	}
 }
@@ -96,7 +125,7 @@ func TestBaseUSDCSettlementUsesSeededContract(t *testing.T) {
 		want     int
 	}{
 		{"0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca", mdb.StatusWaitPay},    // Bridged USDbC
-		{"0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", mdb.StatusPaySuccess}, // Circle USDC
+		{"0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", mdb.StatusConfirming}, // Circle USDC
 	} {
 		log := json.RawMessage(fmt.Sprintf(`{"address":%q,"topics":["0x%s","0x%064x","0x%064s"],"data":"0x%064x"}`, tc.contract, transferSignature, 1, recipient[2:], 1000000))
 		evidence, err := json.Marshal(scanner.Evidence{Transaction: json.RawMessage(`{"hash":"digest"}`), Logs: []json.RawMessage{log}})

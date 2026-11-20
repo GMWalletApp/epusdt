@@ -803,16 +803,25 @@ func TestManualVerifyTronPaymentHTTPFlow(t *testing.T) {
 		t.Fatalf("create order: %v", err)
 	}
 
+	previous := StrictTransaction
+	t.Cleanup(func() { StrictTransaction = previous })
+	StrictTransaction = func(context.Context, string, string) (json.RawMessage, error) {
+		return nil, fmt.Errorf("nodes disagree")
+	}
+	if _, err := ValidateManualOrderPayment(order, txID); err == nil {
+		t.Fatal("manual payment bypassed strict confirmation")
+	}
+	StrictTransaction = func(_ context.Context, n, h string) (json.RawMessage, error) {
+		if n != "tron" || h != txID {
+			t.Fatalf("unexpected strict request %s %s", n, h)
+		}
+		return json.RawMessage(fmt.Sprintf(`{"transaction":{"txID":%q,"ret":[{"contractRet":"SUCCESS"}]},"receipt":{"id":%q,"blockNumber":100,"blockTimeStamp":%d,"log":[{"address":%q,"topics":[%q,"%064x","%064s"],"data":"%064x"}]}}`, h, h, blockTimeMs, contractHex[2:], transferSignature, 1, recipientHex[2:], rawAmount)), nil
+	}
 	got, err := ValidateManualOrderPayment(order, "0X"+strings.ToUpper(txID))
-	if err != nil {
-		t.Fatalf("ValidateManualOrderPayment(): %v", err)
+	if err != nil || got != txID || requestCalls != 6 {
+		t.Fatalf("verified=%s manual requests=%d err=%v", got, requestCalls, err)
 	}
-	if got != txID {
-		t.Fatalf("canonical tx id = %q, want %q", got, txID)
-	}
-	if requestCalls != 3 {
-		t.Fatalf("manual verify request calls = %d, want 3", requestCalls)
-	}
+
 }
 
 func TestManualVerifySolanaRejectsMissingBlockTime(t *testing.T) {
