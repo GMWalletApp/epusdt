@@ -8,6 +8,8 @@ type NodeEndpoint struct {
 }
 
 var builtinNodes = []NodeEndpoint{
+	{"aptos", "http", "https://aptos-rest.publicnode.com"},
+	{"solana", "http", "https://solana-rpc.publicnode.com"},
 	{"tron", "http", "https://tron-mainnet.token.im"},
 	{"tron", "http", "https://api.trongrid.io"},
 	{"tron", "grpc", "grpc://18.206.50.220:50051"},

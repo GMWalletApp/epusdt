@@ -1,0 +1,143 @@
+# ChainScanner · Deployment guide
+
+[Home](../../README.md) · [Quick start](#quick-start) · [Networks](#networks) · [API reference](../api/en.md)
+
+<a id="quick-start"></a>
+
+## Quick start
+
+From the repository root, build the server with Go 1.25 or later. The example uses Base and a local SQLite file. Use a fresh checkout and a shell with `openssl`, `curl` and `jq`.
+
+```sh
+go build -o chainscanner ./cmd/chainscanner
+umask 077
+cat > chainscanner.json <<EOF
+{
+  "listen": "127.0.0.1:9081",
+  "database": "chainscanner.sqlite",
+  "networks": [{"name": "base", "confirmations": 3}],
+  "consumers": {"payments": "$(openssl rand -hex 32)"},
+  "admin_token": "$(openssl rand -hex 32)"
+}
+EOF
+./chainscanner -config chainscanner.json
+```
+
+In a second terminal in the same directory, replace the sample address with a Base address you want to follow. Save the returned `from_height`; it is the first eligible height, inclusive.
+
+```sh
+BASE=http://127.0.0.1:9081
+TOKEN=$(jq -r '.consumers.payments' chainscanner.json)
+ADDRESS=0x1111111111111111111111111111111111111111
+jq -nc --arg a "$ADDRESS" '[{network:"base",address:$a}]' |
+  curl -sS -X PUT "$BASE/v2/subscriptions" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data-binary @-
+```
+
+Poll the queue. An empty response (HTTP 204) means no matching delivery arrived during the wait. When a delivery arrives, persist your business result, then acknowledge its `id` using the API reference.
+
+```sh
+curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v2/events/next?network=base&wait=15"
+```
+
+[API reference](../api/en.md)
+
+<a id="configuration"></a>
+
+## Configuration
+
+| Setting | Behavior |
+| --- | --- |
+| `listen` | Defaults to `127.0.0.1:9081`. Use TLS when exposing the bearer-authenticated API. |
+| `database` | Omit for in-memory operation. A file retains watches, gaps and unacknowledged deliveries across restarts. Keep the file and its WAL on persistent storage. Only one process may own the file. |
+| `networks[].name` · `url` | One entry per concrete network. An optional URL takes priority at startup. A network with catalog nodes can be enabled by name alone. |
+| `confirmations` | Required depth before delivery. The scan frontier is `tip - max(confirmations - 1, 0)`. On an L2 this counts L2 blocks. |
+| `lookback` | A positive value includes recent eligible history on activation. By default the first watch starts at the observed tip plus one. |
+| `interval_seconds` | Polling interval, 5 seconds by default. Supported streams also wake an active worker on new heads. |
+| `protocol` · `api_key` · `history_url` · `history_api_key` | Choose an interface from the table below. Set `history_url` for paired transports. Its credentials are independent of the primary URL. |
+| `trace_calls` | Enable internal EVM call evidence with execution JSON-RPC and a provider supporting the call tracer. |
+| `consumers` · `admin_token` | Map consumer names to distinct tokens of at least 24 bytes. An optional, separate admin token enables node management. |
+
+<a id="networks"></a>
+
+## Networks and transports
+
+EVM mainnets share an adapter. Set the exact network ID in every watch and node entry. Connections verify the execution chain ID. All 13 support JSON-RPC over HTTP or WebSocket, local IPC and Geth-compatible GraphQL. Ethereum also supports Beacon SSE paired with execution HTTP.
+
+| Network | ID | Chain ID | Network | ID | Chain ID |
+| --- | --- | --- | --- | --- | --- |
+| Ethereum | `ethereum` | 1 | Base | `base` | 8453 |
+| Arbitrum One | `arbitrum` | 42161 | HyperEVM | `hyperevm` | 999 |
+| BNB Smart Chain | `binance` | 56 | Monad | `monad` | 143 |
+| Avalanche C-Chain | `avalanche` | 43114 | Arc | `arc` | 5042 |
+| Polygon PoS | `polygon` | 137 | Morph | `morph` | 2818 |
+| OP Mainnet | `optimism` | 10 | Robinhood Chain | `robinhood` | 4663 |
+| Plasma | `plasma` | 9745 |  |  |  |
+
+| Network | Protocols | Activity and history |
+| --- | --- | --- |
+| `tron` | `http` · `rest` · `grpc` · `solidity-http` · `solidity-grpc` · `jsonrpc` | Wallet transfers, receipts and internal transfers. WalletSolidity reads solidified blocks. JSON-RPC needs a Wallet HTTP history URL. |
+| `solana` | `http` · `jsonrpc` · `ws` · `grpc` | Finalized slots, transaction accounts and SPL owners. PubSub and Yellowstone require HTTP history for full blocks and skipped slots. |
+| `sui` | `grpc` · `graphql` | Native Move checkpoints, senders, sponsors, owners and events. The HTTPS default uses gRPC v2. |
+| `aptos` | `http` · `rest` · `grpc` · `graphql` | Native Move ledger versions, signers, events and write sets. Both RawData gRPC and Indexer GraphQL need fullnode REST history. |
+| `ton` | `lite` · `rest` · `jsonrpc` | Masterchain and shard activity, accounts and message endpoints. Lite uses a global config URL. TON Center v2 uses `/api/v2` or `/api/v2/jsonRPC` and must serve block BOCs. |
+
+```json
+{
+  "name": "solana",
+  "protocol": "ws",
+  "url": "wss://api.mainnet-beta.solana.com",
+  "history_url": "https://api.mainnet-beta.solana.com"
+}
+```
+
+<a id="recovery"></a>
+
+## Scanning and recovery
+
+```mermaid
+flowchart LR
+    W["Watched addresses"] --> S["ChainScanner"]
+    N["RPC nodes"] --> S
+    S --> Q["Consumer queues"]
+```
+
+The first watch starts the network worker. The last removal stops its reads and clears its progress and gaps. Queued deliveries survive unsubscribe. In memory mode, re-register after restart and reconcile the interruption from consumer records.
+
+If block 101 is missing, activity in 102 and 103 can already reach consumers. The height API stays at 100 until 101 completes. A new subscription starts after the highest assigned height, so earlier gaps retain their original subscriber boundaries.
+
+Each network keeps up to 32 outstanding ranges and uses up to eight distinct history endpoints. A stream signal or poll triggers a head check on a free lane. Its height and latency also update health for direct endpoints. A node can read a range ending at height B when its recent head is at least B + confirmations − 1. With four confirmations a node at 105 can scan through 102, while a node at 106 can scan through 103. Unknown or stale nodes receive a probe first. Lower nodes can repair earlier gaps.
+
+Each completion frees a lane for more work, including newly confirmed blocks while an older request is still running. Errors and deadlines trigger retries on another eligible provider. Shared history URLs take turns. Solana reuses a list of up to 16 finalized slots per history source and keeps block reads and delivery independent.
+
+In the source tree, `internal/nodes/live.go` owns the watch-period queue, `health.go` shares head observations, and `worker.go` handles provider reads. `internal/engine` reserves gaps and commits matching deliveries. `internal/feed` exposes the HTTP, WebSocket and gRPC interfaces.
+
+Every three consecutive failures of the same operation trigger a cooldown of 1, 3, 6, 10, 15 minutes and so on, capped at one hour. A successful height check resets only height failures; reading a range successfully resets both streaks.
+
+The standalone server refreshes ChainList at startup and every 15 minutes, including while workers are idle. It probes public EVM HTTPS/WSS nodes, checks chain ID and recent headers, and preserves operator-owned entries. A failed catalog download leaves the previous inventory intact. The UniSat Bitcoin entry supports height probes only.
+
+<details>
+<summary>Transport details and migration</summary>
+
+For TLS gRPC use `grpcs://host:port` or `https://host:port`; plaintext uses `grpc://host:port`. Ethereum Beacon SSE uses the provider’s `/eth/v1/events` route, IPC accepts a local Unix socket, and GraphQL takes the full endpoint URL. A WebSocket execution node must also serve normal RPC reads.
+
+EVM matching covers transaction endpoints, created contracts, log emitters and address-shaped indexed topics. Optional traces can reveal internal calls with no logs. Arbitrum Nova, HyperCore trading and Avalanche X/P chains have separate ledgers. A matching transaction can be outgoing or unsuccessful. Check the evidence before crediting a payment.
+
+If a previous deployment relied on the old implicit file, set `"database":"chainscanner.sqlite"` with that file’s original path before upgrading. Legacy v1 subscriptions may only acquire a start-height receipt on their first v2 registration.
+
+</details>
+
+<a id="go"></a>
+
+## Go integration
+
+Import the root package to embed the scanner or use its HTTP client. Run the race-enabled test suite from the repository root.
+
+```go
+import scanner "github.com/GMWalletApp/ChainScanner"
+```
+
+```sh
+go test -race ./...
+```
+
+[API reference](../api/en.md) · [scanner.go](https://github.com/GMWalletApp/ChainScanner/blob/main/scanner.go) · [MIT](https://github.com/GMWalletApp/ChainScanner/blob/main/LICENSE)

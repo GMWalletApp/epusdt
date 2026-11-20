@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/GMWalletApp/ChainScanner/internal/chains"
@@ -12,17 +13,37 @@ import (
 // Reserve bounded new work and rotate older holes. A crash after reservation
 // leaves every uncommitted span eligible for recovery.
 func (s *Store) plan(ctx context.Context, network string, high, head int64, limit int) (work []chains.Span, assigned int64, err error) {
+	return s.planAvailable(ctx, network, high, head, max(2, limit), nil, 0)
+}
+
+func (s *Store) planAvailable(ctx context.Context, network string, high, head int64, limit int, owned []int64, retryDelay time.Duration) (work []chains.Span, assigned int64, err error) {
+	if limit <= 0 {
+		return nil, high, nil
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, high, err
 	}
 	defer tx.Rollback()
-	limit = max(2, limit)
+
 	retryLimit := limit
 	if high < head {
-		retryLimit = limit / 2
+		retryLimit = max(1, limit/2)
 	}
-	rows, err := tx.QueryContext(ctx, "SELECT first,last FROM scan_gaps WHERE network=? AND last<=? ORDER BY attempted,first LIMIT ?", network, head, retryLimit)
+	query := "SELECT first,last FROM scan_gaps WHERE network=? AND last<=?"
+	args := []any{network, head}
+	if len(owned) > 0 {
+		query += " AND first NOT IN (?" + strings.Repeat(",?", len(owned)-1) + ")"
+		for _, h := range owned {
+			args = append(args, h)
+		}
+	}
+	if retryDelay > 0 {
+		query += " AND attempted<=?"
+		args = append(args, time.Now().Add(-retryDelay).UnixMicro())
+	}
+	rows, err := tx.QueryContext(ctx, query+" ORDER BY attempted,first LIMIT ?", append(args, retryLimit)...)
+
 	if err != nil {
 		return nil, high, err
 	}

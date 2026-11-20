@@ -1,0 +1,395 @@
+# ChainScanner · 接口参考
+
+[English](en.md) · **简体中文** · [Tiếng Việt](vi.md) · [Español](es.md) · [Русский](ru.md)
+
+[首页](../../README.zh-CN.md) · [快速开始](../guide/zh-CN.md#quick-start) · [连接与鉴权](#auth)  ·  [替换订阅](#subscriptions)  ·  [读取与确认投递](#deliveries)  ·  [长连接与订阅](#streaming)  ·  [节点管理](#nodes)  ·  [错误处理](#errors)
+
+消费者使用自己的令牌注册订阅、读取并确认事件。节点管理使用独立的管理员令牌。以下示例沿用快速开始中的本机服务。
+
+<a id="auth"></a>
+
+## 连接与鉴权
+
+每次请求都发送 `Authorization: Bearer <token>`，服务按令牌确定消费者及其队列。所有令牌必须互不相同，长度至少 24 字节。配置 `admin_token` 后才开启管理路由。JSON 请求体使用 `Content-Type: application/json`。成功且有正文时返回 JSON；HTTP 204 没有正文。处理器返回的错误通常是纯文本。
+
+```sh
+BASE=http://127.0.0.1:9081
+TOKEN=$(jq -r '.consumers.payments' chainscanner.json)
+ADMIN=$(jq -r '.admin_token' chainscanner.json)
+consumer() { curl -sS -i -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' "$@"; }
+admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' "$@"; }
+```
+
+<a id="routes"></a>
+
+## 接口索引
+
+| 角色 | HTTP | 成功状态 |
+| --- | --- | --- |
+| 消费者 | [`PUT /v2/subscriptions`](#subscribe-v2) | `200` |
+| 消费者 | [`PUT /v1/subscriptions`](#subscribe-v1) | `204` |
+| 消费者 | [`GET /v2/events/next`](#next-v2) | `200 / 204` |
+| 消费者 | [`GET /v1/events/next`](#next-v1) | `200 / 204` |
+| 消费者 | [`POST /v1/events/{id}/ack`](#ack) | `204` |
+| 消费者 | [`GET /v1/heights/{network}`](#height) | `200` |
+| 管理员 | [`GET /v1/admin/nodes`](#list) | `200` |
+| 管理员 | [`POST /v1/admin/nodes`](#add) | `201` |
+| 管理员 | [`POST /v1/admin/nodes/{id}/test`](#test-one) | `200` |
+| 管理员 | [`POST /v1/admin/nodes/test`](#test-all) | `200` |
+| 管理员 | [`DELETE /v1/admin/nodes/{id}`](#delete) | `204` |
+
+<a id="subscriptions"></a>
+
+## 替换订阅
+
+请求体为该消费者的**完整订阅列表**，JSON 数组上限 8 MiB。每项含字符串 `network` 和 `address`，分别为具体网络 ID 及该网络上的合法地址。旧订阅未出现在新列表中即被移除。发送空数组可全部退订，已排队事件仍可读取。
+
+<a id="subscribe-v2"></a>
+
+### `PUT /v2/subscriptions`
+
+返回 **200**，按输入顺序为每个去重后的订阅返回一项。`from_height` 是含首块的起始高度。重发相同订阅会保留原起点。链已在扫描时，新订阅从已分配的最高高度之后开始；冷启动注册会查询链头。无效地址或未配置的链返回 **400**。首次边界无法确定时返回 **409**，原列表保留；节点恢复后可重发完整列表。
+
+```sh
+consumer -X PUT "$BASE/v2/subscriptions" --data '[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]'
+```
+
+```json
+[
+  {
+    "network": "base",
+    "address": "0x1111111111111111111111111111111111111111",
+    "from_height": 12345678
+  }
+]
+```
+
+<a id="subscribe-v1"></a>
+
+### `PUT /v1/subscriptions`
+
+请求体与 v2 相同。成功返回 **204**，不附起始高度。v1 可在扫描线程就绪前登记订阅。若展示收款地址前必须取得监听起点，使用 v2。
+
+```sh
+consumer -X PUT "$BASE/v1/subscriptions" --data '[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]'
+```
+
+<a id="deliveries"></a>
+
+## 读取与确认投递
+
+<a id="next-v2"></a>
+
+### `GET /v2/events/next`
+
+必填查询参数 `network` 指定一条受支持的链。可选整数 `wait` 开启 1–20 秒长轮询；省略即立即返回。有待处理投递时返回 **200**，没有则返回 **204**。缺少或不支持的网络、非法等待时间均返回 **400**。
+
+```sh
+consumer "$BASE/v2/events/next?network=base&wait=15"
+```
+
+下例展示投递信封，交易证据已简化。同一笔交易同时匹配多个监听地址时，每个消费者只收到一份。转入、转出和失败交易都可能命中地址；支付端应核对方向、执行结果、资产与金额后再入账。
+
+```json
+{
+  "id": 17,
+  "activity": {
+    "confirmations": 3,
+    "network": "base",
+    "height": 12345679,
+    "tx_id": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "time_ms": 1770000000000,
+    "addresses": [
+      "0x1111111111111111111111111111111111111111"
+    ],
+    "data": {
+      "transaction": {
+        "hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "to": "0x1111111111111111111111111111111111111111"
+      }
+    }
+  }
+}
+```
+
+| 字段 | 类型 | 行为 |
+| --- | --- | --- |
+| `id` | `int64` | 队列投递 ID，用在确认接口路径中。 |
+| `activity.network, activity.height` | `string, int64` | 具体网络与链上位置。 |
+| `activity.tx_id` | `string` | 链上交易标识。 |
+| `activity.confirmations, activity.time_ms` | `int64, int64` | 观察到的确认数、链上时间戳（Unix 毫秒）。 |
+| `activity.addresses` | `string[]` | 该消费者本次匹配到的监听地址。 |
+| `activity.data` | `JSON` | 链专属 JSON 证据。EVM 数据可包含 `transaction`、`logs`、`receipt`、`trace`。 |
+
+<a id="next-v1"></a>
+
+### `GET /v1/events/next`
+
+读取消费者跨链共享的队列。`wait` 范围和 **200/204** 语义与 v2 相同。使用此接口时每个令牌运行一个读取器；使用 v2 时可为每个令牌的每条链各运行一个。
+
+```sh
+consumer "$BASE/v1/events/next?wait=5"
+```
+
+<a id="ack"></a>
+
+### `POST /v1/events/{id}/ack`
+
+路径填正整数投递 `id`，不传正文。确认仅作用于当前令牌的队列，成功返回 **204**；重复确认已处理的 ID 同样返回 **204**。无效或非正 ID 返回 **400**。读取本身不会移除事件。先落库再确认，并按网络与交易或转账标识去重，避免两步之间崩溃造成重复入账。
+
+```sh
+ID=17
+consumer -X POST "$BASE/v1/events/$ID/ack"
+```
+
+<a id="height"></a>
+
+### `GET /v1/heights/{network}`
+
+返回 **200** 和一个 JSON 整数，表示已连续完成的最高高度。没有游标时为 `-1`。存在较早缺块时，已投递事件的高度可高于此值。Aptos 使用账本版本，Solana 使用 slot，Sui 使用检查点。
+
+```sh
+consumer "$BASE/v1/heights/base"
+```
+
+```json
+12345677
+```
+
+<a id="streaming"></a>
+
+## 长连接与订阅
+
+### 业务服务如何持续接收事件
+
+业务服务可以建立 WebSocket 或 gRPC 双向流，在匹配的地址活动进入队列时接收推送。两种方式与 HTTP 长轮询共用消费者令牌、订阅和确认状态。每个消费者在每条网络上选一种方式运行一个读取器；多个消费者可以独立订阅同一地址。
+
+**建立连接。** 在仓库根目录，用快速开始里的令牌任选下面一条命令。WebSocket 使用 HTTP/1.1 Upgrade 和 JSON 文本帧，gRPC 通过同一端口使用 HTTP/2 和公开的 protobuf 定义。以交互方式输入消息，保持输入流开启。远程部署时使用 WSS 或 TLS gRPC，在反向代理上分别转发 WebSocket Upgrade 和 HTTP/2 gRPC 流。
+
+[activity.proto](../../api/activity/v1/activity.proto)
+
+```sh
+websocat -H="Authorization: Bearer $TOKEN" ws://127.0.0.1:9081/v2/events/stream
+```
+
+```sh
+grpcurl -plaintext -import-path . -proto api/activity/v1/activity.proto -H "authorization: Bearer $TOKEN" -d @ 127.0.0.1:9081 chainscanner.activity.v1.ActivityFeed/Subscribe
+```
+
+**打开流 → 收到回执。** 第一帧的 `network` 必须是已配置的具体网络。只有要替换该消费者在**所有链**的完整订阅时才带 `replace`，显式传空集合会清空全部订阅。重连时省略 `replace` 即可沿用现有订阅。服务端返回 `ready`，替换成功时包含规范化地址和起始高度（含首块）；沿用现有订阅时回执为空。
+
+```json
+{"open":{"network":"base","replace":{"watches":[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]}}}
+```
+
+```json
+{
+  "ready": {
+    "registrations": [
+      {
+        "network": "base",
+        "address": "0x1111111111111111111111111111111111111111",
+        "fromHeight": "12345678"
+      }
+    ]
+  }
+}
+```
+
+**接收 → 持久化 → 确认。** 每条流一次推送一笔待确认事件。按链解析 `dataJson` 中的原始 JSON，持久化业务结果，再在原连接上发送相同投递 ID 的 `ack`。确认成功后才会推送下一笔。下面的 ID 仅作示例。ProtoJSON 用十进制字符串表示 64 位整数。队列空闲时没有业务消息。
+
+```json
+{
+  "delivery": {
+    "id": "17",
+    "network": "base",
+    "height": "12345679",
+    "txId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "timeMs": "1770000000000",
+    "confirmations": "3",
+    "addresses": [
+      "0x1111111111111111111111111111111111111111"
+    ],
+    "dataJson": "{\"transaction\":{\"to\":\"0x1111111111111111111111111111111111111111\"}}"
+  }
+}
+```
+
+```json
+{"ack":"17"}
+```
+
+**断线与错误。** 退避重连后重新发送 `open`。未确认事件可能再次投递，也可以改用另一种协议接收，业务侧应按网络和交易或转账标识去重。令牌无效时 WebSocket 握手返回 HTTP 401，gRPC 返回 `UNAUTHENTICATED`。链名错误或确认 ID 不符时分别返回关闭码 1008 或 `INVALID_ARGUMENT`。起始高度暂不可用时返回 1013 或 `FAILED_PRECONDITION`；队列存储暂不可用时返回 1013 或 `UNAVAILABLE`。gRPC 客户端的最大接收消息大小应能容纳预期的最大交易证据。
+
+```json
+{"open":{"network":"base"}}
+```
+
+WebSocket 客户端需响应协议层的 Ping 帧并回送 Pong。请使用能设置 Authorization 请求头的后端客户端；浏览器原生 WebSocket 构造函数无法设置此头。gRPC 客户端应保持发送端开启以便确认，停止空闲订阅时取消 RPC。嵌入式 Go 服务要启用 HTTP/2 才能提供 gRPC；独立二进制已在监听端口启用明文 HTTP/2。
+
+### HTTP 长轮询
+
+业务方通过 HTTP 长轮询接收匹配交易。先注册完整地址列表，再为每个消费者的每条链启动一个读取循环。客户端及反向代理的超时应长于 `wait`。下例使用快速开始里的令牌、Python 3 和本地 SQLite 收件箱。收到 204 立即发起下一次请求，收到事件则先提交到本地数据库，再确认投递。
+
+```sh
+export BASE TOKEN
+python3 - <<'PY'
+import http.client
+import json
+import os
+import sqlite3
+import time
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+base = os.environ["BASE"].rstrip("/")
+headers = {"Authorization": "Bearer " + os.environ["TOKEN"]}
+
+def request(path, method="GET"):
+    req = Request(base + path, headers=headers, method=method)
+    with urlopen(req, timeout=30) as res:
+        if res.status != 204:
+            return json.load(res)
+
+db = sqlite3.connect("base-inbox.sqlite")
+db.execute("""CREATE TABLE IF NOT EXISTS inbox (
+    network TEXT, tx_id TEXT, activity TEXT NOT NULL, PRIMARY KEY (network, tx_id)
+)""")
+delay = 1
+while True:
+    try:
+        delivery = request("/v2/events/next?network=base&wait=20")
+        if delivery is not None:
+            activity = delivery["activity"]
+            with db:
+                db.execute("INSERT INTO inbox VALUES (?, ?, ?) "
+                           "ON CONFLICT(network, tx_id) DO NOTHING",
+                           (activity["network"], activity["tx_id"], json.dumps(activity)))
+            request("/v1/events/{}/ack".format(delivery["id"]), "POST")
+        delay = 1
+    except HTTPError as err:
+        if err.code != 429 and err.code < 500:
+            raise
+    except (URLError, TimeoutError, ConnectionError, http.client.IncompleteRead):
+        pass
+    else:
+        continue
+    time.sleep(delay)
+    delay = min(30, 2 * delay)
+PY
+```
+
+示例为此消费者按网络和交易保存一条记录。如果同一交易含有多笔需分别入账的转账，应将链上转账索引也纳入业务去重键。确认响应丢失时可能再次收到投递。纯内存扫描器重启会丢失订阅和待投递事件，业务方要重新注册完整列表，并依据自己的检查点和链上历史核对空档。文件模式的 SQLite 可在重启后保留订阅和队列。
+
+### 链节点如何通知 ChainScanner
+
+为具体网络选择节点接口。收到新区块头通知后，扫描器会读取链上数据，并根据连续完成的高度在断线后补扫。节点流处于启用状态时，断开后等待 5 秒重连。某条链没有监听地址时，该链的扫描器进入空闲。
+
+| 网络 | 新区块或进度通知 | 历史数据来源 |
+| --- | --- | --- |
+| 各 EVM 网络 | WebSocket JSON-RPC · `eth_subscribe("newHeads")` | 同一节点的执行层 RPC |
+| Solana | WebSocket · `rootSubscribe` 或 Yellowstone gRPC 的最终确认 slot 通知 | 在 `history_url` 配置 HTTP JSON-RPC |
+| Sui | gRPC · `SubscribeCheckpoints` | 用同一 gRPC 节点读取检查点 |
+| Aptos | RawData gRPC 交易流 | 在 `history_url` 配置全节点 REST |
+
+```json
+{
+  "name": "solana",
+  "protocol": "ws",
+  "url": "wss://api.mainnet-beta.solana.com",
+  "history_url": "https://api.mainnet-beta.solana.com"
+}
+```
+
+**Ethereum Beacon（可选）。** 信标节点可以通过一条保持打开的 HTTP 响应推送头部通知，这种机制称为 SSE（Server-Sent Events）。将 `protocol` 设为 `sse`，`url` 指向信标节点的 `/eth/v1/events`，`history_url` 填以太坊执行层 HTTP RPC。扫描器订阅 `head` 主题，游标使用执行层区块高度。使用支持 WebSocket 的执行节点时，单靠该节点即可接收新区块头。
+
+<a id="nodes"></a>
+
+## 节点管理
+
+<a id="list"></a>
+
+### `GET /v1/admin/nodes`
+
+可选查询参数 `network` 按链筛选。返回 **200** 和节点数组，包括上次保存的探测结果。列出清单不会请求上游 RPC。没有匹配节点时返回 `[]`。
+
+```sh
+admin "$BASE/v1/admin/nodes?network=base"
+```
+
+```json
+[
+  {
+    "id": 42,
+    "network": "base",
+    "protocol": "http",
+    "url": "https://rpc.example.org",
+    "origin": "custom",
+    "status": "untested",
+    "height": null,
+    "checked_at_ms": null,
+    "latency_ms": null,
+    "height_unit": "block",
+    "scannable": true
+  }
+]
+```
+
+| 字段 | 类型 | 行为 |
+| --- | --- | --- |
+| `id, network` | `int64, string` | 稳定的数值 ID 和具体网络。 |
+| `protocol, url` | `string, string` | 选定的接口及节点 URL。 |
+| `origin` | `string` | 来源可为 `builtin`、`config`、`custom`、`chainlist`。 |
+| `status` | `string` | 可为 `untested`、`ok`、`timeout`、`unavailable`，探测后检查此字段。 |
+| `height, height_unit` | `int64? , string` | 上游高度或 null。单位可为 `block`、`slot`、`checkpoint`、`ledger_version`、`beacon_slot`。 |
+| `checked_at_ms, latency_ms` | `int64?, int64?` | 探测开始的 Unix 毫秒时间戳和耗时毫秒数。首次探测前均为 null。 |
+| `scannable` | `bool` | 节点能否用于交易扫描。UniSat 只能报告 Bitcoin 高度。 |
+
+<a id="add"></a>
+
+### `POST /v1/admin/nodes`
+
+JSON 字符串 `network`、`url` 标识网络与节点，建议显式发送 `protocol` 指定接口。可选字符串有 `api_key`、`history_url`、`history_api_key`；配对协议必须提供单独的历史 URL。未知字段、错误选项或非法 JSON 返回 **400**，正文上限 8 KiB。创建成功返回 **201** 和节点对象，已存在返回 **409**。添加节点不会单独启用某条链的扫描线程。
+
+```sh
+admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http","url":"https://rpc.example.org"}'
+```
+
+<a id="test-one"></a>
+
+### `POST /v1/admin/nodes/{id}/test`
+
+路径 `id` 为正整数，不传正文。返回 **200** 和更新后的节点；探测失败也可返回 200，此时状态为 `timeout` 或 `unavailable`。无效 ID 返回 **400**，不存在或已移除的 ID 返回 **404**。
+
+```sh
+NODE_ID=$(curl -fsS -H "Authorization: Bearer $ADMIN" "$BASE/v1/admin/nodes?network=base" | jq -er '.[] | select(.url == "https://rpc.example.org" and .origin == "custom") | .id') &&
+admin -X POST "$BASE/v1/admin/nodes/$NODE_ID/test"
+```
+
+<a id="test-all"></a>
+
+### `POST /v1/admin/nodes/test`
+
+探测所有可见节点，可用 `network` 按链筛选，不传正文。返回 **200** 和节点数组，包含探测失败项。最多并行探测八个节点；另一批次正在执行时返回 **409**。客户端取消请求会中止本批探测。
+
+```sh
+admin -X POST "$BASE/v1/admin/nodes/test?network=base"
+```
+
+<a id="delete"></a>
+
+### `DELETE /v1/admin/nodes/{id}`
+
+按正整数 `id` 移除节点，包括内置节点和配置节点。成功返回 **204**，无效 ID 返回 **400**，节点不存在返回 **404**。文件模式下重启后仍保留删除记录。重新提交节点可以恢复该条目。
+
+```sh
+admin -X DELETE "$BASE/v1/admin/nodes/$NODE_ID"
+```
+
+<a id="errors"></a>
+
+## 错误处理
+
+遇到 **400** 先修正参数；**401** 时检查 Bearer 令牌及角色。**409** 的含义随接口而异，见各接口说明。**503** 表示订阅、队列、游标或节点存储暂时无法完成操作，可退避重试。空队列返回 **204**。
+
+[使用指南](../../README.zh-CN.md) · [ConsumerHandler](https://github.com/GMWalletApp/ChainScanner/blob/main/internal/feed/handler.go) · [NodeRegistry.Handler](https://github.com/GMWalletApp/ChainScanner/blob/main/internal/nodes/http.go)

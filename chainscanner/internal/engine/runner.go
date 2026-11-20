@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"errors"
-
 	"log"
 	"sync"
 	"time"
@@ -23,6 +22,21 @@ func ActivationCursor(tip int64, n chains.Network) int64 {
 
 // Step reserves confirmed work and atomically queues deliveries as each read completes.
 func (s *Store) Step(ctx context.Context, n chains.Network, source chains.Source) (bool, error) {
+	return s.step(ctx, n, source, false)
+}
+
+// Pump fills free provider lanes while earlier reads remain in flight. Run it
+// serially inside WhileWatched with one pool owned by that watch period.
+func (s *Store) Pump(ctx context.Context, n chains.Network, source chains.Source) (bool, error) {
+	return s.step(ctx, n, source, true)
+}
+
+type liveSource interface {
+	LiveWindow(context.Context, context.Context, time.Duration) (int64, []int64, int, error)
+	AdvanceLive(context.Context, []chains.Span, chains.FinishRange) (bool, error)
+}
+
+func (s *Store) step(ctx context.Context, n chains.Network, source chains.Source, continuous bool) (bool, error) {
 	lock, _ := s.workers.LoadOrStore(n.Name, new(sync.Mutex))
 	worker := lock.(*sync.Mutex)
 	worker.Lock()
@@ -40,7 +54,24 @@ func (s *Store) Step(ctx context.Context, n chains.Network, source chains.Source
 	if period.Err() != nil {
 		return false, nil
 	}
-	latest, err := source.Head(ctx)
+	var latest int64
+	var err error
+	var owned []int64
+	limit := 16
+	pool, rolling := source.(liveSource)
+	rolling = rolling && continuous
+	interval := time.Duration(n.IntervalSeconds) * time.Second
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	if rolling {
+		latest, owned, limit, err = pool.LiveWindow(ctx, period, interval)
+	} else {
+		latest, err = source.Head(ctx)
+		if pool, ok := source.(interface{ ScanWindow() int }); ok {
+			limit = pool.ScanWindow()
+		}
+	}
 	if err != nil {
 		return false, err
 	}
@@ -72,13 +103,13 @@ func (s *Store) Step(ctx context.Context, n chains.Network, source chains.Source
 		s.demandMu.Unlock()
 		return false, nil
 	}
-	limit := 16
-	if pool, ok := source.(interface{ ScanWindow() int }); ok {
-		limit = pool.ScanWindow()
+	var retryDelay time.Duration
+	if rolling {
+		retryDelay = interval
 	}
-	work, high, err := s.plan(ctx, n.Name, prev, head, limit)
+	work, high, err := s.planAvailable(ctx, n.Name, prev, head, limit, owned, retryDelay)
 	s.demandMu.Unlock()
-	if err != nil || len(work) == 0 {
+	if err != nil || (!rolling && len(work) == 0) {
 		return false, err
 	}
 	completed := 0
@@ -98,13 +129,23 @@ func (s *Store) Step(ctx context.Context, n chains.Network, source chains.Source
 			if e.Height < span.First || e.Height > span.Last || (e.Network != "" && e.Network != n.Name) {
 				return errors.New("event outside assigned range")
 			}
-			e.Confirmations = latest - e.Height + 1
+			e.Confirmations = max(n.Confirmations, latest-e.Height+1)
 		}
 		if err := s.complete(ctx, n.Name, span, link, events); err != nil {
 			return err
 		}
 		completed++
 		return nil
+	}
+	if rolling {
+		more, err := pool.AdvanceLive(ctx, work, finish)
+		if err != nil {
+			return false, err
+		}
+		if more {
+			return true, nil
+		}
+		return high < head && completed > 0, unavailable
 	}
 	if err = scanWork(ctx, n.Name, source, work, finish); err != nil {
 		return false, err
@@ -174,7 +215,7 @@ func RunWithSource(ctx context.Context, s *Store, n chains.Network, open func(co
 		}
 		var behind bool
 		if err == nil {
-			behind, err = s.Step(ctx, n, src)
+			behind, err = s.Pump(ctx, n, src)
 		}
 		if ctx.Err() != nil {
 			return

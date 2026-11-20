@@ -116,10 +116,13 @@ func (p *paymentSubscriptions) waitForCursor(network string) error {
 // embeddedWorker adapts EPUSDT's live node selection to the same scanner
 // engine used by the standalone service. Only this worker owns the source.
 type embeddedWorker struct {
-	name  string
-	store *scanner.Store
-	src   *scanner.SourcePool
-	ids   map[scanner.Network]uint64
+	config      scanner.Network
+	nextRefresh time.Time
+	delay       time.Duration
+	name        string
+	store       *scanner.Store
+	src         *scanner.SourcePool
+	ids         map[scanner.Network]uint64
 }
 
 func (w *embeddedWorker) close() {
@@ -175,7 +178,7 @@ func scannerNodeConfig(node mdb.RpcNode, candidates []mdb.RpcNode) (scanner.Netw
 	}
 	return n, scanner.ValidateNetwork(n) == nil
 }
-func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
+func (w *embeddedWorker) refreshNodes(ctx context.Context) (time.Duration, error) {
 	delay := 5 * time.Second
 	chain, err := data.GetChainByNetwork(w.name)
 	if err != nil {
@@ -206,6 +209,7 @@ func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
 			continue
 		}
 		candidate.Confirmations = int64(chain.MinConfirmations)
+		candidate.IntervalSeconds = int(delay / time.Second)
 		configs = append(configs, candidate)
 		w.ids[candidate] = node.ID
 	}
@@ -227,7 +231,24 @@ func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
 	if err = w.src.SetNodes(configs); err != nil {
 		return delay, err
 	}
-	behind, err := w.store.Step(ctx, configs[0], w.src)
+	w.config = configs[0]
+	return delay, nil
+}
+
+func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
+	if !time.Now().Before(w.nextRefresh) {
+		delay, err := w.refreshNodes(ctx)
+		if err != nil {
+			return delay, err
+		}
+		w.delay = delay
+		w.nextRefresh = time.Now().Add(min(delay, 5*time.Second))
+	}
+	delay := w.delay
+	if w.src == nil {
+		return delay, nil
+	}
+	behind, err := w.store.Pump(ctx, w.config, w.src)
 	if err != nil {
 		if ctx.Err() != nil {
 			return delay, nil

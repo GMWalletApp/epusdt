@@ -80,7 +80,10 @@ func run() error {
 		wg.Add(1)
 		go func() { defer wg.Done(); registry.Run(ctx, n) }()
 	}
-	srv := http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+	srv := http.Server{Protocols: protocols, BaseContext: func(net.Listener) context.Context { return ctx }, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
 	go func() { <-ctx.Done(); srv.Close() }()
 	err = srv.Serve(ln)
 	stop()

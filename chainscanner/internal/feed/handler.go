@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	api "github.com/GMWalletApp/ChainScanner/api/activity/v1"
 	"github.com/GMWalletApp/ChainScanner/internal/chains"
+	"google.golang.org/grpc"
 )
 
 // Feed can be backed by a local Store or by a remote authenticated Client.
@@ -36,15 +38,27 @@ func Handler(s subscriptionStore, consumers map[string]string, configured func(s
 		}
 		tokens[key] = name
 	}
+	streams := &streams{store: s, configured: configured, tokens: tokens}
+	rpc := grpc.NewServer(grpc.MaxRecvMsgSize(maxClientFrame))
+	api.RegisterActivityFeedServer(rpc, streams)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		consumer := tokens[sha256.Sum256([]byte(token))]
-		if !ok || consumer == "" {
+		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") && r.URL.Path == api.ActivityFeed_Subscribe_FullMethodName {
+			controller := http.NewResponseController(w)
+			controller.SetReadDeadline(time.Time{})
+			controller.SetWriteDeadline(time.Time{})
+			rpc.ServeHTTP(w, r)
+			return
+		}
+		consumer := streams.consumer(r.Header.Get("Authorization"))
+		if consumer == "" {
 			http.Error(w, "unauthorized", 401)
 			return
 		}
 		ctx := r.Context()
 		switch {
+		case r.Method == "GET" && r.URL.Path == "/v2/events/stream":
+			streams.websocket(w, r, consumer)
+			return
 		case r.Method == "PUT" && (r.URL.Path == "/v1/subscriptions" || r.URL.Path == "/v2/subscriptions"):
 			var watches []Watch
 			dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<20))

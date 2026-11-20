@@ -8,6 +8,8 @@ import (
 // Span is an inclusive range of block heights (ledger versions on Aptos).
 type Span struct{ First, Last int64 }
 
+type FinishRange = func(Span, BlockLink, []Activity, error) error
+
 // ErrFork marks a provider response incompatible with an already accepted neighbor.
 var ErrFork = errors.New("block ancestry conflicts with a completed neighbor")
 

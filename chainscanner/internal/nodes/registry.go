@@ -274,16 +274,10 @@ func (r *NodeRegistry) Test(ctx context.Context, id int64) (Node, error) {
 	if ctx.Err() != nil {
 		return Node{}, ctx.Err()
 	}
-	status := "ok"
-	var observed any = height
-	if err != nil || height < 0 {
-		status = "unavailable"
-		if errors.Is(probe.Err(), context.DeadlineExceeded) {
-			status = "timeout"
-		}
-		observed = nil
+	if errors.Is(probe.Err(), context.DeadlineExceeded) {
+		err = probe.Err()
 	}
-	_, err = r.db.ExecContext(ctx, `UPDATE rpc_nodes SET status=?,height=?,checked_at=?,latency=? WHERE id=? AND removed=0 AND generation=? AND (checked_at IS NULL OR checked_at<=?)`, status, observed, start.UnixMilli(), time.Since(start).Milliseconds(), id, n.generation, start.UnixMilli())
+	err = r.saveHead(ctx, n, headSample{start: start, latency: time.Since(start), height: height, err: err})
 	if err != nil {
 		return Node{}, err
 	}

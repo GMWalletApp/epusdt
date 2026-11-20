@@ -2,8 +2,10 @@ package nodes
 
 import (
 	"context"
+	"log"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/GMWalletApp/ChainScanner/internal/chains"
 	"github.com/GMWalletApp/ChainScanner/internal/engine"
@@ -14,7 +16,7 @@ func (r *NodeRegistry) Run(ctx context.Context, n chains.Network) {
 	r.store.WhileWatched(ctx, n.Name, func(live context.Context) {
 		p := newRegistryPool(live, r, n)
 		defer p.Close()
-		open := func(context.Context, chains.Network) (chains.Source, error) { return p, nil }
+		open := func(context.Context, chains.Network) (chains.Source, error) { return borrowedPool{p}, nil }
 		engine.RunWithSource(live, r.store, n, open, func(chains.Source) <-chan struct{} { return p.Wakeups() })
 	})
 }
@@ -29,8 +31,34 @@ type nodePool struct {
 }
 
 func newRegistryPool(ctx context.Context, r *NodeRegistry, n chains.Network) *nodePool {
-	return &nodePool{SourcePool: NewSourcePool(ctx, n.Name), registry: r, settings: n}
+	p := &nodePool{SourcePool: NewSourcePool(ctx, n.Name), registry: r, settings: n}
+	p.observe = func(cfg chains.Network, h headSample) {
+		node, ok := p.inventory[cfg]
+		// Paired transports obtain their scan height from the companion history API.
+		// The admin height of their primary transport has different semantics.
+		if !ok || chains.NeedsHistory(cfg.Name, node.Protocol) {
+			return
+		}
+		if err := r.saveHead(ctx, node, h); err != nil && ctx.Err() == nil {
+			log.Printf("chain %s: saving node health: %v", cfg.Name, err)
+		}
+	}
+	return p
 }
+
+// The watch period owns the pool. The engine can release its handle after a
+// failed step without disconnecting other providers that are still healthy.
+type borrowedPool struct{ *nodePool }
+
+func (borrowedPool) Close() {}
+
+func (p *nodePool) LiveWindow(ctx, period context.Context, interval time.Duration) (int64, []int64, int, error) {
+	if err := p.refresh(ctx); err != nil {
+		return 0, nil, 0, err
+	}
+	return p.SourcePool.LiveWindow(ctx, period, interval)
+}
+
 func (p *nodePool) Head(ctx context.Context) (int64, error) {
 	if err := p.refresh(ctx); err != nil {
 		return 0, err
@@ -68,7 +96,7 @@ func (p *nodePool) refresh(ctx context.Context) error {
 		p.nodes = slices.DeleteFunc(p.nodes, func(n *endpoint) bool {
 			old, cur := p.inventory[n.cfg], origins[n.cfg]
 			if old.ID != cur.ID || old.Origin != cur.Origin {
-				n.close()
+				p.retire(n)
 				return true
 			}
 			return false

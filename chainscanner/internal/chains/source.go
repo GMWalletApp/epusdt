@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/btcsuite/btcutil/base58"
@@ -70,7 +71,7 @@ func RedactError(err error, n Network) string {
 	return redactEndpointError(err.Error(), n)
 }
 
-var errRateLimited = errors.New("RPC HTTP 429")
+var ErrRateLimited = errors.New("RPC HTTP 429")
 
 // RPC credentials belong to one origin, including provider-specific headers.
 func newNodeHTTPClient(timeout time.Duration) *http.Client {
@@ -83,10 +84,12 @@ func newNodeHTTPClient(timeout time.Duration) *http.Client {
 }
 
 type jsonSource struct {
-	n     Network
-	rpc   *rpc.Client
-	http  *http.Client
-	heads *headSignals
+	n             Network
+	rpc           *rpc.Client
+	http          *http.Client
+	heads         *headSignals
+	finalizedSlot atomic.Int64
+	slots         atomic.Pointer[slotWindow]
 }
 
 func NewSource(ctx context.Context, n Network) (Source, error) {
@@ -144,9 +147,13 @@ func newSource(ctx context.Context, n Network, discovered, watch bool) (Source, 
 			defer cancel()
 			id, e := s.call(probe, "eth_chainId")
 			actual, parseErr := strconv.ParseInt(id.String(), 0, 64)
-			if e != nil || parseErr != nil || actual != EVMChainID(n.Name) {
+			if e != nil {
 				s.Close()
-				return nil, fmt.Errorf("chain ID check failed for %s (received %s): %v", n.Name, id.String(), e)
+				return nil, fmt.Errorf("chain ID check: %w", e)
+			}
+			if parseErr != nil || actual != EVMChainID(n.Name) {
+				s.Close()
+				return nil, fmt.Errorf("chain ID check failed for %s", n.Name)
 			}
 			if watch && (p == "ws" || p == "ipc") {
 				s.heads = startSignals(ctx, func(ctx context.Context, wake func()) error {
@@ -238,9 +245,9 @@ func (s *jsonSource) request(ctx context.Context, path string, post any) (gjson.
 	defer res.Body.Close()
 	if res.StatusCode/100 != 2 {
 		if res.StatusCode == http.StatusTooManyRequests {
-			return gjson.Result{}, errRateLimited
+			return gjson.Result{}, ErrRateLimited
 		}
-		return gjson.Result{}, fmt.Errorf("RPC HTTP %d", res.StatusCode)
+		return gjson.Result{}, rpc.HTTPError{StatusCode: res.StatusCode, Status: res.Status}
 	}
 	b, err := io.ReadAll(io.LimitReader(res.Body, (64<<20)+1))
 	if err != nil {
@@ -279,7 +286,11 @@ func (s *jsonSource) Head(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return strconv.ParseInt(v.String(), 0, 64)
+	height, err := strconv.ParseInt(v.String(), 0, 64)
+	if s.n.Name == "solana" && err == nil {
+		s.finalizedSlot.Store(height)
+	}
+	return height, err
 }
 func (s *jsonSource) Read(ctx context.Context, next, head int64) (int64, []Activity, error) {
 	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)

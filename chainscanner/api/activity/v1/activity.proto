@@ -1,0 +1,35 @@
+syntax = "proto3";
+package chainscanner.activity.v1;
+option go_package = "github.com/GMWalletApp/ChainScanner/api/activity/v1;activityv1";
+
+// A consumer opens one stream per network. Its first frame is Open, followed
+// by one Ack per committed delivery. Disconnecting never acknowledges a delivery.
+service ActivityFeed {
+  rpc Subscribe(stream ClientFrame) returns (stream ServerFrame);
+}
+message Watch { string network = 1; string address = 2; }
+message WatchSet { repeated Watch watches = 1; }
+message Open {
+  string network = 1;
+  // When present, atomically replaces this consumer's watches across all networks.
+  WatchSet replace = 2;
+}
+message ClientFrame {
+  oneof command { Open open = 1; int64 ack = 2; }
+}
+message Registration { string network = 1; string address = 2; int64 from_height = 3; }
+message Ready { repeated Registration registrations = 1; }
+message Delivery {
+  int64 id = 1;
+  string network = 2;
+  int64 height = 3;
+  string tx_id = 4;
+  int64 time_ms = 5;
+  int64 confirmations = 6;
+  repeated string addresses = 7;
+  // Original chain-specific JSON. Preserves the precision of on-chain amounts.
+  string data_json = 8;
+}
+message ServerFrame {
+  oneof result { Ready ready = 1; Delivery delivery = 2; }
+}

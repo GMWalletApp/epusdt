@@ -38,7 +38,7 @@ func (s *tonCenter) method(ctx context.Context, name string, params map[string]a
 	}
 	r, e := s.request(ctx, path, body)
 	// Public TON Center plans can limit callers to one request per second.
-	for attempt := 0; errors.Is(e, errRateLimited) && attempt < 3; attempt++ {
+	for attempt := 0; errors.Is(e, ErrRateLimited) && attempt < 3; attempt++ {
 		select {
 		case <-ctx.Done():
 			return gjson.Result{}, ctx.Err()

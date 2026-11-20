@@ -1,0 +1,395 @@
+# ChainScanner · Referencia de la API
+
+[English](en.md) · [简体中文](zh-CN.md) · [Tiếng Việt](vi.md) · **Español** · [Русский](ru.md)
+
+[Inicio](../../README.es.md) · [Inicio rápido](../guide/es.md#quick-start) · [Conexión y autenticación](#auth)  ·  [Reemplazar suscripciones](#subscriptions)  ·  [Leer y confirmar entregas](#deliveries)  ·  [Suscripciones en tiempo real](#streaming)  ·  [Administración de nodos](#nodes)  ·  [Manejo de errores](#errors)
+
+Usa el token del consumidor para suscribirte, leer y confirmar entregas. La gestión de nodos requiere otro token de administración. Los ejemplos usan el servidor local de la guía de inicio.
+
+<a id="auth"></a>
+
+## Conexión y autenticación
+
+Incluye `Authorization: Bearer <token>` en cada petición. El token identifica al consumidor y su cola. Todos los tokens deben ser distintos y tener al menos 24 bytes. Configura `admin_token` para habilitar las rutas administrativas. Envía JSON con `Content-Type: application/json`. Las respuestas correctas con cuerpo son JSON; HTTP 204 no lleva cuerpo. Los errores suelen ser texto plano.
+
+```sh
+BASE=http://127.0.0.1:9081
+TOKEN=$(jq -r '.consumers.payments' chainscanner.json)
+ADMIN=$(jq -r '.admin_token' chainscanner.json)
+consumer() { curl -sS -i -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' "$@"; }
+admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' "$@"; }
+```
+
+<a id="routes"></a>
+
+## Índice de operaciones
+
+| Rol | HTTP | Éxito |
+| --- | --- | --- |
+| Consumidor | [`PUT /v2/subscriptions`](#subscribe-v2) | `200` |
+| Consumidor | [`PUT /v1/subscriptions`](#subscribe-v1) | `204` |
+| Consumidor | [`GET /v2/events/next`](#next-v2) | `200 / 204` |
+| Consumidor | [`GET /v1/events/next`](#next-v1) | `200 / 204` |
+| Consumidor | [`POST /v1/events/{id}/ack`](#ack) | `204` |
+| Consumidor | [`GET /v1/heights/{network}`](#height) | `200` |
+| Administrador | [`GET /v1/admin/nodes`](#list) | `200` |
+| Administrador | [`POST /v1/admin/nodes`](#add) | `201` |
+| Administrador | [`POST /v1/admin/nodes/{id}/test`](#test-one) | `200` |
+| Administrador | [`POST /v1/admin/nodes/test`](#test-all) | `200` |
+| Administrador | [`DELETE /v1/admin/nodes/{id}`](#delete) | `204` |
+
+<a id="subscriptions"></a>
+
+## Reemplazar suscripciones
+
+Envía la lista **completa** del consumidor como un array JSON de hasta 8 MiB. Cada elemento requiere las cadenas `network` y `address`: el identificador exacto de la red y una dirección válida en ella. Omitir una suscripción anterior la elimina. El array vacío elimina todas y conserva las entregas ya en cola.
+
+<a id="subscribe-v2"></a>
+
+### `PUT /v2/subscriptions`
+
+Devuelve **200** y una fila por suscripción distinta en orden de entrada. `from_height` es la primera altura incluida. Repetir la misma suscripción conserva su límite. En una red activa, una dirección nueva empieza después de la mayor altura asignada. Un registro en frío consulta la punta. Una dirección inválida o una red sin configurar devuelve **400**. Si no se puede obtener la altura inicial, **409** conserva la lista anterior; reenvía la lista completa cuando haya RPC.
+
+```sh
+consumer -X PUT "$BASE/v2/subscriptions" --data '[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]'
+```
+
+```json
+[
+  {
+    "network": "base",
+    "address": "0x1111111111111111111111111111111111111111",
+    "from_height": 12345678
+  }
+]
+```
+
+<a id="subscribe-v1"></a>
+
+### `PUT /v1/subscriptions`
+
+Acepta el mismo array y devuelve **204** sin recibo. Permite registrar interés antes de que el lector esté listo. Usa v2 si necesitas conocer la altura inicial antes de mostrar una dirección de pago.
+
+```sh
+consumer -X PUT "$BASE/v1/subscriptions" --data '[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]'
+```
+
+<a id="deliveries"></a>
+
+## Leer y confirmar entregas
+
+<a id="next-v2"></a>
+
+### `GET /v2/events/next`
+
+La consulta requiere `network` con una red admitida. El entero opcional `wait` activa una espera de 1 a 20 segundos; omítelo para obtener respuesta inmediata. Devuelve **200** con la siguiente entrega pendiente o **204** si no hay ninguna. Una red ausente o desconocida o un tiempo de espera inválido devuelve **400**.
+
+```sh
+consumer "$BASE/v2/events/next?network=base&wait=15"
+```
+
+El ejemplo muestra una entrega con datos de transacción abreviados. Una transacción que coincide con varias direcciones genera una entrega por consumidor. También pueden coincidir operaciones salientes o fallidas. Antes de abonar un pago, comprueba dirección, resultado, activo e importe.
+
+```json
+{
+  "id": 17,
+  "activity": {
+    "confirmations": 3,
+    "network": "base",
+    "height": 12345679,
+    "tx_id": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "time_ms": 1770000000000,
+    "addresses": [
+      "0x1111111111111111111111111111111111111111"
+    ],
+    "data": {
+      "transaction": {
+        "hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "to": "0x1111111111111111111111111111111111111111"
+      }
+    }
+  }
+}
+```
+
+| Campo | Tipo | Comportamiento |
+| --- | --- | --- |
+| `id` | `int64` | ID de entrega de la cola, usado al confirmar. |
+| `activity.network, activity.height` | `string, int64` | Red concreta y posición en la cadena. |
+| `activity.tx_id` | `string` | Identificador de la transacción en la cadena. |
+| `activity.confirmations, activity.time_ms` | `int64, int64` | Número observado de confirmaciones y tiempo de la cadena en milisegundos Unix. |
+| `activity.addresses` | `string[]` | Direcciones suscritas que coincidieron para este consumidor. |
+| `activity.data` | `JSON` | Datos JSON propios de la red. En EVM pueden incluir `transaction`, `logs`, `receipt` y `trace`. |
+
+<a id="next-v1"></a>
+
+### `GET /v1/events/next`
+
+Lee la cola global del consumidor para todas las redes. `wait` y las respuestas **200/204** funcionan igual que en v2. Usa un lector por token para esta cola o un lector por token y red con v2.
+
+```sh
+consumer "$BASE/v1/events/next?wait=5"
+```
+
+<a id="ack"></a>
+
+### `POST /v1/events/{id}/ack`
+
+Incluye el `id` positivo de la entrega en la ruta, sin cuerpo. La confirmación solo afecta al consumidor autenticado y devuelve **204**, incluso al repetirla. Un ID inválido o no positivo devuelve **400**. Leer conserva la entrega en la cola. Guarda los efectos antes de confirmar y evita duplicados mediante la red y el identificador de transacción o transferencia.
+
+```sh
+ID=17
+consumer -X POST "$BASE/v1/events/$ID/ack"
+```
+
+<a id="height"></a>
+
+### `GET /v1/heights/{network}`
+
+Devuelve **200** y un entero JSON con la mayor altura consecutiva completada, o `-1` si no existe cursor. Si falta un bloque anterior, pueden haberse entregado eventos de mayor altura. Aptos usa versiones del libro mayor, Solana slots y Sui checkpoints.
+
+```sh
+consumer "$BASE/v1/heights/base"
+```
+
+```json
+12345677
+```
+
+<a id="streaming"></a>
+
+## Suscripciones en tiempo real
+
+### De ChainScanner a tu aplicación
+
+Abre un WebSocket o un flujo gRPC bidireccional para recibir la actividad de las direcciones en cuanto entre en la cola. Ambos comparten token, suscripciones y confirmaciones con el sondeo HTTP prolongado. Usa un lector por consumidor y red entre todos los transportes. Varios consumidores pueden suscribirse a la misma dirección de forma independiente.
+
+**Conexión.** Ejecuta uno de los comandos desde la raíz del repositorio con el token de la guía rápida. WebSocket usa HTTP/1.1 Upgrade y tramas de texto JSON. gRPC usa HTTP/2 en el mismo puerto y el esquema protobuf publicado. Introduce los mensajes de forma interactiva y mantén la entrada abierta. Para un despliegue remoto usa WSS o gRPC con TLS y configura el proxy para reenviar la negociación WebSocket y los flujos gRPC HTTP/2.
+
+[activity.proto](../../api/activity/v1/activity.proto)
+
+```sh
+websocat -H="Authorization: Bearer $TOKEN" ws://127.0.0.1:9081/v2/events/stream
+```
+
+```sh
+grpcurl -plaintext -import-path . -proto api/activity/v1/activity.proto -H "authorization: Bearer $TOKEN" -d @ 127.0.0.1:9081 chainscanner.activity.v1.ActivityFeed/Subscribe
+```
+
+**Apertura → recepción.** Envía primero la red configurada. Incluye en `replace` la lista completa solo para sustituir las suscripciones del consumidor en **todas las redes**. Una lista vacía las borra. Omite `replace` al reconectar para conservarlas. El servidor responde con `ready`. Al reemplazar, devuelve cada dirección normalizada y la altura inicial inclusiva. Al reanudar, el recibo está vacío.
+
+```json
+{"open":{"network":"base","replace":{"watches":[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]}}}
+```
+
+```json
+{
+  "ready": {
+    "registrations": [
+      {
+        "network": "base",
+        "address": "0x1111111111111111111111111111111111111111",
+        "fromHeight": "12345678"
+      }
+    ]
+  }
+}
+```
+
+**Entrega → persistencia → confirmación.** Cada flujo mantiene una entrega pendiente de confirmar. Interpreta `dataJson` según la cadena y guarda el resultado de forma duradera. Envía después un `ack` con el ID recibido por la misma conexión. La siguiente entrega llega cuando esté disponible. ProtoJSON representa los enteros de 64 bits como cadenas decimales. Una cola vacía no genera mensajes de aplicación.
+
+```json
+{
+  "delivery": {
+    "id": "17",
+    "network": "base",
+    "height": "12345679",
+    "txId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "timeMs": "1770000000000",
+    "confirmations": "3",
+    "addresses": [
+      "0x1111111111111111111111111111111111111111"
+    ],
+    "dataJson": "{\"transaction\":{\"to\":\"0x1111111111111111111111111111111111111111\"}}"
+  }
+}
+```
+
+```json
+{"ack":"17"}
+```
+
+**Desconexiones y errores.** Reconecta con espera progresiva y vuelve a enviar `open`. Una entrega pendiente puede repetirse incluso en otro transporte. Deduplica por red e identificador de transacción o transferencia. Un token inválido devuelve HTTP 401 al abrir WebSocket o `UNAUTHENTICATED` en gRPC. Una red o confirmación incorrecta produce 1008 o `INVALID_ARGUMENT`. Si falta la altura inicial, se devuelve 1013 o `FAILED_PRECONDITION`. Un fallo temporal de almacenamiento produce 1013 o `UNAVAILABLE`. Ajusta el tamaño máximo de recepción del cliente gRPC al mayor volumen de datos de transacción previsto.
+
+```json
+{"open":{"network":"base"}}
+```
+
+El cliente WebSocket debe responder a las tramas Ping con Pong. Usa un cliente de backend que pueda establecer la cabecera Authorization. El constructor WebSocket nativo del navegador no permite añadir esa cabecera. Con gRPC, mantén abierto el lado de envío para confirmar y cancela la llamada para detener un flujo inactivo. Los servidores Go que integren el módulo deben habilitar HTTP/2 para gRPC. El binario independiente ya habilita HTTP/2 sin cifrar en su puerto.
+
+### Sondeo HTTP prolongado
+
+Las aplicaciones reciben las transacciones mediante sondeo HTTP prolongado. Registra la lista completa de direcciones y ejecuta un lector por consumidor y red. Configura tiempos de espera del cliente y del proxy superiores a `wait`. El ejemplo usa el token de la guía rápida, Python 3 y una base SQLite local. Tras un 204 vuelve a consultar de inmediato. Al recibir una entrega, la confirma después de guardar los datos.
+
+```sh
+export BASE TOKEN
+python3 - <<'PY'
+import http.client
+import json
+import os
+import sqlite3
+import time
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+base = os.environ["BASE"].rstrip("/")
+headers = {"Authorization": "Bearer " + os.environ["TOKEN"]}
+
+def request(path, method="GET"):
+    req = Request(base + path, headers=headers, method=method)
+    with urlopen(req, timeout=30) as res:
+        if res.status != 204:
+            return json.load(res)
+
+db = sqlite3.connect("base-inbox.sqlite")
+db.execute("""CREATE TABLE IF NOT EXISTS inbox (
+    network TEXT, tx_id TEXT, activity TEXT NOT NULL, PRIMARY KEY (network, tx_id)
+)""")
+delay = 1
+while True:
+    try:
+        delivery = request("/v2/events/next?network=base&wait=20")
+        if delivery is not None:
+            activity = delivery["activity"]
+            with db:
+                db.execute("INSERT INTO inbox VALUES (?, ?, ?) "
+                           "ON CONFLICT(network, tx_id) DO NOTHING",
+                           (activity["network"], activity["tx_id"], json.dumps(activity)))
+            request("/v1/events/{}/ack".format(delivery["id"]), "POST")
+        delay = 1
+    except HTTPError as err:
+        if err.code != 429 and err.code < 500:
+            raise
+    except (URLError, TimeoutError, ConnectionError, http.client.IncompleteRead):
+        pass
+    else:
+        continue
+    time.sleep(delay)
+    delay = min(30, 2 * delay)
+PY
+```
+
+El ejemplo guarda una fila por red y transacción para este consumidor. Si procesas cada transferencia por separado, incluye su índice en la clave de deduplicación. Una confirmación perdida puede causar una nueva entrega. Al reiniciar el escáner en memoria se pierden las suscripciones y entregas pendientes. Registra de nuevo la lista completa y reconcilia el intervalo con tu propio punto de control y el historial de la cadena. SQLite en archivo conserva las suscripciones y la cola entre reinicios.
+
+### Del nodo a ChainScanner
+
+Elige la interfaz del nodo para la red concreta. Al recibir un aviso de cabecera, el escáner lee los datos de la cadena. Tras una desconexión, recupera los intervalos pendientes a partir de la última altura completada sin huecos. Mientras la fuente esté activa, reintenta la conexión al cabo de cinco segundos. El escáner queda en reposo si la red no tiene direcciones vigiladas.
+
+| Red | Avisos de avance | Fuente del historial |
+| --- | --- | --- |
+| Redes EVM | WebSocket JSON-RPC · `eth_subscribe("newHeads")` | RPC de ejecución del mismo nodo |
+| Solana | WebSocket · `rootSubscribe` o flujo de slots finalizados de Yellowstone gRPC | HTTP JSON-RPC en `history_url` |
+| Sui | gRPC · `SubscribeCheckpoints` | Lectura de checkpoints en el mismo nodo gRPC |
+| Aptos | Flujo de transacciones RawData gRPC | REST de un nodo completo en `history_url` |
+
+```json
+{
+  "name": "solana",
+  "protocol": "ws",
+  "url": "wss://api.mainnet-beta.solana.com",
+  "history_url": "https://api.mainnet-beta.solana.com"
+}
+```
+
+**Ethereum Beacon (opcional).** Un nodo Beacon puede enviar avisos de cabecera por una respuesta HTTP abierta mediante Server-Sent Events (SSE). Configura `protocol` como `sse`, `url` con la ruta `/eth/v1/events` del nodo y `history_url` con un RPC HTTP de la capa de ejecución de Ethereum. El escáner se suscribe al tema `head` y registra su posición en alturas de bloques de ejecución. Un nodo de ejecución con WebSocket también puede proporcionar estos avisos por sí solo.
+
+<a id="nodes"></a>
+
+## Administración de nodos
+
+<a id="list"></a>
+
+### `GET /v1/admin/nodes`
+
+La consulta opcional `network` filtra el inventario. Devuelve **200** con un array de nodos y sus últimas mediciones guardadas. Listar no consume cuota RPC. Si no hay coincidencias devuelve `[]`.
+
+```sh
+admin "$BASE/v1/admin/nodes?network=base"
+```
+
+```json
+[
+  {
+    "id": 42,
+    "network": "base",
+    "protocol": "http",
+    "url": "https://rpc.example.org",
+    "origin": "custom",
+    "status": "untested",
+    "height": null,
+    "checked_at_ms": null,
+    "latency_ms": null,
+    "height_unit": "block",
+    "scannable": true
+  }
+]
+```
+
+| Campo | Tipo | Comportamiento |
+| --- | --- | --- |
+| `id, network` | `int64, string` | ID numérico estable y red concreta. |
+| `protocol, url` | `string, string` | Transporte seleccionado y URL del nodo. |
+| `origin` | `string` | Origen: `builtin`, `config`, `custom` o `chainlist`. |
+| `status` | `string` | Uno de `untested`, `ok`, `timeout`, `unavailable`. Compruébalo después de la prueba. |
+| `height, height_unit` | `int64? , string` | Altura del nodo o null. La unidad es `block`, `slot`, `checkpoint`, `ledger_version` o `beacon_slot`. |
+| `checked_at_ms, latency_ms` | `int64?, int64?` | Tiempo de inicio en milisegundos Unix y duración en milisegundos. Ambos son null antes de la primera prueba. |
+| `scannable` | `bool` | Si permite escanear transacciones. UniSat solo informa la altura de Bitcoin. |
+
+<a id="add"></a>
+
+### `POST /v1/admin/nodes`
+
+Envía las cadenas JSON `network`, `url` y especifica `protocol`. Las cadenas opcionales son `api_key`, `history_url` y `history_api_key`; los transportes emparejados requieren una URL histórica. Los campos desconocidos, opciones inválidas o JSON incorrecto devuelven **400**. El límite es 8 KiB. Devuelve **201** con el nodo o **409** si ya existe. Añadir el nodo no activa por sí solo el lector de la red.
+
+```sh
+admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http","url":"https://rpc.example.org"}'
+```
+
+<a id="test-one"></a>
+
+### `POST /v1/admin/nodes/{id}/test`
+
+El `id` de la ruta debe ser entero positivo. Sin cuerpo. Devuelve **200** con el nodo actualizado, incluso si la prueba registró `timeout` o `unavailable`. ID inválido: **400**. ID desconocido o eliminado: **404**.
+
+```sh
+NODE_ID=$(curl -fsS -H "Authorization: Bearer $ADMIN" "$BASE/v1/admin/nodes?network=base" | jq -er '.[] | select(.url == "https://rpc.example.org" and .origin == "custom") | .id') &&
+admin -X POST "$BASE/v1/admin/nodes/$NODE_ID/test"
+```
+
+<a id="test-all"></a>
+
+### `POST /v1/admin/nodes/test`
+
+Prueba todos los nodos visibles, con filtro opcional `network`. Sin cuerpo. Devuelve **200** con un array que incluye las pruebas fallidas. Hay hasta ocho pruebas en paralelo. Una segunda petición de lote simultánea devuelve **409**. Cancelar la petición detiene el lote.
+
+```sh
+admin -X POST "$BASE/v1/admin/nodes/test?network=base"
+```
+
+<a id="delete"></a>
+
+### `DELETE /v1/admin/nodes/{id}`
+
+Elimina un nodo por `id` positivo, incluidos los integrados o configurados. Devuelve **204**, **400** para un ID inválido o **404** si el nodo no existe. El modo con archivo conserva la eliminación tras reiniciar. Volver a registrar el endpoint permite restaurarlo.
+
+```sh
+admin -X DELETE "$BASE/v1/admin/nodes/$NODE_ID"
+```
+
+<a id="errors"></a>
+
+## Manejo de errores
+
+Corrige la petición antes de repetir un **400**. Para **401**, revisa token y rol. El significado de **409** depende de la ruta, como se indica arriba. **503** señala un fallo al acceder a suscripciones, cola, cursor o inventario; reintenta los fallos transitorios con espera progresiva. Una cola vacía devuelve **204**.
+
+[Guía](../../README.es.md) · [ConsumerHandler](https://github.com/GMWalletApp/ChainScanner/blob/main/internal/feed/handler.go) · [NodeRegistry.Handler](https://github.com/GMWalletApp/ChainScanner/blob/main/internal/nodes/http.go)
