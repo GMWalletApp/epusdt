@@ -1,6 +1,9 @@
 package service
 
 import (
+	"encoding/json"
+	"fmt"
+	scanner "github.com/GMWalletApp/ChainScanner"
 	"math/big"
 	"strings"
 	"testing"
@@ -98,7 +101,7 @@ func TestSendPaymentNotificationUsesLatestOrderUpdatedAt(t *testing.T) {
 	}
 }
 
-func TestTryProcessEvmERC20TransferUsesChainTokenContract(t *testing.T) {
+func TestScannerERC20EventUsesChainTokenContract(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
@@ -140,7 +143,7 @@ func TestTryProcessEvmERC20TransferUsesChainTokenContract(t *testing.T) {
 	}
 
 	rawValue := big.NewInt(1_234_000_000) // 12.34 with 8 decimals
-	TryProcessEvmERC20Transfer(mdb.NetworkEthereum, contract, receiveAddress, rawValue, "0xfoo-hash", time.Now().UnixMilli())
+	receiveTestERC20Event(t, mdb.NetworkEthereum, contract, receiveAddress, rawValue, "0xfoo-hash", time.Now().UnixMilli())
 
 	paid, err := data.GetOrderInfoByTradeId(tradeID)
 	if err != nil {
@@ -162,7 +165,7 @@ func TestTryProcessEvmERC20TransferUsesChainTokenContract(t *testing.T) {
 	}
 }
 
-func TestTryProcessEvmERC20TransferSkipsTransfersBeforeOrderCreation(t *testing.T) {
+func TestScannerERC20EventSkipsTransfersBeforeOrderCreation(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
@@ -203,7 +206,7 @@ func TestTryProcessEvmERC20TransferSkipsTransfersBeforeOrderCreation(t *testing.
 
 	rawValue := big.NewInt(25_500_000) // 25.5 with 6 decimals
 	oldBlockTsMs := order.CreatedAt.TimestampMilli() - 1
-	TryProcessEvmERC20Transfer(mdb.NetworkEthereum, contract, receiveAddress, rawValue, "0xold-hash", oldBlockTsMs)
+	receiveTestERC20Event(t, mdb.NetworkEthereum, contract, receiveAddress, rawValue, "0xold-hash", oldBlockTsMs)
 
 	got, err := data.GetOrderInfoByTradeId(tradeID)
 	if err != nil {
@@ -225,7 +228,7 @@ func TestTryProcessEvmERC20TransferSkipsTransfersBeforeOrderCreation(t *testing.
 	}
 }
 
-func TestTryProcessEvmERC20TransferRecoversExpiredOrderAfterLockCleanup(t *testing.T) {
+func TestScannerERC20EventRecoversExpiredOrderAfterLockCleanup(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
@@ -270,7 +273,7 @@ func TestTryProcessEvmERC20TransferRecoversExpiredOrderAfterLockCleanup(t *testi
 
 	rawValue := big.NewInt(17_680_000) // 17.68 with 6 decimals
 	blockTsMs := createdAt.Add(time.Minute).UnixMilli()
-	TryProcessEvmERC20Transfer(mdb.NetworkBsc, contract, receiveAddress, rawValue, "0xrecovered-hash", blockTsMs)
+	receiveTestERC20Event(t, mdb.NetworkBsc, contract, receiveAddress, rawValue, "0xrecovered-hash", blockTsMs)
 
 	paid, err := data.GetOrderInfoByTradeId(tradeID)
 	if err != nil {
@@ -284,7 +287,7 @@ func TestTryProcessEvmERC20TransferRecoversExpiredOrderAfterLockCleanup(t *testi
 	}
 }
 
-func TestTryProcessEvmERC20TransferSkipsExpiredOrderAfterPaymentWindow(t *testing.T) {
+func TestScannerERC20EventSkipsExpiredOrderAfterPaymentWindow(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
@@ -329,7 +332,7 @@ func TestTryProcessEvmERC20TransferSkipsExpiredOrderAfterPaymentWindow(t *testin
 
 	rawValue := big.NewInt(19_990_000) // 19.99 with 6 decimals
 	blockTsMs := createdAt.Add(config.GetOrderExpirationTimeDuration() + time.Minute).UnixMilli()
-	TryProcessEvmERC20Transfer(mdb.NetworkBsc, contract, receiveAddress, rawValue, "0xlate-hash", blockTsMs)
+	receiveTestERC20Event(t, mdb.NetworkBsc, contract, receiveAddress, rawValue, "0xlate-hash", blockTsMs)
 
 	got, err := data.GetOrderInfoByTradeId(tradeID)
 	if err != nil {
@@ -340,5 +343,25 @@ func TestTryProcessEvmERC20TransferSkipsExpiredOrderAfterPaymentWindow(t *testin
 	}
 	if got.BlockTransactionId != "" {
 		t.Fatalf("block transaction id = %q, want empty", got.BlockTransactionId)
+	}
+}
+
+// Exercise the same event parser and durable confirmation worker used by the remote feed.
+func receiveTestERC20Event(t *testing.T, network string, contract, to common.Address, amount *big.Int, hash string, ts int64) {
+	t.Helper()
+	if err := data.SetSetting("system", mdb.SettingKeyStrictPayment, "false", mdb.SettingTypeBool); err != nil {
+		t.Fatal(err)
+	}
+	log := json.RawMessage(fmt.Sprintf(`{"address":%q,"topics":[%q,"0x0","0x%064x"],"data":"0x%064x"}`, contract.Hex(), "0x"+transferSignature, to.Bytes(), amount))
+	payload, err := json.Marshal(scanner.Evidence{Transaction: json.RawMessage(fmt.Sprintf(`{"hash":%q}`, hash)), Logs: []json.RawMessage{log}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := scanner.Activity{Network: network, TimeMS: ts, TxID: hash, Height: 1, Confirmations: 10000, Addresses: []string{strings.ToLower(to.Hex())}, Data: payload}
+	if err := ApplyChainActivity(t.Context(), event); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := processDueConfirmation(t.Context(), nil, nil); err != nil {
+		t.Fatal(err)
 	}
 }

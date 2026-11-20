@@ -30,7 +30,7 @@ func TestEvmTransactionLockAddressIsCaseInsensitive(t *testing.T) {
 		t.Fatalf("trade id = %q, want %q", gotTradeID, tradeID)
 	}
 
-	if err := UnLockTransaction(mdb.NetworkEthereum, strings.ToUpper(address), "USDT", 1.23); err != nil {
+	if err := UnLockTransactionByTradeId(tradeID); err != nil {
 		t.Fatalf("unlock transaction: %v", err)
 	}
 

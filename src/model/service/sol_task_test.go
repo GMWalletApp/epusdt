@@ -2,11 +2,9 @@ package service
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
@@ -14,7 +12,6 @@ import (
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
-	"github.com/GMWalletApp/epusdt/model/request"
 	"github.com/tidwall/gjson"
 )
 
@@ -364,139 +361,6 @@ func TestSolRetryClientWithURLDoesNotForwardUserIPByDefault(t *testing.T) {
 	}
 }
 
-func TestSolCallBackDoesNotCacheSignatureAfterRetryableOrderProcessingError(t *testing.T) {
-	cleanup := testutil.SetupTestDatabases(t)
-	defer cleanup()
-	clearProcessedSignatures()
-	t.Cleanup(clearProcessedSignatures)
-
-	const (
-		address = "2uFTf9TZ8gd7Kg6hkb79TxfaeNpaAgpJ8uVHguv2Yweu"
-		sig     = "retryable-sol-signature"
-		tradeID = "sol-retryable-order-001"
-		amount  = 1.23
-	)
-	blockTime := time.Now().Add(time.Minute).Unix()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var rpcReq struct {
-			Method string `json:"method"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&rpcReq); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		switch rpcReq.Method {
-		case "getSignaturesForAddress":
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"jsonrpc": "2.0",
-				"id":      1,
-				"result": []map[string]interface{}{
-					{
-						"signature": sig,
-						"slot":      1,
-						"err":       nil,
-						"blockTime": blockTime,
-					},
-				},
-			})
-		case "getTransaction":
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"jsonrpc": "2.0",
-				"id":      1,
-				"result": map[string]interface{}{
-					"blockTime": blockTime,
-					"meta":      map[string]interface{}{"err": nil},
-					"transaction": map[string]interface{}{
-						"message": map[string]interface{}{
-							"instructions": []map[string]interface{}{
-								{
-									"programId": SystemProgramID,
-									"parsed": map[string]interface{}{
-										"type": "transfer",
-										"info": map[string]interface{}{
-											"source":      "source-wallet",
-											"destination": address,
-											"lamports":    1_230_000_000,
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			})
-		default:
-			http.Error(w, "unexpected method "+rpcReq.Method, http.StatusBadRequest)
-		}
-	}))
-	defer server.Close()
-
-	if err := dao.Mdb.Create(&mdb.RpcNode{
-		Network: mdb.NetworkSolana,
-		Url:     server.URL,
-		Type:    mdb.RpcNodeTypeHttp,
-		Weight:  1,
-		Enabled: true,
-		Status:  mdb.RpcNodeStatusOk,
-	}).Error; err != nil {
-		t.Fatalf("seed solana rpc_node: %v", err)
-	}
-	if err := dao.Mdb.Create(&mdb.ChainToken{
-		Network:         mdb.NetworkSolana,
-		Symbol:          "SOL",
-		ContractAddress: "",
-		Decimals:        SOL_Decimals,
-		Enabled:         true,
-	}).Error; err != nil {
-		t.Fatalf("seed SOL chain token: %v", err)
-	}
-	order := &mdb.Orders{
-		TradeId:        tradeID,
-		OrderId:        "merchant-sol-retryable-001",
-		Amount:         100,
-		Currency:       "CNY",
-		ActualAmount:   amount,
-		ReceiveAddress: address,
-		Token:          "SOL",
-		Network:        mdb.NetworkSolana,
-		Status:         mdb.StatusWaitPay,
-	}
-	if err := dao.Mdb.Create(order).Error; err != nil {
-		t.Fatalf("seed order: %v", err)
-	}
-	if err := data.LockTransaction(mdb.NetworkSolana, address, "SOL", tradeID, amount, time.Hour); err != nil {
-		t.Fatalf("lock transaction: %v", err)
-	}
-
-	oldProcessSolanaOrder := processSolanaOrder
-	calls := 0
-	processSolanaOrder = func(req *request.OrderProcessingRequest) error {
-		calls++
-		if req.TradeId != tradeID {
-			t.Fatalf("order processing trade_id = %q, want %q", req.TradeId, tradeID)
-		}
-		return errors.New("temporary database error")
-	}
-	t.Cleanup(func() {
-		processSolanaOrder = oldProcessSolanaOrder
-	})
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	SolCallBack(address, &wg)
-	wg.Wait()
-
-	if calls != 1 {
-		t.Fatalf("order processing calls = %d, want 1", calls)
-	}
-	if _, ok := gProcessedSignatures.Load(sig); ok {
-		t.Fatalf("signature %s was cached after retryable order processing error", sig)
-	}
-}
-
 func TestSolClientHealthy(t *testing.T) {
 	requireSolanaIntegration(t)
 
@@ -521,13 +385,6 @@ func TestSolClientHealthy(t *testing.T) {
 	if status != "ok" {
 		t.Errorf("Expected health status 'ok', got '%s'", status)
 	}
-}
-
-func clearProcessedSignatures() {
-	gProcessedSignatures.Range(func(key, value interface{}) bool {
-		gProcessedSignatures.Delete(key)
-		return true
-	})
 }
 
 func TestSolClientGetSignaturesForAddress(t *testing.T) {

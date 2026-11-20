@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	scanner "github.com/GMWalletApp/ChainScanner"
 	tron "github.com/GMWalletApp/epusdt/crypto"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
@@ -72,6 +73,22 @@ func SetManualOrderPaymentValidatorForTest(fn func(*mdb.Orders, string) (string,
 }
 
 func validateManualOrderPaymentDefault(order *mdb.Orders, blockTransactionID string) (string, error) {
+	id, err := validateManualTransfer(order, blockTransactionID)
+	if err != nil {
+		return "", err
+	}
+	if StrictTransaction == nil {
+		return "", fmt.Errorf("strict lookup unavailable")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	if err := confirmManualTransfer(ctx, order, id, StrictTransaction); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func validateManualTransfer(order *mdb.Orders, blockTransactionID string) (string, error) {
 	if order == nil || order.ID == 0 {
 		return "", fmt.Errorf("order not found")
 	}
@@ -89,12 +106,15 @@ func validateManualOrderPaymentDefault(order *mdb.Orders, blockTransactionID str
 		canonicalTxID, err = validateManualSolanaPayment(order, txID)
 	case mdb.NetworkTon:
 		canonicalTxID, err = validateManualTonPayment(order, txID)
+	case mdb.NetworkSui:
+		canonicalTxID, err = validateManualSui(order, txID)
 	case mdb.NetworkAptos:
 		canonicalTxID, err = ValidateManualAptosPayment(order, txID)
-	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma:
-		canonicalTxID, err = validateManualEvmPayment(order, txID)
 	default:
-		return "", fmt.Errorf("unsupported manual payment verification network: %s", order.Network)
+		if !scanner.IsEVM(strings.ToLower(strings.TrimSpace(order.Network))) {
+			return "", fmt.Errorf("unsupported manual payment verification network: %s", order.Network)
+		}
+		canonicalTxID, err = validateManualEvmPayment(order, txID)
 	}
 	if err != nil {
 		return "", err
@@ -124,8 +144,11 @@ func ensureManualBlockTransactionUnused(order *mdb.Orders, canonicalTxID string)
 }
 
 func manualBlockTransactionIDIsHex(network string) bool {
+	if scanner.IsEVM(strings.ToLower(strings.TrimSpace(network))) {
+		return true
+	}
 	switch strings.ToLower(strings.TrimSpace(network)) {
-	case mdb.NetworkTron, mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma, mdb.NetworkAptos:
+	case mdb.NetworkTron, mdb.NetworkAptos:
 		return true
 	default:
 		return false
@@ -150,8 +173,8 @@ func equivalentManualBlockTransactionIDs(network, canonicalTxID string) []string
 	}
 
 	add(canonicalTxID)
-	switch network {
-	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma, mdb.NetworkAptos:
+	switch {
+	case scanner.IsEVM(network) || network == mdb.NetworkAptos:
 		body := strings.TrimPrefix(strings.TrimPrefix(canonicalTxID, "0x"), "0X")
 		body = strings.ToLower(body)
 		add("0x" + body)
@@ -160,7 +183,7 @@ func equivalentManualBlockTransactionIDs(network, canonicalTxID string) []string
 		add("0X" + strings.ToUpper(body))
 		add(body)
 		add(strings.ToUpper(body))
-	case mdb.NetworkTron:
+	case network == mdb.NetworkTron:
 		body := strings.TrimPrefix(strings.TrimPrefix(canonicalTxID, "0x"), "0X")
 		body = strings.ToLower(body)
 		add(body)
@@ -183,7 +206,7 @@ func validateManualEvmPayment(order *mdb.Orders, txID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if token == nil || token.ID == 0 || strings.TrimSpace(token.ContractAddress) == "" {
+	if token == nil || token.ID == 0 || (strings.TrimSpace(token.ContractAddress) == "" && !isNativeEVMToken(order.Network, *token)) {
 		return "", fmt.Errorf("enabled token contract not configured for %s/%s", order.Network, order.Token)
 	}
 
@@ -258,6 +281,27 @@ func validateManualEvmPaymentWithClient(ctx context.Context, client evmChainRead
 		return err
 	}
 
+	if isNativeEVMToken(order.Network, *token) {
+		reader, ok := client.(interface {
+			TransactionByHash(context.Context, common.Hash) (*types.Transaction, bool, error)
+		})
+		if !ok {
+			return fmt.Errorf("transaction lookup unavailable")
+		}
+		tx, pending, err := reader.TransactionByHash(ctx, txHash)
+		if err != nil {
+			return err
+		}
+		if !pending && tx != nil && tx.To() != nil && tx.Hash() == txHash && strings.EqualFold(tx.To().Hex(), order.ReceiveAddress) && amountMatchesRaw(order.ActualAmount, tx.Value(), 18) {
+			sender, err := types.Sender(types.LatestSignerForChainID(big.NewInt(scanner.EVMChainID(order.Network))), tx)
+			if err == nil && sender != *tx.To() {
+				return nil
+			}
+		}
+		if token.ContractAddress == "" {
+			return fmt.Errorf("native transfer does not match order")
+		}
+	}
 	contract, err := normalizeEvmAddress(token.ContractAddress)
 	if err != nil {
 		return fmt.Errorf("invalid token contract address: %w", err)
@@ -303,6 +347,13 @@ func dialManualEvmClients(ctx context.Context, network string) ([]manualEvmClien
 			continue
 		}
 		client, err := dialManualEvmClient(ctx, node)
+		if err == nil && scanner.NativeAsset(network) != "" {
+			id, idErr := client.ChainID(ctx)
+			if idErr != nil || id.Cmp(big.NewInt(scanner.EVMChainID(network))) != 0 {
+				client.Close()
+				err = fmt.Errorf("chain ID mismatch for %s", network)
+			}
+		}
 		if err == nil {
 			clients = append(clients, manualEvmClient{
 				label:  manualRpcNodeLabel(node),

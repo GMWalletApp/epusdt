@@ -34,6 +34,7 @@ func MdbTableInit() {
 			model interface{}
 		}{
 			{"Orders", &mdb.Orders{}},
+			{"PaymentConfirmation", &mdb.PaymentConfirmation{}},
 			{"WalletAddress", &mdb.WalletAddress{}},
 			{"AdminUser", &mdb.AdminUser{}},
 			{"ApiKey", &mdb.ApiKey{}},
@@ -65,6 +66,14 @@ func MdbTableInit() {
 // ON CONFLICT DO NOTHING so re-runs are no-ops and admin edits persist.
 func seedChains() {
 	defaults := []mdb.Chain{
+		{Network: mdb.NetworkSui, DisplayName: "Sui", Enabled: true, MinConfirmations: 1, ScanIntervalSec: 3},
+		{Network: mdb.NetworkBase, DisplayName: "Base", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 3},
+		{Network: mdb.NetworkOptimism, DisplayName: "OP Mainnet", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 3},
+		{Network: mdb.NetworkAvalanche, DisplayName: "Avalanche C-Chain", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 3},
+		{Network: mdb.NetworkArc, DisplayName: "Arc", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 3},
+		{Network: mdb.NetworkMonad, DisplayName: "Monad", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 3},
+		{Network: mdb.NetworkHyperEVM, DisplayName: "HyperEVM", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 3},
+		{Network: mdb.NetworkArbitrum, DisplayName: "Arbitrum One", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 3},
 		{Network: mdb.NetworkTron, DisplayName: "TRON", Enabled: true, MinConfirmations: 1, ScanIntervalSec: 5},
 		{Network: mdb.NetworkEthereum, DisplayName: "Ethereum", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 5},
 		{Network: mdb.NetworkSolana, DisplayName: "Solana", Enabled: true, MinConfirmations: 1, ScanIntervalSec: 5},
@@ -88,6 +97,21 @@ func seedChainTokens() {
 	// lookup. Native-token rows (empty contract_address) are matched by
 	// symbol — these act as admin toggles for the native payment path.
 	defaults := []mdb.ChainToken{
+		{Network: mdb.NetworkSui, Symbol: "USDC", ContractAddress: "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC", Decimals: 6, Enabled: true},
+		{Network: mdb.NetworkSui, Symbol: "SUI", ContractAddress: "0x2::sui::SUI", Decimals: 9, Enabled: true},
+		{Network: mdb.NetworkBase, Symbol: "USDC", ContractAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", Decimals: 6, Enabled: true},
+		{Network: mdb.NetworkOptimism, Symbol: "USDC", ContractAddress: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", Decimals: 6, Enabled: true},
+		{Network: mdb.NetworkBase, Symbol: "ETH", ContractAddress: "", Decimals: 18, Enabled: true},
+		{Network: mdb.NetworkOptimism, Symbol: "ETH", ContractAddress: "", Decimals: 18, Enabled: true},
+		{Network: mdb.NetworkAvalanche, Symbol: "USDC", ContractAddress: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", Decimals: 6, Enabled: true},
+		{Network: mdb.NetworkAvalanche, Symbol: "AVAX", ContractAddress: "", Decimals: 18, Enabled: true},
+		{Network: mdb.NetworkArc, Symbol: "USDC", ContractAddress: "0x3600000000000000000000000000000000000000", Decimals: 6, Enabled: true},
+		{Network: mdb.NetworkMonad, Symbol: "USDC", ContractAddress: "0x754704Bc059F8C67012fEd69BC8A327a5aafb603", Decimals: 6, Enabled: true},
+		{Network: mdb.NetworkMonad, Symbol: "MON", ContractAddress: "", Decimals: 18, Enabled: true},
+		{Network: mdb.NetworkHyperEVM, Symbol: "USDC", ContractAddress: "0xb88339CB7199b77E23DB6E890353E22632Ba630f", Decimals: 6, Enabled: true},
+		{Network: mdb.NetworkHyperEVM, Symbol: "HYPE", ContractAddress: "", Decimals: 18, Enabled: true},
+		{Network: mdb.NetworkArbitrum, Symbol: "USDC", ContractAddress: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", Decimals: 6, Enabled: true},
+		{Network: mdb.NetworkArbitrum, Symbol: "ETH", ContractAddress: "", Decimals: 18, Enabled: true},
 		// TRON
 		{Network: mdb.NetworkTron, Symbol: "USDT", ContractAddress: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", Decimals: 6, Enabled: true},
 		{Network: mdb.NetworkTron, Symbol: "TRX", ContractAddress: "", Decimals: 6, Enabled: true},
@@ -141,10 +165,25 @@ func seedRpcNodes() {
 
 func defaultRpcNodes() []mdb.RpcNode {
 	defaults := []mdb.RpcNode{
+		{Network: mdb.NetworkSui, Url: "https://fullnode.mainnet.sui.io:443", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkBase, Url: "wss://base-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkOptimism, Url: "wss://optimism-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkBase, Url: "https://mainnet.base.org", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkOptimism, Url: "https://mainnet.optimism.io", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkAvalanche, Url: "wss://avalanche-c-chain-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkAvalanche, Url: "https://api.avax.network/ext/bc/C/rpc", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkArc, Url: "wss://rpc.mainnet.arc.io", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkArc, Url: "https://rpc.mainnet.arc.io", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkMonad, Url: "wss://rpc.monad.xyz", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkMonad, Url: "https://rpc.monad.xyz", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkHyperEVM, Url: "https://rpc.hyperliquid.xyz/evm", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkArbitrum, Url: "wss://arbitrum-one-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkArbitrum, Url: "https://arb1.arbitrum.io/rpc", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkTron, Url: "https://api.trongrid.io", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkEthereum, Url: "wss://ethereum.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkSolana, Url: "https://api.mainnet-beta.solana.com", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkBsc, Url: "wss://bsc.drpc.org", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkBsc, Url: "wss://bsc-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkBsc, Url: "https://bsc-rpc.publicnode.com", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkPolygon, Url: "wss://polygon-bor-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkPlasma, Url: "wss://rpc.plasma.to", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkTon, Url: "https://ton-blockchain.github.io/global.config.json", Type: mdb.RpcNodeTypeLite, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
@@ -175,6 +214,7 @@ func seedDefaultSettings() {
 	defaults := []mdb.Setting{
 		{Group: mdb.SettingGroupBrand, Key: mdb.SettingKeyBrandWithdrawalReminder, Value: "true", Type: mdb.SettingTypeBool},
 		{Group: mdb.SettingGroupSystem, Key: mdb.SettingKeyAmountPrecision, Value: "2", Type: mdb.SettingTypeInt},
+		{Group: mdb.SettingGroupSystem, Key: mdb.SettingKeyStrictPayment, Value: "true", Type: mdb.SettingTypeBool},
 		{Group: mdb.SettingGroupSystem, Key: mdb.SettingKeySystemLogLevel, Value: mdb.SettingDefaultSystemLogLevel, Type: mdb.SettingTypeString},
 		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateForcedRateList, Value: mdb.SettingDefaultRateForcedRateList, Type: mdb.SettingTypeJSON},
 		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateMode, Value: defaultRateMode, Type: mdb.SettingTypeString},

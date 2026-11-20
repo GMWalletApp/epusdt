@@ -121,7 +121,7 @@ func processExpiredOrders() {
 			if strings.TrimSpace(order.Network) == "" || strings.TrimSpace(order.ReceiveAddress) == "" || strings.TrimSpace(order.Token) == "" || order.ActualAmount <= 0 {
 				continue
 			}
-			if err = data.UnLockTransaction(order.Network, order.ReceiveAddress, order.Token, order.ActualAmount); err != nil {
+			if err = data.UnLockTransactionByTradeId(order.TradeId); err != nil {
 				log.Sugar.Warnf("[mq] release expired transaction lock failed, trade_id=%s, err=%v", order.TradeId, err)
 			}
 		}
@@ -157,7 +157,7 @@ func dispatchPendingCallbacks() {
 
 		select {
 		case callbackLimiter <- struct{}{}:
-			go processCallback(tradeID)
+			go processCallback(tradeID, callbackLimiter)
 		default:
 			callbackInflight.Delete(tradeID)
 			return
@@ -165,9 +165,9 @@ func dispatchPendingCallbacks() {
 	}
 }
 
-func processCallback(tradeID string) {
+func processCallback(tradeID string, limiter <-chan struct{}) {
 	defer func() {
-		<-callbackLimiter
+		<-limiter
 		callbackInflight.Delete(tradeID)
 	}()
 
@@ -261,9 +261,13 @@ func isCallbackAck(body []byte) bool {
 }
 
 func cleanupExpiredTransactionLocks() {
-	if err := data.CleanupExpiredTransactionLocks(); err != nil {
+	if err := cleanupExpiredTransactionLocksWith(data.CleanupExpiredTransactionLocks); err != nil {
 		log.Sugar.Errorf("[mq] cleanup expired transaction locks failed: %v", err)
 	}
+}
+
+func cleanupExpiredTransactionLocksWith(fn func() error) error {
+	return withSQLiteBusyRetry(fn)
 }
 
 func withSQLiteBusyRetry(fn func() error) error {

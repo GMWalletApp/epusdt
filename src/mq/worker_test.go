@@ -2,10 +2,11 @@ package mq
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"sync"
+
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,6 +17,23 @@ import (
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/util/sign"
 )
+
+func TestCleanupExpiredTransactionLocksRetriesSQLiteBusy(t *testing.T) {
+	attempts := 0
+	err := cleanupExpiredTransactionLocksWith(func() error {
+		attempts++
+		if attempts < sqliteBusyRetryAttempts {
+			return errors.New("database is locked (SQLITE_BUSY)")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("cleanup retry: %v", err)
+	}
+	if attempts != sqliteBusyRetryAttempts {
+		t.Fatalf("attempts = %d, want %d", attempts, sqliteBusyRetryAttempts)
+	}
+}
 
 func TestProcessExpiredOrdersExpiresWaitingOrdersAndReleasesLocks(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
@@ -161,7 +179,7 @@ func TestDispatchPendingCallbacksHonorsBackoffAndPersistsSuccess(t *testing.T) {
 	defer cleanup()
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	callbackInflight.Clear()
 
 	var requestCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -218,7 +236,7 @@ func TestDispatchPendingCallbacksResumesRetryAfterRestart(t *testing.T) {
 	defer cleanup()
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	callbackInflight.Clear()
 
 	var requestCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -265,7 +283,7 @@ func TestDispatchPendingCallbacksResumesRetryAfterRestart(t *testing.T) {
 	}
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	callbackInflight.Clear()
 
 	if err := dao.Mdb.Model(order).UpdateColumn("updated_at", time.Now().Add(-2*time.Second)).Error; err != nil {
 		t.Fatalf("age callback order for retry: %v", err)
@@ -291,7 +309,7 @@ func TestDispatchPendingCallbacksEpayRequiresAck(t *testing.T) {
 	defer cleanup()
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	callbackInflight.Clear()
 
 	epayKey, err := data.GetEnabledApiKey("1001")
 	if err != nil || epayKey == nil || epayKey.ID == 0 {
@@ -345,7 +363,7 @@ func TestDispatchPendingCallbacksEpayAcceptsTrimmedOk(t *testing.T) {
 	defer cleanup()
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	callbackInflight.Clear()
 
 	epayKey, err := data.GetEnabledApiKey("1001")
 	if err != nil || epayKey == nil || epayKey.ID == 0 {
@@ -713,7 +731,7 @@ func TestDispatchPendingCallbacksEpayAcceptsSuccessAck(t *testing.T) {
 	defer cleanup()
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	callbackInflight.Clear()
 
 	epayKey, err := data.GetEnabledApiKey("1001")
 	if err != nil || epayKey == nil || epayKey.ID == 0 {

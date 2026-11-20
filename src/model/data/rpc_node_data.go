@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -66,10 +67,13 @@ func ListRpcNodesForHealth() ([]mdb.RpcNode, error) {
 // scanners/listeners. Down nodes are skipped; ok nodes are ordered before
 // unknown/bootstrap nodes.
 func ListGeneralRpcCandidates(network, nodeType string) ([]mdb.RpcNode, error) {
+	return listGeneralProtocols(network, []string{strings.ToLower(strings.TrimSpace(nodeType))})
+}
+func listGeneralProtocols(network string, protocols []string) ([]mdb.RpcNode, error) {
 	var rows []mdb.RpcNode
 	err := dao.Mdb.Model(&mdb.RpcNode{}).
 		Where("network = ?", strings.ToLower(strings.TrimSpace(network))).
-		Where("type = ?", strings.ToLower(strings.TrimSpace(nodeType))).
+		Where("type IN ?", protocols).
 		Where("enabled = ?", true).
 		Where("(purpose IN ? OR purpose = '' OR purpose IS NULL)", []string{mdb.RpcNodePurposeGeneral, mdb.RpcNodePurposeBoth}).
 		Where("(status IN ? OR status = '' OR status IS NULL)", []string{mdb.RpcNodeStatusOk, mdb.RpcNodeStatusUnknown}).
@@ -91,11 +95,26 @@ func ListGeneralRpcCandidates(network, nodeType string) ([]mdb.RpcNode, error) {
 	out := make([]mdb.RpcNode, 0, len(rows))
 	for _, bucket := range buckets {
 		sortRpcNodes(bucket)
+		sort.SliceStable(bucket, func(i, j int) bool {
+			if bucket[i].Weight != bucket[j].Weight {
+				return bucket[i].Weight > bucket[j].Weight
+			}
+			return slices.Index(protocols, bucket[i].Type) < slices.Index(protocols, bucket[j].Type)
+		})
 		out = append(out, bucket...)
 	}
 	return out, nil
 }
 
+// GeneralScannerNodes ranks all usable interfaces in one database query.
+func GeneralScannerNodes(network string, protocols []string) ([]mdb.RpcNode, error) {
+	rows, err := listGeneralProtocols(network, protocols)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return !IsRpcNodeCoolingDown(rows[i].ID) && IsRpcNodeCoolingDown(rows[j].ID) })
+	return rows, nil
+}
 func SelectGeneralRpcNode(network, nodeType string, excludeIDs ...uint64) (*mdb.RpcNode, error) {
 	rows, err := ListGeneralRpcCandidates(network, nodeType)
 	if err != nil {
@@ -199,11 +218,12 @@ func SelectRpcNode(network, nodeType string) (*mdb.RpcNode, error) {
 // ListManualPaymentRpcCandidates returns enabled RPC nodes for manual payment
 // verification. Ordinary RPCs are tried first to avoid paid endpoint usage;
 // manual_verify nodes are used only as a fallback.
-func ListManualPaymentRpcCandidates(network, nodeType string) ([]mdb.RpcNode, error) {
+func ListManualPaymentRpcCandidates(network, nodeType string, alternates ...string) ([]mdb.RpcNode, error) {
+	types := append([]string{strings.ToLower(strings.TrimSpace(nodeType))}, alternates...)
 	var rows []mdb.RpcNode
 	err := dao.Mdb.Model(&mdb.RpcNode{}).
 		Where("network = ?", strings.ToLower(strings.TrimSpace(network))).
-		Where("type = ?", strings.ToLower(strings.TrimSpace(nodeType))).
+		Where("type IN ?", types).
 		Where("enabled = ?", true).
 		Where("(status IN ? OR status = '' OR status IS NULL)", []string{mdb.RpcNodeStatusOk, mdb.RpcNodeStatusUnknown}).
 		Find(&rows).Error

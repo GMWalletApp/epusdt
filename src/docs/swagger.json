@@ -1990,7 +1990,7 @@
                         "AdminJWT": []
                     }
                 ],
-                "description": "Manually mark a waiting or expired on-chain order as paid (operator补单)\nTON accepts canonical ton:\u003creceive_raw\u003e:\u003clt\u003e:\u003chash\u003e, lt:hash, or a unique recent hash-only reference for the order receive address.\nAptos accepts a transaction hash.\nAptos automatic scanning polls fullnode ledger-version transaction ranges with a runtime cursor.",
+                "description": "Manually mark a waiting, expired or manual-review on-chain order as paid (operator补单)\nTON accepts canonical ton:\u003creceive_raw\u003e:\u003clt\u003e:\u003chash\u003e, lt:hash, or a unique recent hash-only reference for the order receive address.\nAptos accepts a transaction hash.\nAptos automatic scanning polls fullnode ledger-version transaction ranges with a runtime cursor.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3079,7 +3079,7 @@
         },
         "/pay/check-status/{trade_id}": {
             "get": {
-                "description": "Return the current order status by trade ID. Status: 1=waiting payment, 2=paid, 3=expired, 4=waiting token/network selection.",
+                "description": "Return the current order status by trade ID. Status: 1=waiting payment, 2=paid, 3=expired, 4=waiting token/network selection, 5=confirming on-chain payment, 6=manual review required.",
                 "produces": [
                     "application/json"
                 ],
@@ -3126,7 +3126,7 @@
         },
         "/pay/checkout-counter-resp/{trade_id}": {
             "get": {
-                "description": "Return checkout initialization data when the order exists. This endpoint only confirms order existence and returns base order data; call /pay/check-status/{trade_id} for the current order status (1=waiting payment, 2=paid, 3=expired, 4=waiting token/network selection).\nWhen status=4, actual_amount is 0 and token/network/receive_address are empty; this state is produced by GMPay placeholders or EPay submit.php when no token/network request values or defaults resolve to a concrete payment asset. The cashier should guide the payer to choose an on-chain token/network or OkPay and then call /pay/switch-network.\nFor EPay orders with a merchant return_url, the response redirect_url is rewritten to the internal /pay/return/{trade_id} hop; the database still stores the merchant's raw return_url.",
+                "description": "Return checkout initialization data when the order exists. This endpoint only confirms order existence and returns base order data; call /pay/check-status/{trade_id} for the current order status (1=waiting payment, 2=paid, 3=expired, 4=waiting token/network selection, 5=confirming on-chain payment, 6=manual review required).\nWhen status=4, actual_amount is 0 and token/network/receive_address are empty; this state is produced by GMPay placeholders or EPay submit.php when no token/network request values or defaults resolve to a concrete payment asset. The cashier should guide the payer to choose an on-chain token/network or OkPay and then call /pay/switch-network.\nFor EPay orders with a merchant return_url, the response redirect_url is rewritten to the internal /pay/return/{trade_id} hop; the database still stores the merchant's raw return_url.",
                 "produces": [
                     "application/json"
                 ],
@@ -4064,7 +4064,15 @@
                     "enum": [
                         "http",
                         "ws",
-                        "lite"
+                        "lite",
+                        "grpc",
+                        "jsonrpc",
+                        "rest",
+                        "graphql",
+                        "ipc",
+                        "sse",
+                        "solidity-grpc",
+                        "solidity-http"
                     ],
                     "example": "http"
                 },
@@ -4294,14 +4302,19 @@
                     "type": "string",
                     "example": "https://example.com/success"
                 },
+                "review_transaction_hash": {
+                    "type": "string"
+                },
                 "status": {
-                    "description": "订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种",
+                    "description": "订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核",
                     "type": "integer",
                     "enum": [
                         1,
                         2,
                         3,
-                        4
+                        4,
+                        5,
+                        6
                     ],
                     "example": 1
                 },
@@ -5267,14 +5280,19 @@
                     "type": "string",
                     "example": "https://example.com/success"
                 },
+                "review_transaction_hash": {
+                    "type": "string"
+                },
                 "status": {
-                    "description": "订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种",
+                    "description": "订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核",
                     "type": "integer",
                     "enum": [
                         1,
                         2,
                         3,
-                        4
+                        4,
+                        5,
+                        6
                     ],
                     "example": 1
                 },
@@ -5352,7 +5370,15 @@
                     "enum": [
                         "http",
                         "ws",
-                        "lite"
+                        "lite",
+                        "grpc",
+                        "jsonrpc",
+                        "rest",
+                        "graphql",
+                        "ipc",
+                        "sse",
+                        "solidity-grpc",
+                        "solidity-http"
                     ],
                     "example": "http"
                 },
@@ -5585,13 +5611,15 @@
             "type": "object",
             "properties": {
                 "status": {
-                    "description": "订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种",
+                    "description": "订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核",
                     "type": "integer",
                     "enum": [
                         1,
                         2,
                         3,
-                        4
+                        4,
+                        5,
+                        6
                     ],
                     "example": 1
                 },
@@ -5670,13 +5698,15 @@
                     "example": 1713264100
                 },
                 "status": {
-                    "description": "订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种；status=4 时前端应引导选择链上 token/network 或 OkPay",
+                    "description": "订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核；status=4 时前端应引导选择链上 token/network 或 OkPay",
                     "type": "integer",
                     "enum": [
                         1,
                         2,
                         3,
-                        4
+                        4,
+                        5,
+                        6
                     ],
                     "example": 1
                 },
@@ -5731,13 +5761,15 @@
                     "example": "TTestTronAddress001"
                 },
                 "status": {
-                    "description": "订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种",
+                    "description": "订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核",
                     "type": "integer",
                     "enum": [
                         1,
                         2,
                         3,
-                        4
+                        4,
+                        5,
+                        6
                     ],
                     "example": 1
                 },

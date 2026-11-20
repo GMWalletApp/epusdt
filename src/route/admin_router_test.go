@@ -2414,3 +2414,32 @@ func TestAdminOrders_ListWithSubExcludesSubOrdersFromTopLevel(t *testing.T) {
 		t.Fatalf("sub-order trade_id=%s not found in any sub_orders array", subTradeId)
 	}
 }
+
+func TestAdminRpcNodeProtocolSelection(t *testing.T) {
+	e, token := setupAdminTestEnv(t)
+	for _, node := range []map[string]any{
+		{"network": "tron", "type": "solidity-grpc", "url": "grpcs://node.example:443"},
+		{"network": "base", "type": "graphql", "url": "https://node.example/graphql"},
+		{"network": "aptos", "type": "grpc", "url": "grpcs://node.example:443"},
+		{"network": "ethereum", "type": "sse", "url": "https://node.example/eth/v1/events"},
+	} {
+		assertOK(t, doPostAdmin(e, "/admin/api/v1/rpc-nodes", node, token))
+	}
+	invalid := map[string]any{"network": "sui", "type": "jsonrpc", "url": "https://node.example/"}
+	if r := doPostAdmin(e, "/admin/api/v1/rpc-nodes", invalid, token); r.Code == http.StatusOK {
+		t.Fatal("accepted retired Sui JSON-RPC")
+	}
+}
+
+func TestRpcNodeMustNameConcreteNetwork(t *testing.T) {
+	e, token := setupAdminTestEnv(t)
+	for _, name := range []string{"", "evm", "unsupported"} {
+		r := doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]any{"network": name, "type": "http", "url": "https://node.example"}, token)
+		if r.Code == http.StatusOK {
+			t.Fatalf("accepted network %q", name)
+		}
+	}
+	for _, name := range []string{"base", "ethereum", "binance"} {
+		assertOK(t, doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]any{"network": name, "type": "http", "url": "https://" + name + ".example"}, token))
+	}
+}

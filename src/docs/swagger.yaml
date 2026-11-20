@@ -210,6 +210,14 @@ definitions:
         - http
         - ws
         - lite
+        - grpc
+        - jsonrpc
+        - rest
+        - graphql
+        - ipc
+        - sse
+        - solidity-grpc
+        - solidity-http
         example: http
         type: string
       url:
@@ -393,13 +401,17 @@ definitions:
       redirect_url:
         example: https://example.com/success
         type: string
+      review_transaction_hash:
+        type: string
       status:
-        description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种
+        description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
         enum:
         - 1
         - 2
         - 3
         - 4
+        - 5
+        - 6
         example: 1
         type: integer
       sub_orders:
@@ -1119,13 +1131,17 @@ definitions:
       redirect_url:
         example: https://example.com/success
         type: string
+      review_transaction_hash:
+        type: string
       status:
-        description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种
+        description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
         enum:
         - 1
         - 2
         - 3
         - 4
+        - 5
+        - 6
         example: 1
         type: integer
       token:
@@ -1185,6 +1201,14 @@ definitions:
         - http
         - ws
         - lite
+        - grpc
+        - jsonrpc
+        - rest
+        - graphql
+        - ipc
+        - sse
+        - solidity-grpc
+        - solidity-http
         example: http
         type: string
       updated_at:
@@ -1363,12 +1387,14 @@ definitions:
   response.CheckStatusResponse:
     properties:
       status:
-        description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种
+        description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
         enum:
         - 1
         - 2
         - 3
         - 4
+        - 5
+        - 6
         example: 1
         type: integer
       trade_id:
@@ -1430,13 +1456,15 @@ definitions:
         example: 1713264100
         type: integer
       status:
-        description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种；status=4 时前端应引导选择链上 token/network
-          或 OkPay
+        description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核；status=4
+          时前端应引导选择链上 token/network 或 OkPay
         enum:
         - 1
         - 2
         - 3
         - 4
+        - 5
+        - 6
         example: 1
         type: integer
       token:
@@ -1479,12 +1507,14 @@ definitions:
         example: TTestTronAddress001
         type: string
       status:
-        description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种
+        description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
         enum:
         - 1
         - 2
         - 3
         - 4
+        - 5
+        - 6
         example: 1
         type: integer
       token:
@@ -2722,7 +2752,7 @@ paths:
       consumes:
       - application/json
       description: |-
-        Manually mark a waiting or expired on-chain order as paid (operator补单)
+        Manually mark a waiting, expired or manual-review on-chain order as paid (operator补单)
         TON accepts canonical ton:<receive_raw>:<lt>:<hash>, lt:hash, or a unique recent hash-only reference for the order receive address.
         Aptos accepts a transaction hash.
         Aptos automatic scanning polls fullnode ledger-version transaction ranges with a runtime cursor.
@@ -3514,7 +3544,8 @@ paths:
   /pay/check-status/{trade_id}:
     get:
       description: 'Return the current order status by trade ID. Status: 1=waiting
-        payment, 2=paid, 3=expired, 4=waiting token/network selection.'
+        payment, 2=paid, 3=expired, 4=waiting token/network selection, 5=confirming
+        on-chain payment, 6=manual review required.'
       parameters:
       - description: Trade ID
         in: path
@@ -3543,7 +3574,7 @@ paths:
   /pay/checkout-counter-resp/{trade_id}:
     get:
       description: |-
-        Return checkout initialization data when the order exists. This endpoint only confirms order existence and returns base order data; call /pay/check-status/{trade_id} for the current order status (1=waiting payment, 2=paid, 3=expired, 4=waiting token/network selection).
+        Return checkout initialization data when the order exists. This endpoint only confirms order existence and returns base order data; call /pay/check-status/{trade_id} for the current order status (1=waiting payment, 2=paid, 3=expired, 4=waiting token/network selection, 5=confirming on-chain payment, 6=manual review required).
         When status=4, actual_amount is 0 and token/network/receive_address are empty; this state is produced by GMPay placeholders or EPay submit.php when no token/network request values or defaults resolve to a concrete payment asset. The cashier should guide the payer to choose an on-chain token/network or OkPay and then call /pay/switch-network.
         For EPay orders with a merchant return_url, the response redirect_url is rewritten to the internal /pay/return/{trade_id} hop; the database still stores the merchant's raw return_url.
       parameters:
