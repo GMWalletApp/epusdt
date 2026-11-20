@@ -186,9 +186,9 @@ func (c *BaseAdminController) DeleteRpcNode(ctx echo.Context) error {
 	return c.SucJson(ctx, nil)
 }
 
-// HealthCheckRpcNode performs an on-demand probe and writes the result.
-// For HTTP/WS/lite endpoints this is a TCP-level check against the configured
-// URL host. TON lite rows usually point to a global.config.json HTTPS URL.
+// HealthCheckRpcNode performs an on-demand capability probe and writes the
+// result. EVM nodes are checked with the same log query/subscription required
+// by payment recognition; other node types use a reachability probe.
 // @Summary      Health check RPC node
 // @Description  Perform an on-demand health probe on an RPC node
 // @Tags         Admin RPC Nodes
@@ -210,7 +210,7 @@ func (c *BaseAdminController) HealthCheckRpcNode(ctx echo.Context) error {
 	if row.ID == 0 {
 		return c.FailJson(ctx, constant.RpcNodeNotFoundErr)
 	}
-	status, latency := task.ProbeNode(row.Url)
+	status, latency := task.ProbeRpcNode(*row)
 	if err := data.UpdateRpcNodeHealth(id, status, latency); err != nil {
 		return c.FailJson(ctx, err)
 	}

@@ -2,6 +2,7 @@ package mq
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,23 @@ import (
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/util/sign"
 )
+
+func TestCleanupExpiredTransactionLocksRetriesSQLiteBusy(t *testing.T) {
+	attempts := 0
+	err := cleanupExpiredTransactionLocksWith(func() error {
+		attempts++
+		if attempts < sqliteBusyRetryAttempts {
+			return errors.New("database is locked (SQLITE_BUSY)")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("cleanup retry: %v", err)
+	}
+	if attempts != sqliteBusyRetryAttempts {
+		t.Fatalf("attempts = %d, want %d", attempts, sqliteBusyRetryAttempts)
+	}
+}
 
 func TestProcessExpiredOrdersExpiresWaitingOrdersAndReleasesLocks(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
