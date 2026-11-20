@@ -33,6 +33,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Consumidor | [`GET /v1/heights/{network}`](#height) | `200` |
 | Consumidor | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
 | Consumidor | [`GET /v1/transactions/{network}/{hash}/strict`](#transactions) | `200` |
+| Administrador | [`GET /v1/admin/progress`](#scan-progress) | `200` |
 | Administrador | [`GET /v1/admin/nodes`](#list) | `200` |
 | Administrador | [`POST /v1/admin/nodes`](#add) | `201` |
 | Administrador | [`POST /v1/admin/nodes/fallback`](#fallback) | `201` |
@@ -387,6 +388,12 @@ Registra un nodo de historial de pago para una red con los mismos campos y el to
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://second-rpc.example.net","api_key":"SECOND_PROVIDER_KEY"}'
 ```
+
+<a id="scan-progress"></a>
+
+### `GET /v1/admin/progress`
+
+Devuelve una fila por red configurada sin consultar los nodos. `target_height` incluye las confirmaciones y `cursor_height` indica hasta dónde se ha escaneado sin huecos. `lag_ms` mide el tiempo mínimo observado que lleva pendiente una altura elegible. El historial en memoria se reinicia al arrancar o al iniciar otra suscripción tras quedar la red inactiva. El estado es `warning` por encima de 300 000 ms y `ok` en otro caso. Para `idle`, `warming` y `stale` el retraso es null.
 
 <a id="test-one"></a>
 

@@ -16,6 +16,18 @@ func (r *NodeRegistry) Run(ctx context.Context, n chains.Network) {
 	r.store.WhileWatched(ctx, n.Name, func(live context.Context) {
 		p := newRegistryPool(live, r, n)
 		defer p.Close()
+		saveNode := p.observe
+		interval := time.Duration(n.IntervalSeconds) * time.Second
+		if interval <= 0 {
+			interval = 5 * time.Second
+		}
+		p.observe = func(cfg chains.Network, sample headSample) {
+			if node, ok := p.inventory[cfg]; ok && node.Origin != "fallback" && sample.err == nil {
+				head := p.bestRecentTip(sample.height, interval)
+				r.store.RecordScanHead(live, n.Name, head-max(n.Confirmations-1, 0), sample.start)
+			}
+			saveNode(cfg, sample)
+		}
 		open := func(context.Context, chains.Network) (chains.Source, error) { return borrowedPool{p}, nil }
 		engine.RunWithSource(live, r.store, n, open, func(chains.Source) <-chan struct{} { return p.Wakeups() })
 	})

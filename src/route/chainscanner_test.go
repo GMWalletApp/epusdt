@@ -63,6 +63,10 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	if w.Code == 200 {
 		t.Fatal("admin route accessible without JWT")
 	}
+	var progress []struct{ Network, Status string }
+	if err := json.Unmarshal([]byte(call("GET", "/admin/progress", "", 200)), &progress); err != nil || len(progress) != 1 || progress[0].Network != "solana" || progress[0].Status != "idle" {
+		t.Fatalf("scanner progress: %+v, %v", progress, err)
+	}
 	const host = "provider.example"
 	for i, endpoint := range []string{"/admin/nodes", "/admin/nodes/fallback"} {
 		b := call("POST", endpoint, `{"network":"solana","protocol":"http","url":"https://`+[]string{"ordinary.", "fallback."}[i]+host+`"}`, 201)
@@ -120,8 +124,22 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	if err := json.Unmarshal([]byte(call("POST", "/admin/nodes", fmt.Sprintf(`{"network":"solana","protocol":"http","url":%q}`, rpc.URL), 201)), &node); err != nil {
 		t.Fatal(err)
 	}
-	call("POST", fmt.Sprintf("/admin/nodes/%d/test", node.ID), "", http.StatusNotFound)
-	call("POST", "/admin/nodes/test?network=solana", "", http.StatusNotFound)
+	checked := call("POST", fmt.Sprintf("/admin/nodes/%d/test", node.ID), "", 200)
+	var result scanner.Node
+	if err := json.Unmarshal([]byte(checked), &result); err != nil || result.ID != node.ID || result.Status != "ok" || result.Height == nil || *result.Height != 123 {
+		t.Fatalf("unexpected single-node result: %s", checked)
+	}
+	call("POST", "/admin/nodes/test?network=solana", "", 200)
+	var inventory []scanner.Node
+	list := call("GET", "/admin/nodes?network=solana", "", 200)
+	if err := json.Unmarshal([]byte(list), &inventory); err != nil || len(inventory) != 2 {
+		t.Fatalf("unexpected inventory after batch: %s", list)
+	}
+	for _, row := range inventory {
+		if row.Status != "ok" || row.Height == nil || *row.Height != 123 || row.CheckedAt == nil || row.Latency == nil {
+			t.Fatalf("missing diagnostic data for node %d: %+v", row.ID, row)
+		}
+	}
 	for _, suffix := range []string{"", "/strict"} {
 		b := call("GET", "/transactions/solana/"+signature+suffix, "", 200)
 		if !strings.Contains(b, signature) {

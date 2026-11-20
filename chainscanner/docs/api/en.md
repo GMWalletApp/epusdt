@@ -33,6 +33,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Consumer | [`GET /v1/heights/{network}`](#height) | `200` |
 | Consumer | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
 | Consumer | [`GET /v1/transactions/{network}/{hash}/strict`](#transactions) | `200` |
+| Administrator | [`GET /v1/admin/progress`](#scan-progress) | `200` |
 | Administrator | [`GET /v1/admin/nodes`](#list) | `200` |
 | Administrator | [`POST /v1/admin/nodes`](#add) | `201` |
 | Administrator | [`POST /v1/admin/nodes/fallback`](#fallback) | `201` |
@@ -385,6 +386,12 @@ Register an operator-funded history endpoint for one network with the same field
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://second-rpc.example.net","api_key":"SECOND_PROVIDER_KEY"}'
 ```
+
+<a id="scan-progress"></a>
+
+### `GET /v1/admin/progress`
+
+Returns one row per configured network. Reading this endpoint makes no RPC calls. `target_height` includes the configured confirmation depth. `cursor_height` is the last contiguous completed height. `lag_ms` is a lower bound on how long an observed eligible height has been waiting for that cursor. Samples are held in memory for the current watch period, at most 361 spaced at least five seconds apart. A restart starts a new observation window. Status is `warning` above 300,000 ms and `ok` otherwise. `idle`, `warming` and `stale` have null lag. A head becomes stale after five minutes or twice the poll interval, whichever is longer.
 
 <a id="test-one"></a>
 

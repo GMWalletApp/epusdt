@@ -33,6 +33,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Dịch vụ | [`GET /v1/heights/{network}`](#height) | `200` |
 | Dịch vụ | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
 | Dịch vụ | [`GET /v1/transactions/{network}/{hash}/strict`](#transactions) | `200` |
+| Quản trị viên | [`GET /v1/admin/progress`](#scan-progress) | `200` |
 | Quản trị viên | [`GET /v1/admin/nodes`](#list) | `200` |
 | Quản trị viên | [`POST /v1/admin/nodes`](#add) | `201` |
 | Quản trị viên | [`POST /v1/admin/nodes/fallback`](#fallback) | `201` |
@@ -387,6 +388,12 @@ admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http"
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://second-rpc.example.net","api_key":"SECOND_PROVIDER_KEY"}'
 ```
+
+<a id="scan-progress"></a>
+
+### `GET /v1/admin/progress`
+
+Trả về một dòng cho mỗi mạng đã cấu hình mà không gọi RPC. `target_height` đã tính độ sâu xác nhận, còn `cursor_height` là độ cao đã quét liên tục. `lag_ms` là thời gian chờ tối thiểu đã quan sát của một độ cao đủ điều kiện nhưng chưa quét xong. Dữ liệu quan sát được làm mới khi khởi động lại hoặc bắt đầu đợt theo dõi mới. Trạng thái là `warning` khi vượt 300.000 ms, ngược lại là `ok`. Độ trễ là null với `idle`, `warming` và `stale`.
 
 <a id="test-one"></a>
 

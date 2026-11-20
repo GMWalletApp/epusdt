@@ -36,6 +36,10 @@ func (r *NodeRegistry) Handler(consumers map[string]string, token string) (http.
 	key := sha256.Sum256([]byte(token))
 	admin := http.NewServeMux()
 	r.registerBlacklistRoutes(admin)
+	admin.HandleFunc("GET /v1/admin/progress", func(w http.ResponseWriter, req *http.Request) {
+		rows, err := r.store.ScanProgress(req.Context())
+		nodeReply(w, 200, rows, err)
+	})
 	admin.HandleFunc("GET /v1/admin/nodes", func(w http.ResponseWriter, req *http.Request) {
 		nodes, err := r.List(req.Context(), req.URL.Query().Get("network"))
 		nodeReply(w, 200, nodes, err)

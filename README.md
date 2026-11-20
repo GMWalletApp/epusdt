@@ -243,10 +243,12 @@ EPUSDT 作为消费者连接独立运行的 ChainScanner。区块读取、节点
 | 用途 | 方法和相对路径 |
 | --- | --- |
 | 普通节点、兜底节点 | `GET /admin/nodes`、`POST /admin/nodes`、`POST /admin/nodes/fallback`、`DELETE /admin/nodes/{id}` |
+| 首页各链追块延迟 | `GET /admin/progress`（使用扫描器管理员令牌） |
+| 手动复测扫描节点 | `POST /admin/nodes/{id}/test`、`POST /admin/nodes/test?network=solana` |
 | RPC 地址黑名单 | `GET /admin/blacklist`、`PUT /admin/blacklist/{rule}`、`DELETE /admin/blacklist/{rule}`。例如 `keyword:acme`、`exact:rpc.example.org` |
 | 连续进度、普通与严格交易查询 | `GET /heights/{network}`、`GET /transactions/{network}/{hash}`、`GET /transactions/{network}/{hash}/strict` |
 
-ChainScanner 在有订阅时自动探测节点高度，把区块区间分配给高度和确认深度均达标的空闲节点。需要手动诊断节点时，可直接调用 [ChainScanner 节点测试接口](chainscanner/docs/api/zh-CN.md#test-one)。
+ChainScanner 在有订阅时自动探测节点高度，把区块区间分配给高度和确认深度均达标的空闲节点。后台 RPC 节点页可手动复测单个扫描节点或所选链的节点，探测由 ChainScanner 执行。节点列表显示最近检测的高度、延时和状态。首页通过 `GET /admin/progress` 展示各链的可扫高度、连续扫完高度和已观测追块延迟。超过 5 分钟显示警告，无订阅或缺少近期链头会单独标记。查看这两个页面只读取扫描器已有的数据。[节点测试接口](chainscanner/docs/api/zh-CN.md#test-one)
 
 建议为每条收款链配置两家独立的兜底服务商。节点参数、规则格式、订阅边界和跨轮节点排除见 [ChainScanner v1 API 文档](chainscanner/docs/api/zh-CN.md)。
 

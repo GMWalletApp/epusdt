@@ -33,6 +33,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | 消费者 | [`GET /v1/heights/{network}`](#height) | `200` |
 | 消费者 | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
 | 消费者 | [`GET /v1/transactions/{network}/{hash}/strict`](#transactions) | `200` |
+| 管理员 | [`GET /v1/admin/progress`](#scan-progress) | `200` |
 | 管理员 | [`GET /v1/admin/nodes`](#list) | `200` |
 | 管理员 | [`POST /v1/admin/nodes`](#add) | `201` |
 | 管理员 | [`POST /v1/admin/nodes/fallback`](#fallback) | `201` |
@@ -385,6 +386,12 @@ admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http"
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://second-rpc.example.net","api_key":"SECOND_PROVIDER_KEY"}'
 ```
+
+<a id="scan-progress"></a>
+
+### `GET /v1/admin/progress`
+
+每条已配置网络返回一行。查看进度只读现有数据。`target_height` 是满足确认深度的目标高度，`cursor_height` 是连续扫完的高度。`lag_ms` 表示扫描器首次观测到尚未连续扫完的目标后，至少经过了多少毫秒。每个监听周期最多保留 361 个间隔至少 5 秒的样本，重启后重新观测。超过 300,000 毫秒为 `warning`，否则为 `ok`。无订阅 `idle`、等待样本 `warming`、链头过期 `stale` 时延迟为 null。链头过期阈值取 5 分钟和两个轮询周期中的较长者。
 
 <a id="test-one"></a>
 

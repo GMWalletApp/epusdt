@@ -33,6 +33,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Потребитель | [`GET /v1/heights/{network}`](#height) | `200` |
 | Потребитель | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
 | Потребитель | [`GET /v1/transactions/{network}/{hash}/strict`](#transactions) | `200` |
+| Администратор | [`GET /v1/admin/progress`](#scan-progress) | `200` |
 | Администратор | [`GET /v1/admin/nodes`](#list) | `200` |
 | Администратор | [`POST /v1/admin/nodes`](#add) | `201` |
 | Администратор | [`POST /v1/admin/nodes/fallback`](#fallback) | `201` |
@@ -387,6 +388,12 @@ admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http"
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://second-rpc.example.net","api_key":"SECOND_PROVIDER_KEY"}'
 ```
+
+<a id="scan-progress"></a>
+
+### `GET /v1/admin/progress`
+
+Возвращает строку для каждой настроенной сети без запросов к узлам. `target_height` учитывает глубину подтверждения, а `cursor_height` — последняя высота, обработанная без пропусков. `lag_ms` показывает нижнюю границу времени ожидания для наблюдаемой, но ещё не обработанной высоты. При перезапуске или начале нового периода наблюдения история сбрасывается. При задержке свыше 300 000 мс статус равен `warning`, иначе `ok`. Для `idle`, `warming` и `stale` задержка равна null.
 
 <a id="test-one"></a>
 
