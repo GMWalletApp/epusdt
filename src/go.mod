@@ -3,6 +3,7 @@ module github.com/GMWalletApp/epusdt
 go 1.25.0
 
 require (
+	github.com/GMWalletApp/ChainScanner v0.0.0
 	github.com/btcsuite/btcutil v1.0.2
 	github.com/dromara/carbon/v2 v2.6.15
 	github.com/ethereum/go-ethereum v1.15.11
@@ -61,7 +62,7 @@ require (
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gookit/filter v1.1.2 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/gorilla/websocket v1.5.3
 	github.com/holiman/uint256 v1.3.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -115,3 +116,5 @@ require (
 	modernc.org/sqlite v1.47.0 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
+
+replace github.com/GMWalletApp/ChainScanner => ../chainscanner

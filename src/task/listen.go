@@ -1,45 +1,72 @@
 package task
 
 import (
+	"context"
+	"os"
+	"time"
+
+	scanner "github.com/GMWalletApp/ChainScanner"
+	"github.com/GMWalletApp/epusdt/config"
+	"github.com/GMWalletApp/epusdt/model/data"
+	"github.com/GMWalletApp/epusdt/model/service"
 	"github.com/GMWalletApp/epusdt/util/log"
 	"github.com/robfig/cron/v3"
 )
 
 func Start() {
-	log.Sugar.Info("[task] Starting task scheduler...")
-	// The ETH listener short-circuits internally when chain is disabled
-	// or no tokens are configured, so always launch the goroutine.
-	go StartEthereumWebSocketListener()
-	go StartBscWebSocketListener()
-	go StartPolygonWebSocketListener()
-	go StartPlasmaWebSocketListener()
-	go StartEthereumBackfillScannerListener()
-	go StartBscBackfillScannerListener()
-	go StartPolygonBackfillScannerListener()
-	go StartPlasmaBackfillScannerListener()
-	go StartTronBlockScannerListener()
-	go StartTonBlockScannerListener()
-	go StartAptosLedgerScannerListener()
-
-	c := cron.New()
-
-	// Solana polling
-	_, err := c.AddJob("@every 5s", ListenSolJob{})
-	if err != nil {
-		log.Sugar.Errorf("[task] Failed to add ListenSolJob: %v", err)
-		return
+	ctx := context.Background()
+	var store *scanner.Store
+	var feed scanner.Feed
+	if url := os.Getenv("CHAINSCANNER_URL"); url != "" {
+		feed = scanner.Client{URL: url, Token: os.Getenv("CHAINSCANNER_TOKEN")}
+	} else {
+		var err error
+		store, err = scanner.Open(config.GetRuntimeSqlitePath() + ".chainscanner")
+		if err != nil {
+			panic(err)
+		}
+		feed = store
 	}
-
-	log.Sugar.Info("[task] ListenSolJob scheduled successfully (@every 5s)")
-
-	// RPC node health checks
-	_, err = c.AddJob("@every 30s", RpcHealthJob{})
-	if err != nil {
-		log.Sugar.Errorf("[task] Failed to add RpcHealthJob: %v", err)
-		return
+	subscriptions := &paymentSubscriptions{feed: feed}
+	service.EnsurePaymentWatch = subscriptions.ensure
+	go func() {
+		// Install the initial watch set before importing a cursor or reading a block.
+		for {
+			if err := subscriptions.refresh(ctx); err == nil {
+				break
+			} else {
+				log.Sugar.Errorf("[ChainScanner] subscribe: %v", err)
+			}
+			time.Sleep(5 * time.Second)
+		}
+		if store != nil {
+			for _, network := range scannerNetworks {
+				go runEmbeddedNetwork(ctx, network, store)
+			}
+		}
+		go consumeScanner(ctx, feed)
+		for range time.Tick(5 * time.Second) {
+			if err := subscriptions.refresh(ctx); err != nil {
+				log.Sugar.Errorf("[ChainScanner] subscribe: %v", err)
+			}
+		}
+	}()
+	if store != nil {
+		c := cron.New()
+		if _, err := c.AddJob("@every 30s", RpcHealthJob{}); err != nil {
+			panic(err)
+		}
+		c.Start()
 	}
-	log.Sugar.Info("[task] RpcHealthJob scheduled successfully (@every 30s)")
-
-	c.Start()
-	log.Sugar.Info("[task] Task scheduler started")
+	if store == nil {
+		go func() {
+			for range time.Tick(15 * time.Second) {
+				for _, n := range scannerNetworks {
+					if h, e := feed.Height(ctx, n); e == nil && h >= 0 {
+						data.RecordRpcBlockHeight(n, h)
+					}
+				}
+			}
+		}()
+	}
 }

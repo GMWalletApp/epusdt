@@ -627,7 +627,7 @@ func MatchUsdtAtaAddress(address string, ataTo string) bool {
 		return false
 	}
 
-	return strings.EqualFold(ata, ataTo)
+	return ata == ataTo
 }
 
 func MatchUsdcAtaAddress(address string, ataTo string) bool {
@@ -637,7 +637,7 @@ func MatchUsdcAtaAddress(address string, ataTo string) bool {
 		return false
 	}
 
-	return strings.EqualFold(ata, ataTo)
+	return ata == ataTo
 }
 
 func MatchAtaAddress(address string, mint string, ataTo string) bool {
@@ -647,7 +647,7 @@ func MatchAtaAddress(address string, mint string, ataTo string) bool {
 		return false
 	}
 
-	return strings.EqualFold(ata, ataTo)
+	return ata == ataTo
 }
 
 func FindATAAddress(owner, mint string) (string, error) {

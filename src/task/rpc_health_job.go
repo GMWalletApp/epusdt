@@ -45,7 +45,7 @@ func (r RpcHealthJob) Run() {
 		wg.Add(1)
 		go func(n mdb.RpcNode) {
 			defer wg.Done()
-			status, latency, probeErr := probeRpcNode(n)
+			status, latency, probeErr := probeReachability(n)
 			if status == mdb.RpcNodeStatusDown && n.Status != mdb.RpcNodeStatusDown {
 				log.Sugar.Errorf("[rpc-health] capability probe failed node=%s err=%v", data.RpcNodeLogLabel(n), probeErr)
 			}
@@ -55,6 +55,27 @@ func (r RpcHealthJob) Run() {
 		}(nodes[i])
 	}
 	wg.Wait()
+}
+
+// The recurring health check tests reachability only. The scanner itself
+// reports read failures and rotates nodes. An explicit admin probe can run
+// the more expensive historical-log and subscription checks.
+func probeReachability(node mdb.RpcNode) (string, int, error) {
+	if !isEvmRpcNetwork(node.Network) {
+		return probeRpcNode(node)
+	}
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), rpcProbeTimeout)
+	defer cancel()
+	client, err := ethclient.DialContext(ctx, node.Url)
+	if err == nil {
+		defer client.Close()
+		_, err = client.BlockNumber(ctx)
+	}
+	if err != nil {
+		return mdb.RpcNodeStatusDown, -1, err
+	}
+	return mdb.RpcNodeStatusOk, int(time.Since(start).Milliseconds()), nil
 }
 
 // ProbeRpcNode verifies the capability required by the configured node. EVM

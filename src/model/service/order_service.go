@@ -391,6 +391,9 @@ func orderProcessing(req *request.OrderProcessingRequest, opts orderProcessingOp
 	return nil
 }
 
+// EnsurePaymentWatch is wired during bootstrap before the HTTP server starts.
+var EnsurePaymentWatch func(network, address string) error
+
 // ReserveAvailableWalletAndAmount finds and locks a network+address+token+amount pair.
 func ReserveAvailableWalletAndAmount(tradeID string, network string, token string, amount float64, walletAddress []mdb.WalletAddress) (string, float64, error) {
 	availableAddress := ""
@@ -400,6 +403,11 @@ func ReserveAvailableWalletAndAmount(tradeID string, network string, token strin
 	tryLockWalletFunc := func(targetAmount float64) (string, error) {
 		for _, address := range walletAddress {
 			normalizedAddress := normalizeOrderAddressByNetwork(network, address.Address)
+			if EnsurePaymentWatch != nil {
+				if err := EnsurePaymentWatch(network, normalizedAddress); err != nil {
+					return "", err
+				}
+			}
 			err := data.LockTransaction(network, normalizedAddress, token, tradeID, targetAmount, config.GetOrderExpirationTimeDuration())
 			if err == nil {
 				return normalizedAddress, nil
