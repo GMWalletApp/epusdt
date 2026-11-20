@@ -21,13 +21,6 @@ import (
 	"github.com/xssnick/tonutils-go/address"
 )
 
-func IsEVM(n string) bool {
-	switch n {
-	case "ethereum", "binance", "polygon", "plasma":
-		return true
-	}
-	return false
-}
 func Canonical(n, a string) (string, error) {
 	a = strings.TrimSpace(a)
 	switch {
@@ -35,7 +28,7 @@ func Canonical(n, a string) (string, error) {
 		if common.IsHexAddress(a) {
 			return strings.ToLower(common.HexToAddress(a).Hex()), nil
 		}
-	case n == "aptos":
+	case n == "aptos" || n == "sui":
 		h := strings.TrimPrefix(a, "0x")
 		if len(h) > 0 && len(h) <= 64 {
 			h = strings.Repeat("0", 64-len(h)) + h
@@ -81,15 +74,19 @@ func safeError(err error, n Network) string {
 }
 
 type jsonSource struct {
-	n    Network
-	rpc  *rpc.Client
-	http *http.Client
+	n     Network
+	rpc   *rpc.Client
+	http  *http.Client
+	heads *headSignals
 }
 
 func NewSource(ctx context.Context, n Network) (Source, error) {
 	u, err := url.Parse(n.URL)
 	if err != nil || u.Host == "" {
 		return nil, errors.New("invalid RPC URL")
+	}
+	if n.Name == "sui" {
+		return newSui(ctx, n, u)
 	}
 	if n.Name == "ton" {
 		return newTON(ctx, n)
@@ -106,6 +103,38 @@ func NewSource(ctx context.Context, n Network) (Source, error) {
 			return nil, err
 		}
 		s.rpc = c
+		if IsEVM(n.Name) {
+			probe, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			id, e := s.call(probe, "eth_chainId")
+			actual, parseErr := strconv.ParseInt(id.String(), 0, 64)
+			if e != nil || parseErr != nil || actual != EVMChainID(n.Name) {
+				c.Close()
+				return nil, fmt.Errorf("chain ID check failed for %s (received %s): %v", n.Name, id.String(), e)
+			}
+			if u.Scheme == "ws" || u.Scheme == "wss" {
+				s.heads = startSignals(ctx, func(ctx context.Context, wake func()) error {
+					heads := make(chan json.RawMessage, 8)
+					setup, cancel := context.WithTimeout(ctx, 8*time.Second)
+					sub, err := c.EthSubscribe(setup, heads, "newHeads")
+					cancel()
+					if err != nil {
+						return err
+					}
+					defer sub.Unsubscribe()
+					for {
+						select {
+						case <-ctx.Done():
+							return ctx.Err()
+						case err := <-sub.Err():
+							return err
+						case <-heads:
+							wake()
+						}
+					}
+				})
+			}
+		}
 	case n.Name == "tron" || n.Name == "aptos":
 	default:
 		return nil, fmt.Errorf("unsupported network %s", n.Name)
@@ -113,6 +142,9 @@ func NewSource(ctx context.Context, n Network) (Source, error) {
 	return s, nil
 }
 func (s *jsonSource) Close() {
+	if s.heads != nil {
+		s.heads.stop()
+	}
 	if s.rpc != nil {
 		s.rpc.Close()
 	}
@@ -202,7 +234,7 @@ func (s *jsonSource) Read(ctx context.Context, next, head int64) (int64, []Activ
 	case "solana":
 		return s.solana(ctx, next, head)
 	default:
-		return s.evm(ctx, next)
+		return s.evmRange(ctx, next, head)
 	}
 }
 func addAddress(a *[]string, n, v string) {

@@ -39,6 +39,8 @@ func TestEVMBlockReceiptsPreserveAddressActivity(t *testing.T) {
 	contract := "0x" + strings.Repeat("2", 40)
 	rpc := rpcFixture(t, func(r rpcRequest) (any, error) {
 		switch r.Method {
+		case "eth_chainId":
+			return "0x89", nil
 		case "eth_getBlockByNumber":
 			return map[string]any{"number": "0x1", "hash": "b", "timestamp": "0x2", "transactions": []any{map[string]string{"hash": "tx", "from": contract, "to": contract}}}, nil
 		case "eth_getLogs":
@@ -125,5 +127,22 @@ func TestTRONIncompleteReceiptsRetainCursor(t *testing.T) {
 	h, err := s.Height(ctx, "tron")
 	if err != nil || h != 99 {
 		t.Fatal(h, err)
+	}
+}
+
+func TestNewEVMRejectsWrongChain(t *testing.T) {
+	srv := rpcFixture(t, func(r rpcRequest) (any, error) {
+		if r.Method != "eth_chainId" {
+			t.Error(r.Method)
+		}
+		return "0x1", nil
+	})
+	defer srv.Close()
+	for _, name := range []string{"arbitrum", "optimism", "hyperevm", "monad", "arc", "avalanche"} {
+		src, err := NewSource(context.Background(), Network{Name: name, URL: srv.URL})
+		if err == nil {
+			src.Close()
+			t.Fatal(name, "accepted the Ethereum endpoint")
+		}
 	}
 }

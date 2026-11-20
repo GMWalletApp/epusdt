@@ -16,7 +16,7 @@ import (
 
 const paymentConsumer = "epusdt"
 
-var scannerNetworks = []string{mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma, mdb.NetworkTron, mdb.NetworkTon, mdb.NetworkAptos, mdb.NetworkSolana}
+var scannerNetworks = []string{mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma, mdb.NetworkTron, mdb.NetworkTon, mdb.NetworkAptos, mdb.NetworkSolana, mdb.NetworkSui, mdb.NetworkArbitrum, mdb.NetworkHyperEVM, mdb.NetworkMonad, mdb.NetworkArc, mdb.NetworkAvalanche, mdb.NetworkOptimism}
 
 type paymentSubscriptions struct {
 	mu         sync.Mutex
@@ -119,6 +119,7 @@ func runEmbeddedNetwork(ctx context.Context, name string, store *scanner.Store) 
 		select {
 		case <-ctx.Done():
 			return
+		case <-scanner.Wakeups(worker.src):
 		case <-time.After(delay):
 		}
 	}
@@ -138,6 +139,9 @@ func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
 		delay = time.Duration(chain.ScanIntervalSec) * time.Second
 	}
 	kind := mdb.RpcNodeTypeHttp
+	if scanner.IsEVM(w.name) {
+		kind = mdb.RpcNodeTypeWs
+	}
 	if w.name == mdb.NetworkTon {
 		kind = mdb.RpcNodeTypeLite
 	}
@@ -146,7 +150,7 @@ func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
 		return delay, err
 	}
 	if scanner.IsEVM(w.name) && (node == nil || data.IsRpcNodeCoolingDown(node.ID)) {
-		alternate, err := data.SelectGeneralRpcNode(w.name, mdb.RpcNodeTypeWs)
+		alternate, err := data.SelectGeneralRpcNode(w.name, mdb.RpcNodeTypeHttp)
 		if err != nil {
 			return delay, err
 		}
@@ -160,7 +164,9 @@ func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
 	}
 	n := scanner.Network{Name: w.name, URL: node.Url, APIKey: node.ApiKey, Confirmations: int64(chain.MinConfirmations)}
 	if scanner.IsEVM(w.name) {
-		n.Lookback = 2048
+		if scanner.NativeAsset(w.name) == "" {
+			n.Lookback = 2048
+		}
 		if !w.seeded {
 			old, err := data.GetEvmScanCursor(w.name)
 			if err != nil {
@@ -206,8 +212,42 @@ func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
 }
 
 func consumeScanner(ctx context.Context, feed scanner.Feed) {
+	lanes, ok := feed.(interface {
+		PendingNetwork(context.Context, string, string, time.Duration) (*scanner.Delivery, error)
+	})
+	if ok {
+		// Probe without acknowledging. Older standalone services expose the global queue.
+		for ctx.Err() == nil {
+			_, err := lanes.PendingNetwork(ctx, paymentConsumer, scannerNetworks[0], 0)
+			if errors.Is(err, scanner.ErrAPINotFound) {
+				break
+			}
+			if err == nil {
+				var wg sync.WaitGroup
+				for _, network := range scannerNetworks {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						consumeQueue(ctx, feed, func() (*scanner.Delivery, error) {
+							return lanes.PendingNetwork(ctx, paymentConsumer, network, 15*time.Second)
+						})
+					}()
+				}
+				wg.Wait()
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Second):
+			}
+		}
+	}
+	consumeQueue(ctx, feed, func() (*scanner.Delivery, error) { return feed.Pending(ctx, paymentConsumer) })
+}
+func consumeQueue(ctx context.Context, feed scanner.Feed, next func() (*scanner.Delivery, error)) {
 	for ctx.Err() == nil {
-		d, err := feed.Pending(ctx, paymentConsumer)
+		d, err := next()
 		if err == nil && d != nil {
 			err = processConfirmedActivity(ctx, feed, d.Activity)
 			if err == nil {

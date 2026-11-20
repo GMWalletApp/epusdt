@@ -229,3 +229,7 @@ Good Morning Technology, LLC 为依据美国法律设立的主体，并将在适
 多个支付实例或其他业务共享监听时，独立运行一个 ChainScanner，给不同业务配置独立令牌，再为 EPUSDT 进程设置环境变量 `CHAINSCANNER_URL` 和 `CHAINSCANNER_TOKEN`。此模式由独立服务持有 RPC 和游标。EPUSDT 注册启用的钱包，在展示新收款地址前确认订阅，并在持久化支付结果后确认事件。TON Jetton 入账仍使用后台的 TON Lite 节点校验 Jetton 钱包归属。外部服务第一次接管已有部署时，可先用空的 networks 列表启动服务并注册钱包，再用同一数据库开启各链扫描。将各链的 `lookback` 设为覆盖交接窗口的高度范围。
 
 上游为 [GMWalletApp/ChainScanner](https://github.com/GMWalletApp/ChainScanner)。`chainscanner/` 保存完整源码，`chainscanner.rev` 记录上游提交。运行 `scripts/sync-chainscanner <commit>` 可同步指定版本。GitHub Actions 每天检查上游并提交更新 PR，需要在仓库 Actions 设置中允许创建 PR。
+
+新增网络包括 Sui、Arbitrum One、HyperEVM、Monad、Arc 主网、Avalanche C-Chain 和 OP Mainnet。各链预置原生资产和 Circle USDC；Arc 原生币就是 USDC，支付端分别按原生转账的 18 位和 ERC-20 的 6 位解析。Sui 按完整 Move coin type 区分资产。同名跨链资产通过实际到账的链和合约或 coin type 匹配订单。
+
+EVM 优先使用支持普通 RPC 读取的 WSS 节点，收到新区块头即按持久化游标补齐；没有可用 WSS 时使用 HTTPS。Sui 使用复用的 gRPC 连接监听检查点。Arbitrum One 和 OP Mainnet 的确认数以 L2 区块计算。支付端按网络独立消费，一条链的支付处理重试不会阻塞其他链。独立服务的 `PUT /v2/subscriptions` 返回每个地址含首块在内的 `from_height`，接口示例见 ChainScanner README。

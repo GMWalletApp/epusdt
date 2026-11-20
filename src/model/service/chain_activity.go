@@ -40,6 +40,17 @@ func ApplyChainActivity(ctx context.Context, e scanner.Activity) error {
 		return nil
 	}
 	switch e.Network {
+	case mdb.NetworkSui:
+		for _, t := range tokens {
+			for _, a := range e.Addresses {
+				if raw := suiCredit(e, a, t); raw != nil {
+					if err := settleActivity(e, a, t, raw, e.TxID); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
 	case mdb.NetworkAptos:
 		wallets := map[string]struct{}{}
 		for _, a := range e.Addresses {
@@ -82,6 +93,11 @@ func applyLogActivity(e scanner.Activity, tokens []mdb.ChainToken) error {
 	var native *mdb.ChainToken
 	for i := range tokens {
 		t := tokens[i]
+		if isNativeEVMToken(e.Network, t) {
+			v := t
+			v.Decimals = 18
+			native = &v
+		}
 		if t.ContractAddress == "" && e.Network == mdb.NetworkTron && strings.EqualFold(t.Symbol, "TRX") {
 			native = &tokens[i]
 			continue
@@ -119,6 +135,16 @@ func applyLogActivity(e scanner.Activity, tokens []mdb.ChainToken) error {
 		}
 	} else if tx.Get("hash").String() != e.TxID {
 		return nil
+	}
+	if native != nil && scanner.IsEVM(e.Network) {
+		r := gjson.ParseBytes(evidence.Receipt)
+		raw, ok := new(big.Int).SetString(tx.Get("value").String(), 0)
+		to := tx.Get("to").String()
+		if ok && to != "" && r.Get("transactionHash").String() == e.TxID && r.Get("status").String() == "0x1" && !strings.EqualFold(tx.Get("from").String(), to) {
+			if err := settleActivity(e, to, *native, raw, e.TxID); err != nil {
+				return err
+			}
+		}
 	}
 	for _, raw := range logs {
 		l := gjson.ParseBytes(raw)

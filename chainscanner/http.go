@@ -39,7 +39,7 @@ func Handler(s *Store, consumers map[string]string) (http.Handler, error) {
 		}
 		ctx := r.Context()
 		switch {
-		case r.Method == "PUT" && r.URL.Path == "/v1/subscriptions":
+		case r.Method == "PUT" && (r.URL.Path == "/v1/subscriptions" || r.URL.Path == "/v2/subscriptions"):
 			var watches []Watch
 			dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<20))
 			if err := dec.Decode(&watches); err != nil || watches == nil {
@@ -51,6 +51,20 @@ func Handler(s *Store, consumers map[string]string) (http.Handler, error) {
 					http.Error(w, err.Error(), 400)
 					return
 				}
+			}
+			if r.URL.Path == "/v2/subscriptions" {
+				rows, err := s.SubscribeFrom(ctx, consumer, watches)
+				if errors.Is(err, ErrCursorNotReady) {
+					http.Error(w, err.Error(), 409)
+					return
+				}
+				if err != nil {
+					http.Error(w, "subscription unavailable", 503)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(rows)
+				return
 			}
 			if err := s.Subscribe(ctx, consumer, watches); err != nil {
 				http.Error(w, "subscription unavailable", 503)
@@ -65,8 +79,27 @@ func Handler(s *Store, consumers map[string]string) (http.Handler, error) {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(h)
 			return
-		case r.Method == "GET" && r.URL.Path == "/v1/events/next":
-			d, err := s.Pending(ctx, consumer)
+		case r.Method == "GET" && (r.URL.Path == "/v1/events/next" || r.URL.Path == "/v2/events/next"):
+			network := ""
+			if r.URL.Path == "/v2/events/next" {
+				network = r.URL.Query().Get("network")
+				if !Supported(network) {
+					http.Error(w, "unknown network", 400)
+					return
+				}
+			}
+			var d *Delivery
+			var err error
+			if seconds := r.URL.Query().Get("wait"); seconds != "" {
+				n, e := strconv.Atoi(seconds)
+				if e != nil || n < 1 || n > 20 {
+					http.Error(w, "wait must be 1..20 seconds", 400)
+					return
+				}
+				d, err = s.PendingNetwork(ctx, consumer, network, time.Duration(n)*time.Second)
+			} else {
+				d, err = s.pending(ctx, consumer, network)
+			}
 			if err != nil {
 				http.Error(w, "queue unavailable", 503)
 				return
@@ -94,6 +127,8 @@ func Handler(s *Store, consumers map[string]string) (http.Handler, error) {
 	}), nil
 }
 
+var ErrAPINotFound = errors.New("scanner endpoint not found")
+
 type Client struct{ URL, Token string }
 
 var transport = &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
@@ -116,6 +151,12 @@ func (c Client) request(ctx context.Context, method, path string, data any, out 
 	defer res.Body.Close()
 	if res.StatusCode == 204 {
 		return nil
+	}
+	if res.StatusCode == 404 {
+		return ErrAPINotFound
+	}
+	if res.StatusCode == 409 {
+		return ErrCursorNotReady
 	}
 	if res.StatusCode != 200 {
 		return fmt.Errorf("scanner HTTP %d", res.StatusCode)
@@ -144,4 +185,32 @@ func (c Client) Height(ctx context.Context, network string) (int64, error) {
 	var height int64
 	err := c.request(ctx, "GET", "/v1/heights/"+network, nil, &height)
 	return height, err
+}
+
+func (c Client) SubscribeFrom(ctx context.Context, _ string, w []Watch) ([]Registration, error) {
+	if w == nil {
+		w = []Watch{}
+	}
+	var rows []Registration
+	err := c.request(ctx, "PUT", "/v2/subscriptions", w, &rows)
+	return rows, err
+}
+
+func (c Client) PendingWait(ctx context.Context, _ string, wait time.Duration) (*Delivery, error) {
+	var d *Delivery
+	err := c.request(ctx, "GET", fmt.Sprintf("/v1/events/next?wait=%d", max(1, min(20, int(wait/time.Second)))), nil, &d)
+	return d, err
+}
+
+func (c Client) PendingNetwork(ctx context.Context, _ string, network string, wait time.Duration) (*Delivery, error) {
+	if !Supported(network) {
+		return nil, errors.New("unknown network")
+	}
+	path := "/v2/events/next?network=" + network
+	if wait > 0 {
+		path += fmt.Sprintf("&wait=%d", max(1, min(20, int(wait/time.Second))))
+	}
+	var d *Delivery
+	err := c.request(ctx, "GET", path, nil, &d)
+	return d, err
 }

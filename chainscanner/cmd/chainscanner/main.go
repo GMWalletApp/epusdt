@@ -42,7 +42,7 @@ func run() error {
 	}
 	seen := map[string]bool{}
 	for _, n := range c.Networks {
-		if seen[n.Name] || (!scanner.IsEVM(n.Name) && n.Name != "aptos" && n.Name != "solana" && n.Name != "ton" && n.Name != "tron") || n.URL == "" || n.Confirmations < 0 || n.Lookback < 0 {
+		if seen[n.Name] || !scanner.Supported(n.Name) || n.URL == "" || n.Confirmations < 0 || n.Lookback < 0 {
 			return fmt.Errorf("invalid or duplicate network %q", n.Name)
 		}
 		seen[n.Name] = true

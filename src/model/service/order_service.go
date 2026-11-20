@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	scanner "github.com/GMWalletApp/ChainScanner"
 	"strings"
 	"sync"
 
@@ -56,15 +57,16 @@ func apiKeyID(apiKey *mdb.ApiKey) uint64 {
 func normalizeOrderAddressByNetwork(network, address string) string {
 	network = strings.ToLower(strings.TrimSpace(network))
 	address = strings.TrimSpace(address)
-	switch network {
-	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma:
+	if scanner.IsEVM(network) {
 		return strings.ToLower(address)
+	}
+	switch network {
 	case mdb.NetworkTon:
 		if normalized, err := addressutil.NormalizeTonAddress(address); err == nil {
 			return normalized
 		}
 		return address
-	case mdb.NetworkAptos:
+	case mdb.NetworkAptos, mdb.NetworkSui:
 		if normalized, err := addressutil.NormalizeMoveAddress(address); err == nil {
 			return normalized
 		}

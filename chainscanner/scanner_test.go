@@ -91,7 +91,7 @@ func TestSharedReadDurableFanout(t *testing.T) {
 	}
 }
 func TestEmptySubscriptionContinuous(t *testing.T) {
-	for _, net := range []string{"ton", "aptos"} {
+	for _, net := range []string{"ethereum", "binance", "polygon", "plasma", "tron", "solana", "ton", "aptos", "sui", "arbitrum", "hyperevm", "monad", "arc", "avalanche", "optimism"} {
 		t.Run(net, func(t *testing.T) {
 			s, e := Open(":memory:")
 			if e != nil {

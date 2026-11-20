@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"fmt"
+	scanner "github.com/GMWalletApp/ChainScanner"
 	"math/big"
 	"net"
 	"net/url"
@@ -111,14 +112,7 @@ func probeRpcNode(node mdb.RpcNode) (string, int, error) {
 	return mdb.RpcNodeStatusOk, int(dur.Milliseconds()), nil
 }
 
-func isEvmRpcNetwork(network string) bool {
-	switch network {
-	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma:
-		return true
-	default:
-		return false
-	}
-}
+func isEvmRpcNetwork(network string) bool { return scanner.IsEVM(network) }
 
 func probeEvmRpcNode(ctx context.Context, node mdb.RpcNode) error {
 	client, err := ethclient.DialContext(ctx, strings.TrimSpace(node.Url))

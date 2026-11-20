@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
 	"strconv"
 	"strings"
 )
@@ -25,33 +26,47 @@ func (s *jsonSource) evm(ctx context.Context, h int64) (int64, []Activity, error
 	}
 	byHash := map[string][]gjson.Result{}
 	blockHash := block.Get("hash").String()
-	logs, err := s.call(ctx, "eth_getLogs", map[string]string{"blockHash": blockHash})
-	if err != nil {
-		// Some providers restrict blockHash log queries but serve full block receipts.
-		receipts, re := s.call(ctx, "eth_getBlockReceipts", label)
-		if re != nil {
-			return 0, nil, fmt.Errorf("block logs: %w; receipts: %v", err, re)
+	receipts := map[string]gjson.Result{}
+	readReceipts := func() error {
+		rows, err := s.call(ctx, "eth_getBlockReceipts", label)
+		if err != nil {
+			return err
 		}
 		txs := block.Get("transactions").Array()
-		if !receipts.IsArray() || len(receipts.Array()) != len(txs) {
-			return 0, nil, errors.New("incomplete EVM receipts")
+		if !rows.IsArray() || len(rows.Array()) != len(txs) {
+			return errors.New("incomplete EVM receipts")
 		}
-		for i, r := range receipts.Array() {
-			if r.Get("blockHash").String() != blockHash || r.Get("transactionHash").String() != txs[i].Get("hash").String() || !r.Get("logs").IsArray() {
-				return 0, nil, errors.New("EVM receipt mismatch")
+		for i, r := range rows.Array() {
+			id := txs[i].Get("hash").String()
+			if r.Get("blockHash").String() != blockHash || r.Get("transactionHash").String() != id || !r.Get("logs").IsArray() {
+				return errors.New("EVM receipt mismatch")
 			}
-			byHash[r.Get("transactionHash").String()] = r.Get("logs").Array()
+			receipts[id] = r
+			byHash[id] = r.Get("logs").Array()
 		}
-	} else {
-		if !logs.IsArray() {
-			return 0, nil, errors.New("missing EVM logs")
-		}
-		for _, l := range logs.Array() {
-			if l.Get("removed").Bool() || l.Get("blockHash").String() != blockHash {
-				return 0, nil, errors.New("EVM log block mismatch")
+		return nil
+	}
+	// Whole-block receipts supply both log evidence and transaction status.
+	// Providers without this method can still serve individual receipts.
+	if NativeAsset(s.n.Name) == "" || readReceipts() != nil {
+		clear(receipts)
+		clear(byHash)
+		logs, err := s.call(ctx, "eth_getLogs", map[string]string{"blockHash": blockHash})
+		if err != nil {
+			if retry := readReceipts(); retry != nil {
+				return 0, nil, fmt.Errorf("block logs: %w; receipts: %v", err, retry)
 			}
-			id := l.Get("transactionHash").String()
-			byHash[id] = append(byHash[id], l)
+		} else {
+			if !logs.IsArray() {
+				return 0, nil, errors.New("missing EVM logs")
+			}
+			for _, l := range logs.Array() {
+				if l.Get("removed").Bool() || l.Get("blockHash").String() != blockHash {
+					return 0, nil, errors.New("EVM log block mismatch")
+				}
+				id := l.Get("transactionHash").String()
+				byHash[id] = append(byHash[id], l)
+			}
 		}
 	}
 	traces := map[string]gjson.Result{}
@@ -91,15 +106,22 @@ func (s *jsonSource) evm(ctx context.Context, h int64) (int64, []Activity, error
 			data.Trace = json.RawMessage(trace.Raw)
 			traceAddresses(&e.Addresses, s.n.Name, trace)
 		}
-		if strings.TrimSpace(tx.Get("to").String()) == "" {
-			r, err := s.call(ctx, "eth_getTransactionReceipt", id)
-			if err != nil {
-				return 0, nil, err
+		creation := strings.TrimSpace(tx.Get("to").String()) == ""
+		value := tx.Get("value").String()
+		if creation || (NativeAsset(s.n.Name) != "" && value != "" && value != "0x0") {
+			r, ok := receipts[id]
+			if !ok {
+				r, err = s.call(ctx, "eth_getTransactionReceipt", id)
+				if err != nil {
+					return 0, nil, err
+				}
 			}
-			if r.Get("blockHash").String() != block.Get("hash").String() {
-				return 0, nil, errors.New("missing creation receipt")
+			if r.Get("blockHash").String() != blockHash || r.Get("transactionHash").String() != id {
+				return 0, nil, errors.New("receipt transaction or block mismatch")
 			}
-			addAddress(&e.Addresses, s.n.Name, r.Get("contractAddress").String())
+			if creation {
+				addAddress(&e.Addresses, s.n.Name, r.Get("contractAddress").String())
+			}
 			data.Receipt = json.RawMessage(r.Raw)
 		}
 		e.Data = object(data)
@@ -113,4 +135,26 @@ func traceAddresses(a *[]string, n string, t gjson.Result) {
 	for _, child := range t.Get("calls").Array() {
 		traceAddresses(a, n, child)
 	}
+}
+
+// Fetch a bounded window concurrently, then hand it to SQLite in ledger order.
+// A partial window is retried from the durable cursor.
+func (s *jsonSource) evmRange(ctx context.Context, start, head int64) (int64, []Activity, error) {
+	end := min(head, start+3)
+	if end == start {
+		return s.evm(ctx, start)
+	}
+	group, ctx := errgroup.WithContext(ctx)
+	blocks := make([][]Activity, end-start+1)
+	for h := start; h <= end; h++ {
+		group.Go(func() error { _, events, err := s.evm(ctx, h); blocks[h-start] = events; return err })
+	}
+	if err := group.Wait(); err != nil {
+		return 0, nil, err
+	}
+	var out []Activity
+	for _, events := range blocks {
+		out = append(out, events...)
+	}
+	return end, out, nil
 }

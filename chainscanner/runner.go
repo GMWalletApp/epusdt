@@ -48,7 +48,7 @@ func (s *Store) Step(ctx context.Context, n Network, source Source) (bool, error
 	}
 	if !ok {
 		prev = max(int64(-1), head-max(n.Lookback, 1))
-		if _, err = s.db.ExecContext(ctx, "INSERT OR IGNORE INTO cursors VALUES(?,?)", n.Name, prev); err != nil {
+		if err = s.SeedCursor(ctx, n.Name, prev); err != nil {
 			return false, err
 		}
 	}
@@ -107,6 +107,7 @@ func (s *Store) Run(ctx context.Context, n Network) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-Wakeups(src):
 		case <-time.After(delay):
 		}
 	}
