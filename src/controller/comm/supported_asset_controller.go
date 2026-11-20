@@ -105,13 +105,12 @@ func (c *BaseCommController) GetPublicConfig(ctx echo.Context) error {
 	return c.SucJson(ctx, response.PublicConfigResponse{
 		SupportedAssets: supports,
 		Site: response.SitePublicConfig{
-			WithdrawalReminderEnabled: data.GetSettingBool(mdb.SettingKeyBrandWithdrawalReminder, true),
-			CashierName:               data.GetBrandCashierName(),
-			LogoURL:                   data.GetBrandLogoURL(),
-			WebsiteTitle:              data.GetBrandWebsiteTitle(),
-			SupportLink:               data.GetBrandSupportURL(),
-			BackgroundColor:           data.GetBrandBackgroundColor(),
-			BackgroundImageURL:        data.GetBrandBackgroundImageURL(),
+			CashierName:        data.GetBrandCashierName(),
+			LogoURL:            data.GetBrandLogoURL(),
+			WebsiteTitle:       data.GetBrandWebsiteTitle(),
+			SupportLink:        data.GetBrandSupportURL(),
+			BackgroundColor:    data.GetBrandBackgroundColor(),
+			BackgroundImageURL: data.GetBrandBackgroundImageURL(),
 		},
 		Epay: response.EpayPublicConfig{
 			DefaultToken:    data.GetSettingString(mdb.SettingKeyEpayDefaultToken, ""),

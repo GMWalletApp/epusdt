@@ -13,13 +13,12 @@ type EpayPublicConfig struct {
 }
 
 type SitePublicConfig struct {
-	WithdrawalReminderEnabled bool   `json:"withdrawal_reminder_enabled" example:"true"`
-	CashierName               string `json:"cashier_name" example:"Acme Cashier"`
-	LogoURL                   string `json:"logo_url" example:"https://cdn.example.com/logo.png"`
-	WebsiteTitle              string `json:"website_title" example:"Acme Payments"`
-	SupportLink               string `json:"support_link" example:"https://example.com/support"`
-	BackgroundColor           string `json:"background_color" example:"#0f172a"`
-	BackgroundImageURL        string `json:"background_image_url" example:"https://cdn.example.com/background.png"`
+	CashierName        string `json:"cashier_name" example:"Acme Cashier"`
+	LogoURL            string `json:"logo_url" example:"https://cdn.example.com/logo.png"`
+	WebsiteTitle       string `json:"website_title" example:"Acme Payments"`
+	SupportLink        string `json:"support_link" example:"https://example.com/support"`
+	BackgroundColor    string `json:"background_color" example:"#0f172a"`
+	BackgroundImageURL string `json:"background_image_url" example:"https://cdn.example.com/background.png"`
 }
 
 type OkPayPublicConfig struct {
