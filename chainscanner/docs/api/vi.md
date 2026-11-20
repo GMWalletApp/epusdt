@@ -30,12 +30,31 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Dịch vụ | [`GET /v1/events/next`](#next) | `200 / 204` |
 | Dịch vụ | [`POST /v1/events/{id}/ack`](#ack) | `204` |
 | Dịch vụ | [`GET /v1/heights/{network}`](#height) | `200` |
+| Dịch vụ | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
+| Dịch vụ | [`GET /v1/transactions/{network}/{hash}/strict`](#transactions) | `200` |
 | Quản trị viên | [`GET /v1/admin/nodes`](#list) | `200` |
 | Quản trị viên | [`POST /v1/admin/nodes`](#add) | `201` |
 | Quản trị viên | [`POST /v1/admin/nodes/fallback`](#fallback) | `201` |
 | Quản trị viên | [`POST /v1/admin/nodes/{id}/test`](#test-one) | `200` |
 | Quản trị viên | [`POST /v1/admin/nodes/test`](#test-all) | `200` |
 | Quản trị viên | [`DELETE /v1/admin/nodes/{id}`](#delete) | `204` |
+
+<a id="transactions"></a>
+
+## Tra cứu giao dịch theo mã băm
+
+Gửi mã xác thực của dịch vụ và ID mạng đã cấu hình. Không cần đăng ký địa chỉ. Phản hồi chứa `network`, `hash` và `result`.
+
+Truy vấn thường chọn ngẫu nhiên một nút rảnh, ưu tiên nút đang hoạt động tốt. Truy vấn nghiêm ngặt hỏi đồng thời ba nút khác nhau và chỉ trả dữ liệu khi ba kết quả khớp nhau. Nếu có lỗi, thiếu giao dịch hoặc khác biệt, dịch vụ thử lại một lần với ba nút khác. Thứ tự khóa JSON và khoảng trắng không ảnh hưởng đến so sánh.
+
+Các địa chỉ cùng máy chủ và cổng chỉ được tính một lần. Cả hai lượt đều ưu tiên nút rảnh. Khi thiếu, truy vấn nghiêm ngặt bổ sung các nút đang bận, tối đa một truy vấn bổ sung mỗi nút mà không dừng quét. Nút dự phòng và nút đang tạm dừng được bỏ qua. Mỗi lượt có tối đa 4 giây để chọn nút và 9 giây để tra giao dịch. HTTP 400 là đầu vào sai, 401 là lỗi xác thực, 404 là không tìm thấy khi tra thường, 502 là truy vấn lỗi hoặc kết quả khác nhau và 503 là thiếu nút khả dụng.
+
+TON dùng bộ chỉ mục `toncenter-v3` có URL cơ sở `/api/v3`. Có sẵn một nút. Chế độ nghiêm ngặt cần ba nút, và thêm ba nút khác nếu phải thử lại.
+
+```sh
+consumer "$BASE/v1/transactions/plasma/$TX_HASH"
+consumer "$BASE/v1/transactions/plasma/$TX_HASH/strict"
+```
 
 <a id="subscriptions"></a>
 

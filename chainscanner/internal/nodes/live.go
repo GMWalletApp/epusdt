@@ -123,7 +123,7 @@ func (p *SourcePool) startLive(n *endpoint, j *liveJob) {
 	q.running[n] = c
 	q.busy[n.historyKey] = true
 	// The registry can publish a new factory between Pump calls.
-	reader := &SourcePool{life: p.life, network: p.network, now: p.now, open: p.open}
+	reader := &SourcePool{lanes: p.lanes, life: p.life, network: p.network, now: p.now, open: p.open}
 	if j == nil {
 		q.probing++
 	} else {

@@ -142,7 +142,10 @@ func (r *NodeRegistry) refreshCandidates(ctx context.Context, origin, network st
 					timeout = 35 * time.Second
 				}
 				attempt, cancel := context.WithTimeout(ctx, timeout)
-				h, err := probe(attempt, chains.Network{Name: e.Network, Protocol: e.Protocol, URL: e.URL})
+				cfg := chains.Network{Name: e.Network, Protocol: e.Protocol, URL: e.URL}
+				release := r.lookup.lanes.scan(providerKey(cfg))
+				h, err := probe(attempt, cfg)
+				release()
 				cancel()
 				if err == nil && h > 0 {
 					results[i] = observation{e, h, start, time.Since(start)}

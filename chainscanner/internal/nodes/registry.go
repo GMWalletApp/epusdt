@@ -40,6 +40,7 @@ type NodeOptions struct {
 }
 
 type NodeRegistry struct {
+	lookup       transactionLookup
 	db           *sql.DB
 	store        *engine.Store
 	builtins     map[NodeEndpoint]NodeEndpoint // stored spelling -> built-in route with default history
@@ -113,6 +114,9 @@ func NewNodeRegistry(ctx context.Context, s *engine.Store, networks []chains.Net
 		defer pool.Close()
 		return pool.Head(ctx)
 	})
+	r.lookup.probe = chains.ProbeLookup
+	r.lookup.read = chains.LookupTransaction
+	engine.SetTransactionHandler(s, r.transactionHandler(enabled))
 	return r, nil
 }
 
@@ -130,7 +134,7 @@ func (r *NodeRegistry) scan(row interface{ Scan(...any) error }) (Node, error) {
 			n.ReadRetryAt = f.retry.UnixMilli()
 		}
 	}
-	n.Scannable = chains.Supported(n.Network) && !slices.Contains(heightOnlyNodes, n.NodeEndpoint.identity())
+	n.Scannable = n.Protocol != "toncenter-v3" && chains.Supported(n.Network) && !slices.Contains(heightOnlyNodes, n.NodeEndpoint.identity())
 	switch {
 	case n.Protocol == "sse":
 		n.HeightUnit = "beacon_slot"
@@ -204,7 +208,11 @@ func (r *NodeRegistry) add(ctx context.Context, options NodeOptions, fallback bo
 	if err != nil || u.User != nil || u.Fragment != "" || len(e.URL) > 4096 {
 		return Node{}, errInvalidNode
 	}
-	if e.Network == "bitcoin" {
+	if e.Network == "ton" && e.Protocol == "toncenter-v3" {
+		if fallback || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") || options.HistoryURL != "" || options.HistoryAPIKey != "" {
+			return Node{}, errInvalidNode
+		}
+	} else if e.Network == "bitcoin" {
 		if u.Hostname() == "" || options.HistoryURL != "" || options.HistoryAPIKey != "" || (e.Protocol != "unisat" && e.Protocol != "jsonrpc") || (u.Scheme != "https" && u.Scheme != "http") {
 			return Node{}, errInvalidNode
 		}
@@ -330,8 +338,11 @@ func (r *NodeRegistry) Test(ctx context.Context, id int64) (Node, error) {
 	probe, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	src := r.network(n, chains.Network{})
+	defer r.lookup.lanes.scan(providerKey(src))()
 	var height int64
-	if n.Network == "bitcoin" && n.Protocol == "jsonrpc" {
+	if n.Protocol == "toncenter-v3" {
+		height, err = chains.TONIndexHeight(probe, src)
+	} else if n.Network == "bitcoin" && n.Protocol == "jsonrpc" {
 		height, err = chains.BitcoinRPCHeight(probe, src)
 	} else if n.Protocol == "unisat" {
 		height, err = chains.UniSatHeight(probe, src)

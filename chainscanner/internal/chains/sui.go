@@ -197,7 +197,16 @@ func SuiTransaction(ctx context.Context, n Network, digest string) (Activity, er
 		return ev, e
 	}
 	s := src.(*suiSource)
-	fields := append([]string{"checkpoint", "timestamp"}, suiTxFields...)
+	ev, err := s.transaction(ctx, digest, append([]string{"checkpoint", "timestamp"}, suiTxFields...))
+	if err != nil {
+		return Activity{}, err
+	}
+	tip, err := s.Head(ctx)
+	ev.Confirmations = tip - ev.Height + 1
+	return ev, err
+}
+
+func (s *suiSource) transaction(ctx context.Context, digest string, fields []string) (Activity, error) {
 	res, err := s.ledger.GetTransaction(s.auth(ctx), &pb.GetTransactionRequest{Digest: &digest, ReadMask: &fieldmaskpb.FieldMask{Paths: fields}})
 	if err != nil {
 		return Activity{}, err
@@ -206,11 +215,5 @@ func SuiTransaction(ctx context.Context, n Network, digest string) (Activity, er
 	if tx.GetDigest() != digest || tx.Checkpoint == nil || tx.GetTimestamp() == nil {
 		return Activity{}, errors.New("missing finalized Sui transaction")
 	}
-	tip, err := s.Head(ctx)
-	if err != nil {
-		return Activity{}, err
-	}
-	e, err := suiActivity(tx, int64(tx.GetCheckpoint()), tx.GetTimestamp().AsTime().UnixMilli())
-	e.Confirmations = tip - e.Height + 1
-	return e, err
+	return suiActivity(tx, int64(tx.GetCheckpoint()), tx.GetTimestamp().AsTime().UnixMilli())
 }

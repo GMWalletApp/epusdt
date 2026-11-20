@@ -126,21 +126,44 @@ func openPublicRPC(ctx context.Context, n Network, watch bool) (Source, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch n.Name {
-	case "solana":
-		genesis, e := src.(*jsonSource).call(ctx, "getGenesisHash")
-		if e != nil || genesis.String() != "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d" {
+	if jsonRPC, ok := src.(*jsonSource); ok {
+		if err := jsonRPC.verifyMainnet(ctx); err != nil {
 			src.Close()
-			return nil, errors.New("expected Solana mainnet")
-		}
-	case "aptos":
-		info, e := src.(*jsonSource).request(ctx, "/v1", nil)
-		if e != nil || info.Get("chain_id").Raw != "1" {
-			src.Close()
-			return nil, errors.New("expected Aptos mainnet")
+			return nil, err
 		}
 	}
+
 	return src, nil
+}
+
+func (s *jsonSource) verifyMainnet(ctx context.Context) error {
+	switch s.n.Name {
+	case "solana":
+		genesis, err := s.call(ctx, "getGenesisHash")
+		if err != nil {
+			return err
+		}
+		if genesis.String() != "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d" {
+			return errors.New("expected Solana mainnet")
+		}
+	case "aptos":
+		info, err := s.request(ctx, "/v1", nil)
+		if err != nil {
+			return err
+		}
+		if info.Get("chain_id").Raw != "1" {
+			return errors.New("expected Aptos mainnet")
+		}
+	case "tron":
+		block, err := s.request(ctx, "/wallet/getblockbynum", map[string]int{"num": 0})
+		if err != nil {
+			return err
+		}
+		if block.Get("blockID").String() != "00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc" {
+			return errors.New("expected TRON mainnet")
+		}
+	}
+	return nil
 }
 
 func NewPublicSource(ctx context.Context, n Network) (Source, error) {

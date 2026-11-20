@@ -47,6 +47,7 @@ var builtinNodes = append([]NodeEndpoint{
 	{"tron", "jsonrpc", "https://api.trongrid.io/jsonrpc"},
 	{"tron", "jsonrpc", "https://tron.api.pocket.network"},
 	{"ton", "jsonrpc", "https://ton-mainnet.token.im/api/v2/jsonRPC"},
+	{"ton", "toncenter-v3", "https://toncenter.com/api/v3"},
 	{"ton", "jsonrpc", "https://toncenter.com/api/v2/jsonRPC"},
 	{"ethereum", "http", "https://ethereum-rpc.publicnode.com"},
 	{"ethereum", "ws", "wss://ethereum-rpc.publicnode.com"},

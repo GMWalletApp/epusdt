@@ -30,12 +30,31 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Consumer | [`GET /v1/events/next`](#next) | `200 / 204` |
 | Consumer | [`POST /v1/events/{id}/ack`](#ack) | `204` |
 | Consumer | [`GET /v1/heights/{network}`](#height) | `200` |
+| Consumer | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
+| Consumer | [`GET /v1/transactions/{network}/{hash}/strict`](#transactions) | `200` |
 | Administrator | [`GET /v1/admin/nodes`](#list) | `200` |
 | Administrator | [`POST /v1/admin/nodes`](#add) | `201` |
 | Administrator | [`POST /v1/admin/nodes/fallback`](#fallback) | `201` |
 | Administrator | [`POST /v1/admin/nodes/{id}/test`](#test-one) | `200` |
 | Administrator | [`POST /v1/admin/nodes/test`](#test-all) | `200` |
 | Administrator | [`DELETE /v1/admin/nodes/{id}`](#delete) | `204` |
+
+<a id="transactions"></a>
+
+## Look up a transaction
+
+Send a consumer bearer token and the configured network ID. No address subscription is needed. A successful response contains `network`, the normalized `hash` and the chain-native `result`. EVM and TRON include the transaction and receipt. A pending EVM transaction can have a null receipt.
+
+The ordinary route picks one idle endpoint at random, preferring healthy nodes. The strict route starts three independent endpoints concurrently. All three must return the same complete result. A mismatch, missing transaction or RPC error triggers one retry with three other endpoints. Failure responses contain no transaction. JSON object order and whitespace are ignored; field values, array order and large integers are preserved.
+
+Strict mode fills each group from idle nodes first. If fewer than three are idle, it can add one supplemental request per busy eligible provider while its scan continues. Both routes skip cooling and repair-only nodes. Cold providers are checked before receiving the hash. Aliases on the same host and port count once per network. Different hostnames can belong to one operator. Each round allows up to four seconds to select providers and nine seconds to retrieve transactions. HTTP 400 means invalid input, 401 invalid credentials, 404 an ordinary lookup found no transaction, 502 lookup or agreement failed, and 503 too few eligible nodes or unavailable inventory.
+
+TON accepts a 32-byte hex or URL-safe Base64 transaction hash. Add independent on-chain indexers using the admin node API with protocol `toncenter-v3` and a base URL ending in `/api/v3`. One such index is built in. Strict mode needs three available indexes for its first round and three more if it retries.
+
+```sh
+consumer "$BASE/v1/transactions/plasma/$TX_HASH"
+consumer "$BASE/v1/transactions/plasma/$TX_HASH/strict"
+```
 
 <a id="subscriptions"></a>
 

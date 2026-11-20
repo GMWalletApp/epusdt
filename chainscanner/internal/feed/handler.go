@@ -24,7 +24,7 @@ type Feed interface {
 	Ack(context.Context, string, int64) error
 }
 
-func Handler(s Feed, consumers map[string]string, configured func(string) bool) (http.Handler, error) {
+func Handler(s Feed, consumers map[string]string, transactions http.Handler, configured func(string) bool) (http.Handler, error) {
 	tokens := map[[32]byte]string{}
 	for name, token := range consumers {
 		key := sha256.Sum256([]byte(token))
@@ -51,6 +51,9 @@ func Handler(s Feed, consumers map[string]string, configured func(string) bool) 
 		}
 		ctx := r.Context()
 		switch {
+		case transactions != nil && strings.HasPrefix(r.URL.Path, "/v1/transactions/"):
+			transactions.ServeHTTP(w, r)
+			return
 		case r.Method == "GET" && r.URL.Path == "/v1/events/stream":
 			streams.websocket(w, r, consumer)
 			return

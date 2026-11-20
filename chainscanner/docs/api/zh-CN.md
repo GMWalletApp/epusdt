@@ -30,12 +30,31 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | 消费者 | [`GET /v1/events/next`](#next) | `200 / 204` |
 | 消费者 | [`POST /v1/events/{id}/ack`](#ack) | `204` |
 | 消费者 | [`GET /v1/heights/{network}`](#height) | `200` |
+| 消费者 | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
+| 消费者 | [`GET /v1/transactions/{network}/{hash}/strict`](#transactions) | `200` |
 | 管理员 | [`GET /v1/admin/nodes`](#list) | `200` |
 | 管理员 | [`POST /v1/admin/nodes`](#add) | `201` |
 | 管理员 | [`POST /v1/admin/nodes/fallback`](#fallback) | `201` |
 | 管理员 | [`POST /v1/admin/nodes/{id}/test`](#test-one) | `200` |
 | 管理员 | [`POST /v1/admin/nodes/test`](#test-all) | `200` |
 | 管理员 | [`DELETE /v1/admin/nodes/{id}`](#delete) | `204` |
+
+<a id="transactions"></a>
+
+## 按哈希查询交易
+
+使用消费者令牌，指定已配置的网络，无需订阅地址。成功响应包含 `network`、规范化后的 `hash` 和链原生数据 `result`。EVM 和 TRON 返回交易及回执，EVM 待打包交易的回执可为 null。
+
+普通查询随机选择一个空闲节点，优先使用已有健康记录的节点。严格查询同时向三个不同节点发起请求，三份完整结果一致才返回。任一节点报错、查无交易或结果有分歧时，换另外三个节点并发重试一次。比较时忽略 JSON 对象键顺序与空白，保留字段值、数组顺序和大整数精度。
+
+两轮均优先选空闲节点。不足三个时，严格查询会从正在扫块、探测或处理其他查询的可用节点中补足，每个忙节点同时最多额外承接一笔严格查询，扫块继续执行。普通查询只用空闲节点；冷却节点和补扫专用节点不参与。缺少近期健康记录的节点先查高度，再接收交易哈希。同链、同主机和端口的别名或共享历史接口只算一个节点，不同域名仍可能属于同一运营商。每轮选节点最多 4 秒，并发查交易最多 9 秒。400 表示参数无效，401 表示鉴权失败，404 表示普通查询未找到交易，502 表示查询失败或两轮均未达成一致，503 表示可用节点不足或节点列表不可用。失败响应不含交易数据。
+
+TON 支持 32 字节十六进制或 URL 安全 Base64 交易哈希。可通过节点管理 API 添加协议为 `toncenter-v3`、URL 以 `/api/v3` 结尾的独立索引节点。内置一个此类节点，严格查询首轮需要三个，触发重试时还需要另外三个。
+
+```sh
+consumer "$BASE/v1/transactions/plasma/$TX_HASH"
+consumer "$BASE/v1/transactions/plasma/$TX_HASH/strict"
+```
 
 <a id="subscriptions"></a>
 

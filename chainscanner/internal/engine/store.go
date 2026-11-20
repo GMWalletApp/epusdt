@@ -17,6 +17,7 @@ import (
 )
 
 type Store struct {
+	transactions http.Handler
 	demandMu     sync.Mutex
 	replacements sync.Map // consumer -> mutex; independent consumers may resolve boundaries concurrently
 	drains       map[string]drainState
@@ -313,8 +314,10 @@ func (s *Store) Height(ctx context.Context, network string) (int64, error) {
 // Database returns the shared SQLite connection for the node registry.
 func Database(s *Store) *sql.DB { return s.db }
 
+func SetTransactionHandler(s *Store, h http.Handler) { s.transactions = h }
+
 func ConsumerHandler(s *Store, consumers map[string]string) (http.Handler, error) {
-	return feed.Handler(s, consumers, func(network string) bool {
+	return feed.Handler(s, consumers, s.transactions, func(network string) bool {
 		if s.configured == nil {
 			return true
 		}

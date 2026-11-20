@@ -32,6 +32,7 @@ type nodePool struct {
 
 func newRegistryPool(ctx context.Context, r *NodeRegistry, n chains.Network) *nodePool {
 	p := &nodePool{SourcePool: NewSourcePool(ctx, n.Name), registry: r, settings: n}
+	p.lanes = &r.lookup.lanes
 	p.observe = func(cfg chains.Network, h headSample) {
 		node, ok := p.inventory[cfg]
 		// Paired transports obtain their scan height from the companion history API.

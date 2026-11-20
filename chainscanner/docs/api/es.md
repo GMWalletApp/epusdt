@@ -30,12 +30,31 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Consumidor | [`GET /v1/events/next`](#next) | `200 / 204` |
 | Consumidor | [`POST /v1/events/{id}/ack`](#ack) | `204` |
 | Consumidor | [`GET /v1/heights/{network}`](#height) | `200` |
+| Consumidor | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
+| Consumidor | [`GET /v1/transactions/{network}/{hash}/strict`](#transactions) | `200` |
 | Administrador | [`GET /v1/admin/nodes`](#list) | `200` |
 | Administrador | [`POST /v1/admin/nodes`](#add) | `201` |
 | Administrador | [`POST /v1/admin/nodes/fallback`](#fallback) | `201` |
 | Administrador | [`POST /v1/admin/nodes/{id}/test`](#test-one) | `200` |
 | Administrador | [`POST /v1/admin/nodes/test`](#test-all) | `200` |
 | Administrador | [`DELETE /v1/admin/nodes/{id}`](#delete) | `204` |
+
+<a id="transactions"></a>
+
+## Consultar una transacción
+
+Usa el token del consumidor y una red configurada. No se necesita una suscripción. La respuesta incluye `network`, `hash` y `result`.
+
+La ruta normal elige un nodo libre al azar y da prioridad a los sanos. La estricta consulta tres nodos en paralelo. Solo devuelve tres resultados idénticos. Ante errores, ausencia de la transacción o discrepancias, prueba una vez con otros tres nodos. El orden de las claves JSON y los espacios no afectan la comparación.
+
+Los alias con el mismo host y puerto cuentan una vez. En ambas rondas se prefieren nodos libres. La ruta estricta completa el grupo con nodos ocupados y permite una petición adicional por nodo sin detener el escaneo. Se excluyen nodos en pausa y de respaldo. Cada ronda permite hasta 4 segundos para seleccionar nodos y 9 para consultar la transacción. 400 indica datos inválidos, 401 acceso denegado, 404 ausencia en la consulta normal, 502 fallo de consulta o consenso y 503 falta de nodos disponibles.
+
+TON necesita índices `toncenter-v3` con URL base `/api/v3`. Se incluye uno. La consulta estricta necesita tres y otros tres para repetir.
+
+```sh
+consumer "$BASE/v1/transactions/plasma/$TX_HASH"
+consumer "$BASE/v1/transactions/plasma/$TX_HASH/strict"
+```
 
 <a id="subscriptions"></a>
 
