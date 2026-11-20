@@ -18,7 +18,6 @@ func registerScannerAdmin(group *echo.Group) {
 	for _, r := range []struct{ method, path string }{
 		{"GET", "/admin/blacklist"}, {"PUT", "/admin/blacklist/:host"}, {"DELETE", "/admin/blacklist/:host"},
 		{"GET", "/admin/nodes"}, {"POST", "/admin/nodes"}, {"POST", "/admin/nodes/fallback"}, {"DELETE", "/admin/nodes/:id"},
-		{"POST", "/admin/nodes/test"}, {"POST", "/admin/nodes/:id/test"},
 		{"GET", "/heights/:network"}, {"GET", "/transactions/:network/:hash"}, {"GET", "/transactions/:network/:hash/strict"},
 	} {
 		scanner.Add(r.method, r.path, scannerForward(r.path))

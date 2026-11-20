@@ -243,9 +243,10 @@ EPUSDT 作为消费者连接独立运行的 ChainScanner。区块读取、节点
 | 用途 | 方法和相对路径 |
 | --- | --- |
 | 普通节点、兜底节点 | `GET /admin/nodes`、`POST /admin/nodes`、`POST /admin/nodes/fallback`、`DELETE /admin/nodes/{id}` |
-| 测试单节点或批量节点 | `POST /admin/nodes/{id}/test`、`POST /admin/nodes/test?network=solana` |
 | RPC 地址黑名单 | `GET /admin/blacklist`、`PUT /admin/blacklist/{rule}`、`DELETE /admin/blacklist/{rule}`。例如 `keyword:acme`、`exact:rpc.example.org` |
 | 连续进度、普通与严格交易查询 | `GET /heights/{network}`、`GET /transactions/{network}/{hash}`、`GET /transactions/{network}/{hash}/strict` |
+
+ChainScanner 在有订阅时自动探测节点高度，把区块区间分配给高度和确认深度均达标的空闲节点。需要手动诊断节点时，可直接调用 [ChainScanner 节点测试接口](chainscanner/docs/api/zh-CN.md#test-one)。
 
 建议为每条收款链配置两家独立的兜底服务商。节点参数、规则格式、订阅边界和跨轮节点排除见 [ChainScanner v1 API 文档](chainscanner/docs/api/zh-CN.md)。
 

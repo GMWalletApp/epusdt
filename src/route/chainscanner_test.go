@@ -84,7 +84,7 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	if !strings.Contains(call("GET", "/admin/nodes?network=solana", "", 200), host) {
 		t.Fatal("node not restored")
 	}
-	// Keep batch health checks local. Replace inventory with one controlled RPC.
+	// Use only the two local RPC servers for ordinary and strict transaction lookups.
 	rows, err := reg.List(t.Context(), "solana")
 	if err != nil {
 		t.Fatal(err)
@@ -120,8 +120,8 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	if err := json.Unmarshal([]byte(call("POST", "/admin/nodes", fmt.Sprintf(`{"network":"solana","protocol":"http","url":%q}`, rpc.URL), 201)), &node); err != nil {
 		t.Fatal(err)
 	}
-	call("POST", fmt.Sprintf("/admin/nodes/%d/test", node.ID), "", 200)
-	call("POST", "/admin/nodes/test?network=solana", "", 200)
+	call("POST", fmt.Sprintf("/admin/nodes/%d/test", node.ID), "", http.StatusNotFound)
+	call("POST", "/admin/nodes/test?network=solana", "", http.StatusNotFound)
 	for _, suffix := range []string{"", "/strict"} {
 		b := call("GET", "/transactions/solana/"+signature+suffix, "", 200)
 		if !strings.Contains(b, signature) {
