@@ -8,7 +8,7 @@
 ---
 
 > [!IMPORTANT]
-> **Frequent transaction lookups on Solana and Plasma.** Strict verification needs matching results from two independent providers. In a 15-minute mainnet test using free public RPCs, all three strict lookups failed on each of these networks. If you expect frequent lookups, configure two fallback nodes per network, each from a different provider. A free plan is usually enough for occasional block retries and transaction checks. For sustained traffic, check each plan’s rate limit and monthly quota. [Configure fallback nodes](docs/api/en.md#fallback)
+> **Frequent transaction lookups on Solana and Plasma.** Strict verification needs matching results from two independent providers. In a 15-minute mainnet test using free public RPCs, all three strict lookups failed on each of these networks. If you expect frequent lookups, configure two fallback nodes per network, each from a different provider. ChainScanner scans each block once for all watched addresses and subscribers, reducing duplicate RPC requests. At most providers, a free or entry-level plan is usually enough for occasional block retries and transaction checks. For sustained traffic, check each plan’s rate limit and monthly quota. [Configure fallback nodes](docs/api/en.md#fallback) · [Compare fallback providers](#fallback-providers)
 
 ## Use cases
 

@@ -8,7 +8,7 @@
 ---
 
 > [!IMPORTANT]
-> **Tra cứu giao dịch thường xuyên trên Solana và Plasma.** Chế độ xác minh nghiêm ngặt yêu cầu hai nhà cung cấp độc lập trả về kết quả giống nhau. Trong một lần thử nghiệm 15 phút trên mainnet với các RPC công cộng miễn phí, cả ba lượt tra cứu nghiêm ngặt trên mỗi mạng đều thất bại. Nếu dự kiến có nhiều truy vấn, hãy cấu hình hai nút dự phòng cho mỗi mạng, mỗi nút từ một nhà cung cấp khác nhau. Gói miễn phí thường đủ để thỉnh thoảng quét lại khối và xác minh giao dịch. Khi lưu lượng cao kéo dài, hãy kiểm tra giới hạn yêu cầu mỗi giây và hạn mức hằng tháng. [Cấu hình nút dự phòng](docs/api/vi.md#fallback)
+> **Tra cứu giao dịch thường xuyên trên Solana và Plasma.** Chế độ xác minh nghiêm ngặt yêu cầu hai nhà cung cấp độc lập trả về kết quả giống nhau. Trong một lần thử nghiệm 15 phút trên mainnet với các RPC công cộng miễn phí, cả ba lượt tra cứu nghiêm ngặt trên mỗi mạng đều thất bại. Nếu dự kiến có nhiều truy vấn, hãy cấu hình hai nút dự phòng cho mỗi mạng, mỗi nút từ một nhà cung cấp khác nhau. ChainScanner dùng chung kết quả quét khối cho các địa chỉ theo dõi và các dịch vụ đăng ký, giúp giảm số yêu cầu RPC trùng lặp. Nếu chỉ thỉnh thoảng cần quét lại khối và xác minh giao dịch, gói miễn phí hoặc gói cơ bản của phần lớn nhà cung cấp thường là đủ. Khi lưu lượng cao kéo dài, hãy kiểm tra giới hạn yêu cầu mỗi giây và hạn mức hằng tháng. [Cấu hình nút dự phòng](docs/api/vi.md#fallback) · [So sánh các nhà cung cấp nút dự phòng](#fallback-providers)
 
 ## Tình huống sử dụng
 

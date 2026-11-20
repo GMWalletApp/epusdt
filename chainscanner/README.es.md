@@ -8,7 +8,7 @@
 ---
 
 > [!IMPORTANT]
-> **Consultas frecuentes en Solana y Plasma.** La verificación estricta exige que dos proveedores independientes devuelvan el mismo resultado. En una prueba de 15 minutos en la red principal con RPC públicos gratuitos, fallaron las tres consultas estrictas de cada red. Si prevés muchas consultas, configura dos nodos de respaldo por red, uno de cada proveedor. El plan gratuito suele bastar para recuperar bloques y verificar transacciones de forma ocasional. Para tráfico sostenido, revisa el límite de solicitudes por segundo y la cuota mensual. [Configurar nodos de respaldo](docs/api/es.md#fallback)
+> **Consultas frecuentes en Solana y Plasma.** La verificación estricta exige que dos proveedores independientes devuelvan el mismo resultado. En una prueba de 15 minutos en la red principal con RPC públicos gratuitos, fallaron las tres consultas estrictas de cada red. Si prevés muchas consultas, configura dos nodos de respaldo por red, uno de cada proveedor. ChainScanner comparte la lectura de cada bloque entre todas las direcciones y los suscriptores, lo que reduce las solicitudes RPC duplicadas. Para recuperar bloques y verificar transacciones de forma ocasional, suele bastar el plan gratuito o básico de la mayoría de los proveedores. Para tráfico sostenido, revisa el límite de solicitudes por segundo y la cuota mensual. [Configurar nodos de respaldo](docs/api/es.md#fallback) · [Comparar proveedores de respaldo](#fallback-providers)
 
 ## Casos de uso
 
