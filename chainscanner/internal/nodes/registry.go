@@ -165,6 +165,9 @@ func (r *NodeRegistry) List(ctx context.Context, network string) ([]Node, error)
 	return out, rows.Err()
 }
 func (r *NodeRegistry) visible(n Node) bool {
+	if n.Network != "bitcoin" && !chains.Supported(n.Network) {
+		return false
+	}
 	_, configured := r.configured[n.NodeEndpoint]
 	if n.Origin == "builtin" && !configured {
 		_, ok := r.builtins[n.NodeEndpoint]

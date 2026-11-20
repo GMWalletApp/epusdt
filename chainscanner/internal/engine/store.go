@@ -92,7 +92,9 @@ func Open(path string) (*Store, error) {
 		if err = rows.Scan(&name, &state.open, &state.end); err != nil {
 			break
 		}
-		st.applyState(name, state)
+		if chains.Supported(name) {
+			st.applyState(name, state)
+		}
 	}
 	if err == nil {
 		err = rows.Err()

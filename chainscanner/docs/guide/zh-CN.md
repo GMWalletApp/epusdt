@@ -61,7 +61,7 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 
 ## 网络与节点协议
 
-13 个 EVM 主网共用适配器。配置订阅或节点时必须指定具体网络，连接时会校验执行层 chain ID。均支持 HTTP 或 WebSocket JSON-RPC、本地 IPC 和兼容 Geth 的 GraphQL。Ethereum 还支持 Beacon SSE 配对执行层 HTTP。
+12 个 EVM 主网共用适配器。配置订阅或节点时必须指定具体网络，连接时会校验执行层 chain ID。均支持 HTTP 或 WebSocket JSON-RPC、本地 IPC 和兼容 Geth 的 GraphQL。Ethereum 还支持 Beacon SSE 配对执行层 HTTP。
 
 | 网络 | ID | Chain ID | 网络 | ID | Chain ID |
 | --- | --- | --- | --- | --- | --- |
@@ -69,9 +69,8 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 | Arbitrum One | `arbitrum` | 42161 | HyperEVM | `hyperevm` | 999 |
 | BNB Smart Chain | `binance` | 56 | Monad | `monad` | 143 |
 | Avalanche C-Chain | `avalanche` | 43114 | Arc | `arc` | 5042 |
-| Polygon PoS | `polygon` | 137 | Morph | `morph` | 2818 |
+| Polygon PoS | `polygon` | 137 | Plasma | `plasma` | 9745 |
 | OP Mainnet | `optimism` | 10 | Robinhood Chain | `robinhood` | 4663 |
-| Plasma | `plasma` | 9745 |  |  |  |
 
 | 网络 | 协议 | 活动与历史数据 |
 | --- | --- | --- |

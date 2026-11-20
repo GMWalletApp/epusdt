@@ -214,3 +214,35 @@ func TestUnacknowledgedNetworkDoesNotBlockOthers(t *testing.T) {
 		t.Fatal(d, err)
 	}
 }
+
+func TestRetiredMorphWatchDoesNotBlockOtherSubscriptions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "scanner.db")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.db.Exec(`INSERT INTO watches VALUES('pay','morph','old',10);
+ INSERT INTO closing_watches VALUES('pay','morph','previous',3,8);
+ INSERT INTO subscription_receipts VALUES('pay','[{"network":"morph","address":"previous","from_height":3,"to_height":8}]');
+ INSERT INTO watches VALUES('pay','base',?,5)`, wallet)
+	store.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if store.Watching("morph") || !store.Watching("base") {
+		t.Fatal("unexpected restored watch state")
+	}
+	base := feed.Watch{Network: "base", Address: wallet}
+	receipt, err := store.Subscribe(context.Background(), "pay", []feed.Watch{base})
+	if err != nil || len(receipt.Terminations) != 0 || len(receipt.Registrations) != 1 || receipt.Registrations[0].FromHeight != 5 {
+		t.Fatal(receipt, err)
+	}
+	if _, err = store.Subscribe(context.Background(), "pay", []feed.Watch{{Network: "morph", Address: wallet}}); err == nil {
+		t.Fatal("accepted retired network")
+	}
+}

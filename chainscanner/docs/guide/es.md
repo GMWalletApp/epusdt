@@ -61,7 +61,7 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 
 ## Redes y protocolos
 
-Las 13 redes EVM comparten adaptador. Indica la red concreta en cada suscripción y nodo; se verifica el chain ID de ejecución. Todas admiten JSON-RPC por HTTP o WebSocket, IPC local y GraphQL compatible con Geth. Ethereum también admite Beacon SSE con HTTP de ejecución.
+Las 12 redes EVM comparten adaptador. Indica la red concreta en cada suscripción y nodo; se verifica el chain ID de ejecución. Todas admiten JSON-RPC por HTTP o WebSocket, IPC local y GraphQL compatible con Geth. Ethereum también admite Beacon SSE con HTTP de ejecución.
 
 | Red | ID | Chain ID | Red | ID | Chain ID |
 | --- | --- | --- | --- | --- | --- |
@@ -69,9 +69,8 @@ Las 13 redes EVM comparten adaptador. Indica la red concreta en cada suscripció
 | Arbitrum One | `arbitrum` | 42161 | HyperEVM | `hyperevm` | 999 |
 | BNB Smart Chain | `binance` | 56 | Monad | `monad` | 143 |
 | Avalanche C-Chain | `avalanche` | 43114 | Arc | `arc` | 5042 |
-| Polygon PoS | `polygon` | 137 | Morph | `morph` | 2818 |
+| Polygon PoS | `polygon` | 137 | Plasma | `plasma` | 9745 |
 | OP Mainnet | `optimism` | 10 | Robinhood Chain | `robinhood` | 4663 |
-| Plasma | `plasma` | 9745 |  |  |  |
 
 | Red | Protocolos | Actividad e historial |
 | --- | --- | --- |

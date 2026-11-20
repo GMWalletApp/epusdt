@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -167,6 +168,10 @@ func (s *Store) subscriptionChanges(ctx context.Context, consumer string, ordere
 		if err = rows.Scan(&w.Network, &w.Address, &h); err != nil {
 			break
 		}
+		// Retired networks have no live head at which a removal could drain.
+		if !chains.Supported(w.Network) {
+			continue
+		}
 		old[w] = h
 		if !wanted[w] {
 			removed = append(removed, feed.Registration{Watch: w, FromHeight: h})
@@ -254,6 +259,9 @@ func saveReceipt(ctx context.Context, tx *sql.Tx, consumer string, changed bool,
 			if err = json.Unmarshal(data, &result.Terminations); err != nil {
 				return err
 			}
+			result.Terminations = slices.DeleteFunc(result.Terminations, func(t feed.Termination) bool {
+				return !chains.Supported(t.Network)
+			})
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}

@@ -61,7 +61,7 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 
 ## Сети и протоколы
 
-Для 13 основных сетей EVM используется общий адаптер. Укажите конкретную сеть для каждого узла и адреса: при подключении проверяется chain ID. Поддерживаются JSON-RPC через HTTP или WebSocket, локальный IPC и GraphQL, совместимый с Geth. Для Ethereum доступен также Beacon SSE в паре с HTTP уровня исполнения.
+Для 12 основных сетей EVM используется общий адаптер. Укажите конкретную сеть для каждого узла и адреса: при подключении проверяется chain ID. Поддерживаются JSON-RPC через HTTP или WebSocket, локальный IPC и GraphQL, совместимый с Geth. Для Ethereum доступен также Beacon SSE в паре с HTTP уровня исполнения.
 
 | Сеть | ID | Chain ID | Сеть | ID | Chain ID |
 | --- | --- | --- | --- | --- | --- |
@@ -69,9 +69,8 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 | Arbitrum One | `arbitrum` | 42161 | HyperEVM | `hyperevm` | 999 |
 | BNB Smart Chain | `binance` | 56 | Monad | `monad` | 143 |
 | Avalanche C-Chain | `avalanche` | 43114 | Arc | `arc` | 5042 |
-| Polygon PoS | `polygon` | 137 | Morph | `morph` | 2818 |
+| Polygon PoS | `polygon` | 137 | Plasma | `plasma` | 9745 |
 | OP Mainnet | `optimism` | 10 | Robinhood Chain | `robinhood` | 4663 |
-| Plasma | `plasma` | 9745 |  |  |  |
 
 | Сеть | Протоколы | События и история |
 | --- | --- | --- |

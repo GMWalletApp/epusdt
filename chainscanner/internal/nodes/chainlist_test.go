@@ -36,6 +36,7 @@ func TestChainListRefreshLifecycle(t *testing.T) {
         {"url":"https://slow.example"},{"url":"https://SLOW.EXAMPLE:443/"},{"url":"wss://stream.example"},
         {"url":"https://MAINNET.BASE.ORG:443/"},{"url":"https://OPERATOR.example/"},{"url":"https://operator.example"},
         {"url":"https://requires.example/${API_KEY}"}]},
+        {"chainId":2818,"rpc":[{"url":"https://retired.example"}]},
         {"chainId":84532,"rpc":[{"url":"https://testnet.example"}]}]`)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, payload.Load().(string)) }))
 	defer srv.Close()

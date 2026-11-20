@@ -61,7 +61,7 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 
 ## Networks and transports
 
-EVM mainnets share an adapter. Set the exact network ID in every watch and node entry. Connections verify the execution chain ID. All 13 support JSON-RPC over HTTP or WebSocket, local IPC and Geth-compatible GraphQL. Ethereum also supports Beacon SSE paired with execution HTTP.
+EVM mainnets share an adapter. Set the exact network ID in every watch and node entry. Connections verify the execution chain ID. All 12 support JSON-RPC over HTTP or WebSocket, local IPC and Geth-compatible GraphQL. Ethereum also supports Beacon SSE paired with execution HTTP.
 
 | Network | ID | Chain ID | Network | ID | Chain ID |
 | --- | --- | --- | --- | --- | --- |
@@ -69,9 +69,8 @@ EVM mainnets share an adapter. Set the exact network ID in every watch and node 
 | Arbitrum One | `arbitrum` | 42161 | HyperEVM | `hyperevm` | 999 |
 | BNB Smart Chain | `binance` | 56 | Monad | `monad` | 143 |
 | Avalanche C-Chain | `avalanche` | 43114 | Arc | `arc` | 5042 |
-| Polygon PoS | `polygon` | 137 | Morph | `morph` | 2818 |
+| Polygon PoS | `polygon` | 137 | Plasma | `plasma` | 9745 |
 | OP Mainnet | `optimism` | 10 | Robinhood Chain | `robinhood` | 4663 |
-| Plasma | `plasma` | 9745 |  |  |  |
 
 | Network | Protocols | Activity and history |
 | --- | --- | --- |
