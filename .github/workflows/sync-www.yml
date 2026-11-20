@@ -4,8 +4,7 @@ on:
   push:
     branches:
       - dev
-    paths-ignore:
-      - "src/www/**"
+      - master
   workflow_dispatch:
 
 permissions:
@@ -22,7 +21,9 @@ jobs:
 
     env:
       FRONTEND_REPOSITORY: ${{ vars.WWW_FRONTEND_REPOSITORY }}
-      FRONTEND_REF: ${{ vars.WWW_FRONTEND_REF }}
+      # Backend dev builds frontend develop; backend master builds frontend main.
+      # Override per branch with WWW_FRONTEND_REF_DEV / WWW_FRONTEND_REF_MASTER.
+      FRONTEND_REF: ${{ github.ref_name == 'master' && (vars.WWW_FRONTEND_REF_MASTER || 'main') || github.ref_name == 'dev' && (vars.WWW_FRONTEND_REF_DEV || 'develop') || '' }}
       FRONTEND_BUILD_DIR: ${{ vars.WWW_FRONTEND_BUILD_DIR }}
       FRONTEND_TOKEN: ${{ secrets.WWW_FRONTEND_TOKEN }}
       WWW_TARGET_DIR: src/www
@@ -41,7 +42,7 @@ jobs:
             exit 1
           fi
           if [[ -z "$FRONTEND_REF" ]]; then
-            echo "Set repository variable WWW_FRONTEND_REF, for example main"
+            echo "sync-www only runs on dev (frontend develop) or master (frontend main), not $GITHUB_REF_NAME"
             exit 1
           fi
           if [[ -z "$FRONTEND_BUILD_DIR" ]]; then
