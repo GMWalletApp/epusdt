@@ -97,7 +97,7 @@ func (p *nodePool) refresh(ctx context.Context) error {
 			origins[cfg] = n
 			if _, ok := p.registry.configured[n.NodeEndpoint]; ok {
 				preferred = append(preferred, cfg)
-			} else if n.Origin == "chainlist" || n.Origin == "openchainbench" {
+			} else if isDiscoveryOrigin(n.Origin) {
 				discovered = append(discovered, cfg)
 			} else {
 				owned = append(owned, cfg)

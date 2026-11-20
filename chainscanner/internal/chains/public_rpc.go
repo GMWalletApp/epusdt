@@ -16,7 +16,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// ChainList entries are third-party input. Apply the same dial policy during
+// Public directory entries are third-party input. Apply the same dial policy during
 // discovery, admin tests and actual scanning, including websocket reconnects.
 func PublicRPCProtocol(raw string) string {
 	u, err := url.Parse(raw)
@@ -115,7 +115,9 @@ func openPublicRPC(ctx context.Context, n Network, watch bool) (Source, error) {
 	case n.Name == "solana" || n.Name == "aptos":
 		valid = p == "http" && n.Protocol == "http"
 	case n.Name == "ton":
-		valid = p == "http" && n.Protocol == "jsonrpc"
+		valid = p == "http" && (n.Protocol == "jsonrpc" || n.Protocol == "rest")
+	case n.Name == "tron":
+		valid = p == "http" && (n.Protocol == "http" || n.Protocol == "solidity-http")
 	case n.Name == "sui":
 		valid = p == "http" && n.Protocol == "grpc"
 	}
@@ -173,13 +175,26 @@ func NewPublicSource(ctx context.Context, n Network) (Source, error) {
 // Probe a recent numbered block, catching stuck nodes and endpoints that
 // answer a height request but cannot serve even the corresponding header.
 func ProbePublicRPC(ctx context.Context, n Network) (int64, error) {
+	return probePublic(ctx, n, false)
+}
+
+// ProbePublicScan exercises the scanner's history read before admission.
+func ProbePublicScan(ctx context.Context, n Network) (int64, error) {
+	return probePublic(ctx, n, true)
+}
+
+func probePublic(ctx context.Context, n Network, scan bool) (int64, error) {
 	src, err := openPublicRPC(ctx, n, false)
 	if err != nil {
 		return 0, err
 	}
 	defer src.Close()
 	if IsEVM(n.Name) {
-		return src.(*jsonSource).recentHead(ctx)
+		h, err := src.(*jsonSource).recentHead(ctx)
+		if err == nil && scan {
+			_, _, _, err = ReadSpan(ctx, n.Name, src, Span{First: h, Last: h})
+		}
+		return h, err
 	}
 	h, err := src.Head(ctx)
 	if err != nil || h < 2 {

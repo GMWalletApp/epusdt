@@ -120,6 +120,8 @@ Every three consecutive failures of the same operation trigger a cooldown of 1, 
 
 The standalone server refreshes ChainList at startup and every 15 minutes, including while workers are idle. It probes public EVM HTTPS/WSS nodes, checks chain ID and recent headers, and preserves operator-owned entries. A failed catalog download leaves the previous inventory intact. The UniSat Bitcoin entry supports height probes only.
 
+CompareNodes adds free, keyless mainnet endpoints for every supported scanning network at startup and every 15 minutes. The server reads each protocol’s public directory page, filters by transport and verifies the chain and a recent block using anonymous requests. A failed page fetch or invalid table preserves that chain’s previous inventory. Directory removals affect only entries owned by CompareNodes. Commercial use of the directory requires permission under the [CompareNodes terms](https://www.comparenodes.com/terms-of-use/).
+
 OpenChainBench supplements ChainList for Solana, Sui, Aptos and TON. The server reads its public HTTP API and benchmark definitions every 15 minutes, then checks recent transactions before adding a node. Each directory manages its own entries. A failed probe or upstream removal retires a discovered node. A directory download error preserves the previous list for that chain. [OpenChainBench](https://openchainbench.com/benchmarks)
 
 <details>

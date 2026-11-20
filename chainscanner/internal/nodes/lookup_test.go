@@ -22,9 +22,9 @@ func TestTransactionLookupRounds(t *testing.T) {
 		strict             bool
 		nodes, code, calls int
 	}{
-		{"ordinary", false, 6, 200, 1}, {"missing", false, 6, 404, 1}, {"unanimous", true, 3, 200, 3},
-		{"retry", true, 6, 200, 6}, {"busy retry", true, 6, 200, 6}, {"failed node", true, 6, 200, 6}, {"both disagree", true, 6, 502, 6},
-		{"all missing", true, 6, 502, 6}, {"short first group", true, 2, 503, 0}, {"short second group", true, 5, 503, 3},
+		{"ordinary", false, 6, 200, 1}, {"missing", false, 6, 404, 1}, {"agree with spare nodes", true, 6, 200, 2},
+		{"retry", true, 6, 200, 4}, {"busy retry", true, 6, 200, 4}, {"failed node", true, 6, 200, 4}, {"both disagree", true, 4, 502, 4},
+		{"all missing", true, 6, 502, 4}, {"only two", true, 2, 200, 2}, {"short first group", true, 1, 503, 0}, {"short second group", true, 3, 503, 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
@@ -66,8 +66,8 @@ func TestTransactionLookupRounds(t *testing.T) {
 				idx := calls
 				mu.Unlock()
 				if tc.strict {
-					group := (idx - 1) / 3
-					if idx%3 == 0 {
+					group := (idx - 1) / 2
+					if idx%2 == 0 {
 						close(barrier[group])
 					}
 					select {
@@ -80,7 +80,7 @@ func TestTransactionLookupRounds(t *testing.T) {
 				if tc.name == "missing" || tc.name == "all missing" || tc.name == "failed node" && idx == 1 {
 					return nil, chains.ErrTransactionMissing
 				}
-				if (tc.name == "both disagree" || idx <= 3 && (tc.name == "retry" || tc.name == "busy retry" || tc.name == "short second group")) && idx%3 == 1 {
+				if (tc.name == "both disagree" || idx <= 2 && (tc.name == "retry" || tc.name == "busy retry" || tc.name == "short second group")) && idx%2 == 1 {
 					return json.RawMessage(`{"amount":9007199254740993}`), nil
 				}
 				return json.RawMessage(`{"amount":9007199254740992}`), nil
@@ -124,8 +124,8 @@ func TestLookupExcludesBusyProvidersAndReleasesPartialGroups(t *testing.T) {
 	}
 	candidates := []lookupCandidate{{key: a, healthy: true}, {key: b, healthy: true}, {key: c, healthy: true}}
 	release := l.lanes.scan(a)
-	if g := l.group(t.Context(), candidates, map[string]bool{}, 3); len(g) != 0 {
-		t.Fatal("leased busy provider")
+	if g := l.group(t.Context(), candidates[:2], map[string]bool{}, 2); len(g) != 0 {
+		t.Fatal("aliases supplied a quorum")
 	}
 	g := l.group(t.Context(), candidates, map[string]bool{}, 1)
 	if len(g) != 1 || g[0].key != c {
@@ -135,8 +135,11 @@ func TestLookupExcludesBusyProvidersAndReleasesPartialGroups(t *testing.T) {
 	secondScan()
 	g[0].release()
 	release()
-	if g = l.group(t.Context(), candidates, map[string]bool{}, 3); len(g) != 0 {
-		t.Fatal("alias supplied a vote")
+	if g = l.group(t.Context(), candidates, map[string]bool{}, 2); len(g) != 2 || g[0].key == g[1].key {
+		t.Fatal("expected two distinct providers")
+	}
+	for _, lease := range g {
+		lease.release()
 	}
 }
 
@@ -164,11 +167,11 @@ func TestLookupCooldown(t *testing.T) {
 
 func TestStrictLookupTopsUpOnlyTheMissingSlots(t *testing.T) {
 	var l transactionLookup
-	candidates := []lookupCandidate{{key: "busy", healthy: true}, {key: "idle1", healthy: true}, {key: "idle2", healthy: true}, {key: "idle3", healthy: true}}
+	candidates := []lookupCandidate{{key: "busy", healthy: true}, {key: "idle1", healthy: true}, {key: "idle2", healthy: true}}
 	scan := l.lanes.scan("busy")
 	defer scan()
-	g := l.group(t.Context(), candidates, map[string]bool{}, 3)
-	if len(g) != 3 {
+	g := l.group(t.Context(), candidates, map[string]bool{}, 2)
+	if len(g) != 2 {
 		t.Fatalf("got %d idle providers", len(g))
 	}
 	for _, v := range g {
@@ -177,11 +180,11 @@ func TestStrictLookupTopsUpOnlyTheMissingSlots(t *testing.T) {
 		}
 		v.release()
 	}
-	otherScan := l.lanes.scan("idle3")
+	otherScan := l.lanes.scan("idle2")
 	defer otherScan()
-	g = l.group(t.Context(), candidates, map[string]bool{}, 3)
-	if len(g) != 3 || g[0].key != "idle1" || g[1].key != "idle2" || g[2].key != "busy" {
-		t.Fatal("expected two idle plus one busy", g)
+	g = l.group(t.Context(), candidates, map[string]bool{}, 2)
+	if len(g) != 2 || g[0].key != "idle1" || g[1].key != "busy" {
+		t.Fatal("expected one idle plus one busy", g)
 	}
 	if _, ok := l.lanes.tryLookup("busy", true); ok {
 		t.Fatal("more than one supplemental query")

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand/v2"
 	"net/http"
 	"sync"
 	"time"
@@ -17,11 +18,16 @@ import (
 
 const chainListURL = "https://chainlist.org/rpcs.json"
 
+func isDiscoveryOrigin(origin string) bool {
+	return origin == "chainlist" || origin == "openchainbench" || origin == "comparenodes"
+}
+
 // RunChainList refreshes the node inventory independently of the scan workers.
 func (r *NodeRegistry) RunChainList(ctx context.Context) {
 	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	var wg sync.WaitGroup
 	wg.Go(func() { runChainListSchedule(ctx, func(ctx context.Context) { r.refreshOpenChainBench(ctx, client) }) })
+	wg.Go(func() { runChainListSchedule(ctx, func(ctx context.Context) { r.refreshCompareNodes(ctx, client) }) })
 	defer wg.Wait()
 	runChainListSchedule(ctx, func(ctx context.Context) {
 		round, cancel := context.WithTimeout(ctx, 15*time.Minute)
@@ -124,9 +130,18 @@ func (r *NodeRegistry) refreshChainList(ctx context.Context, client *http.Client
 }
 
 func (r *NodeRegistry) refreshCandidates(ctx context.Context, origin, network string, candidates []NodeEndpoint, probe func(context.Context, chains.Network) (int64, error)) (int, error) {
-	excluded, _, err := discoveryInventory(ctx, r.db, origin)
+	excluded, existing, err := discoveryInventory(ctx, r.db, origin)
 	if err != nil {
 		return 0, err
+	}
+	// Bound work on slow directories while preserving completed admissions.
+	probeCtx := ctx
+	if origin == "comparenodes" {
+		var cancel context.CancelFunc
+		probeCtx, cancel = context.WithTimeout(ctx, 60*time.Second)
+		defer cancel()
+		// An unreachable prefix must not starve later candidates every round.
+		rand.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
 	}
 	// Each worker owns its result slot. No database locks are held during I/O.
 	results := make([]observation, len(candidates))
@@ -138,10 +153,10 @@ func (r *NodeRegistry) refreshCandidates(ctx context.Context, origin, network st
 				e := candidates[i]
 				start := time.Now()
 				timeout := 10 * time.Second
-				if origin == "openchainbench" {
+				if origin == "openchainbench" || origin == "comparenodes" {
 					timeout = 35 * time.Second
 				}
-				attempt, cancel := context.WithTimeout(ctx, timeout)
+				attempt, cancel := context.WithTimeout(probeCtx, timeout)
 				cfg := chains.Network{Name: e.Network, Protocol: e.Protocol, URL: e.URL}
 				release := r.lookup.lanes.scan(providerKey(cfg))
 				h, err := probe(attempt, cfg)
@@ -154,12 +169,17 @@ func (r *NodeRegistry) refreshCandidates(ctx context.Context, origin, network st
 		})
 	}
 	for i, e := range candidates {
-		if excluded[e] || ctx.Err() != nil {
+		// Once admitted, the regular health worker owns checks and cooldowns.
+		if _, known := existing[e]; known && origin == "comparenodes" {
+			results[i].endpoint = e
+			continue
+		}
+		if excluded[e] || probeCtx.Err() != nil {
 			continue
 		}
 		select {
 		case jobs <- i:
-		case <-ctx.Done():
+		case <-probeCtx.Done():
 		}
 	}
 	close(jobs)
@@ -215,6 +235,9 @@ func (r *NodeRegistry) applyCatalog(ctx context.Context, origin, network string,
 	keep := map[NodeEndpoint]bool{}
 	for _, obs := range results {
 		if obs.height == 0 {
+			if e, known := existing[obs.endpoint]; known && !protected[obs.endpoint] && origin == "comparenodes" {
+				keep[e] = true
+			}
 			continue
 		}
 		key := obs.endpoint.identity()

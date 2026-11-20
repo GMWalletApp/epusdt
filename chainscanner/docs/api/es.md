@@ -45,11 +45,11 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 Usa el token del consumidor y una red configurada. No se necesita una suscripción. La respuesta incluye `network`, `hash` y `result`.
 
-La ruta normal elige un nodo libre al azar y da prioridad a los sanos. La estricta consulta tres nodos en paralelo. Solo devuelve tres resultados idénticos. Ante errores, ausencia de la transacción o discrepancias, prueba una vez con otros tres nodos. El orden de las claves JSON y los espacios no afectan la comparación.
+La ruta normal elige un nodo libre al azar y da prioridad a los sanos. La ruta estricta consulta dos nodos distintos en paralelo. Si ambos devuelven el mismo resultado completo, lo devuelve. En caso contrario, prueba una vez más con dos nodos nuevos. Los errores y las transacciones ausentes no cuentan como votos. El orden de las claves JSON y los espacios no afectan la comparación.
 
 Los alias con el mismo host y puerto cuentan una vez. En ambas rondas se prefieren nodos libres. La ruta estricta completa el grupo con nodos ocupados y permite una petición adicional por nodo sin detener el escaneo. Se excluyen nodos en pausa y de respaldo. Cada ronda permite hasta 4 segundos para seleccionar nodos y 9 para consultar la transacción. 400 indica datos inválidos, 401 acceso denegado, 404 ausencia en la consulta normal, 502 fallo de consulta o consenso y 503 falta de nodos disponibles.
 
-TON necesita índices `toncenter-v3` con URL base `/api/v3`. Se incluye uno. La consulta estricta necesita tres y otros tres para repetir.
+TON necesita índices `toncenter-v3` con URL base `/api/v3`. Se incluye uno. Cada intento estricto requiere al menos dos índices distintos. Para repetir se necesitan al menos dos índices nuevos.
 
 ```sh
 consumer "$BASE/v1/transactions/plasma/$TX_HASH"

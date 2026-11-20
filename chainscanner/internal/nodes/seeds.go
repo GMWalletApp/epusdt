@@ -43,7 +43,7 @@ func (rows seedRows) seed(ctx context.Context, tx *sql.Tx, e NodeEndpoint, origi
 		e = variants[0].NodeEndpoint
 		for _, r := range variants[1:] {
 			// Only retire redundant automatically created rows for this seed.
-			if !r.removed && (r.origin == "builtin" || r.origin == "chainlist" || r.origin == "openchainbench" || r.origin == "config") {
+			if !r.removed && (r.origin == "builtin" || isDiscoveryOrigin(r.origin) || r.origin == "config") {
 				if _, err := tx.ExecContext(ctx, "DELETE FROM rpc_nodes WHERE id=?", r.id); err != nil {
 					return e, err
 				}

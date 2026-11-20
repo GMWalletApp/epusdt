@@ -121,7 +121,7 @@ func NewNodeRegistry(ctx context.Context, s *engine.Store, networks []chains.Net
 }
 
 const seedNode = `INSERT INTO rpc_nodes(network,protocol,url,origin) VALUES(?,?,?,?)
-ON CONFLICT(network,protocol,url) DO UPDATE SET origin=excluded.origin WHERE origin IN ('chainlist','openchainbench') OR (origin='config' AND excluded.origin='builtin')`
+ON CONFLICT(network,protocol,url) DO UPDATE SET origin=excluded.origin WHERE origin IN ('chainlist','openchainbench','comparenodes') OR (origin='config' AND excluded.origin='builtin')`
 const nodeFields = `id,network,protocol,url,origin,status,height,checked_at,latency,generation,api_key,history_url,history_key`
 
 func (r *NodeRegistry) scan(row interface{ Scan(...any) error }) (Node, error) {
@@ -313,7 +313,7 @@ func (r *NodeRegistry) network(n Node, settings chains.Network) chains.Network {
 }
 
 func openNode(ctx context.Context, n Node, network chains.Network) (chains.Source, error) {
-	if n.Origin == "chainlist" || n.Origin == "openchainbench" {
+	if isDiscoveryOrigin(n.Origin) {
 		return chains.NewPublicSource(ctx, network)
 	}
 	return chains.NewSource(ctx, network)

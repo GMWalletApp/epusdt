@@ -13,6 +13,8 @@ import (
 	"github.com/GMWalletApp/ChainScanner/internal/chains"
 )
 
+const strictGroupSize = 2
+
 var errCapacity = errors.New("insufficient available transaction nodes")
 var errAgreement = errors.New("transaction lookup failed")
 
@@ -82,7 +84,7 @@ func (r *NodeRegistry) lookupCandidates(ctx context.Context, network string) ([]
 		if !ok {
 			continue
 		}
-		candidates = append(candidates, lookupCandidate{healthy: n.Status == "ok" && n.CheckedAt != nil && now.Sub(time.UnixMilli(*n.CheckedAt)) < time.Minute, cfg: cfg, public: n.Origin == "chainlist" || n.Origin == "openchainbench", version: n.version(), key: providerKey(cfg)})
+		candidates = append(candidates, lookupCandidate{healthy: n.Status == "ok" && n.CheckedAt != nil && now.Sub(time.UnixMilli(*n.CheckedAt)) < time.Minute, cfg: cfg, public: isDiscoveryOrigin(n.Origin), version: n.version(), key: providerKey(cfg)})
 	}
 	rand.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
 
@@ -127,13 +129,13 @@ func (l *transactionLookup) group(ctx context.Context, candidates []lookupCandid
 	}
 	l.mu.Unlock()
 	idleWindow := 4 * time.Second
-	if count == 3 {
+	if count == strictGroupSize {
 		idleWindow = 2 * time.Second
 	}
 	idleCtx, stop := context.WithTimeout(ctx, idleWindow)
 	group := l.fill(idleCtx, fresh, cold, used, count, false)
 	stop()
-	if count == 3 && len(group) < count {
+	if count == strictGroupSize && len(group) < count {
 		group = append(group, l.fill(ctx, fresh, cold, used, count-len(group), true)...)
 	}
 
@@ -227,7 +229,7 @@ func (r *NodeRegistry) transactionHandler(configured map[string]chains.Network) 
 			ctx := req.Context()
 			count, rounds := 1, 1
 			if strict {
-				count, rounds = 3, 2
+				count, rounds = strictGroupSize, 2
 			}
 			used := map[string]bool{}
 			for range rounds {

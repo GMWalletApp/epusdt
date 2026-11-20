@@ -45,11 +45,11 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 Gửi mã xác thực của dịch vụ và ID mạng đã cấu hình. Không cần đăng ký địa chỉ. Phản hồi chứa `network`, `hash` và `result`.
 
-Truy vấn thường chọn ngẫu nhiên một nút rảnh, ưu tiên nút đang hoạt động tốt. Truy vấn nghiêm ngặt hỏi đồng thời ba nút khác nhau và chỉ trả dữ liệu khi ba kết quả khớp nhau. Nếu có lỗi, thiếu giao dịch hoặc khác biệt, dịch vụ thử lại một lần với ba nút khác. Thứ tự khóa JSON và khoảng trắng không ảnh hưởng đến so sánh.
+Truy vấn thường chọn ngẫu nhiên một nút rảnh, ưu tiên nút đang hoạt động tốt. Truy vấn nghiêm ngặt gửi yêu cầu đồng thời đến hai nút khác nhau. Nếu cả hai trả về cùng một kết quả giao dịch đầy đủ, dịch vụ trả kết quả. Nếu không, dịch vụ thử lại một lần với hai nút chưa dùng. Lỗi và phản hồi không tìm thấy giao dịch không được tính. Thứ tự khóa JSON và khoảng trắng không ảnh hưởng đến so sánh.
 
 Các địa chỉ cùng máy chủ và cổng chỉ được tính một lần. Cả hai lượt đều ưu tiên nút rảnh. Khi thiếu, truy vấn nghiêm ngặt bổ sung các nút đang bận, tối đa một truy vấn bổ sung mỗi nút mà không dừng quét. Nút dự phòng và nút đang tạm dừng được bỏ qua. Mỗi lượt có tối đa 4 giây để chọn nút và 9 giây để tra giao dịch. HTTP 400 là đầu vào sai, 401 là lỗi xác thực, 404 là không tìm thấy khi tra thường, 502 là truy vấn lỗi hoặc kết quả khác nhau và 503 là thiếu nút khả dụng.
 
-TON dùng bộ chỉ mục `toncenter-v3` có URL cơ sở `/api/v3`. Có sẵn một nút. Chế độ nghiêm ngặt cần ba nút, và thêm ba nút khác nếu phải thử lại.
+TON dùng bộ chỉ mục `toncenter-v3` có URL cơ sở `/api/v3`. Có sẵn một nút. Mỗi lượt cần ít nhất hai bộ chỉ mục khác nhau. Lượt thử lại cần ít nhất hai bộ chỉ mục chưa dùng.
 
 ```sh
 consumer "$BASE/v1/transactions/plasma/$TX_HASH"

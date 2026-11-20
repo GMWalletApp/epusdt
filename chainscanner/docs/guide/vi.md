@@ -116,6 +116,8 @@ Cứ ba lần lỗi liên tiếp của cùng thao tác, nút tạm nghỉ lần 
 
 Máy chủ độc lập cập nhật ChainList lúc khởi động và mỗi 15 phút, kể cả khi bộ quét đang nghỉ. Nó kiểm tra nút EVM HTTPS/WSS công khai, chain ID và header gần đây, đồng thời giữ các mục của người vận hành. Nếu tải danh mục lỗi, danh sách trước vẫn có hiệu lực. Mục Bitcoin UniSat chỉ dùng để kiểm tra độ cao.
 
+Khi khởi động và sau mỗi 15 phút, dịch vụ đọc danh mục CompareNodes của từng mạng được hỗ trợ để tìm nút mainnet miễn phí không cần khóa. Dịch vụ lọc theo giao thức, xác minh mạng và đọc thử một khối gần đây bằng yêu cầu ẩn danh. Nếu tải hoặc phân tích trang thất bại, danh sách trước đó của mạng được giữ lại. Chỉ các nút do CompareNodes bổ sung mới bị xóa khi danh mục bỏ chúng. Việc dùng danh mục cho mục đích thương mại cần được cho phép theo [điều khoản CompareNodes](https://www.comparenodes.com/terms-of-use/).
+
 OpenChainBench bổ sung nguồn nút cho Solana, Sui, Aptos và TON. Cứ 15 phút, máy chủ gọi API HTTP công khai, tải định nghĩa bảng xếp hạng và kiểm tra khả năng đọc giao dịch gần đây. Mỗi danh mục quản lý các nút của riêng mình. Nút bị loại khỏi nhóm quét nếu kiểm tra thất bại hoặc nguồn đã gỡ bỏ nút. Nếu tải danh mục thất bại, máy chủ giữ danh sách trước đó của chuỗi. [OpenChainBench](https://openchainbench.com/benchmarks)
 
 <details>
