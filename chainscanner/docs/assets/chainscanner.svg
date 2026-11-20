@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-labelledby="title">
-  <title id="title">ChainScanner</title>
-  <rect width="128" height="128" rx="22" fill="#100840"/>
-  <path d="M42 21h45l17 27H84l-6-10H53L37 64l16 26h25l6-10h20l-17 27H42L16 64Z" fill="#FFF7E8"/>
-  <path d="m66 47 17 17-17 17-17-17Z" fill="#91FA00"/>
-</svg>

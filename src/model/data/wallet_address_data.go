@@ -1,7 +1,6 @@
 package data
 
 import (
-	scanner "github.com/GMWalletApp/ChainScanner"
 	"strings"
 
 	"github.com/GMWalletApp/epusdt/model/dao"
@@ -16,7 +15,13 @@ func AddWalletAddress(address string) (*mdb.WalletAddress, error) {
 }
 
 // isEVMNetwork 判断是否是 EVM 网络
-func isEVMNetwork(network string) bool { return scanner.IsEVM(network) }
+func isEVMNetwork(network string) bool {
+	switch network {
+	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma:
+		return true
+	}
+	return false
+}
 
 func normalizeWalletNetwork(network string) string {
 	return strings.ToLower(strings.TrimSpace(network))
@@ -36,7 +41,7 @@ func normalizeWalletAddressByNetworkE(network, address string) (string, error) {
 	if network == mdb.NetworkTon {
 		return addressutil.NormalizeTonAddress(address)
 	}
-	if network == mdb.NetworkAptos || network == mdb.NetworkSui {
+	if network == mdb.NetworkAptos {
 		return addressutil.NormalizeMoveAddress(address)
 	}
 	return normalizeWalletAddressByNetwork(network, address), nil

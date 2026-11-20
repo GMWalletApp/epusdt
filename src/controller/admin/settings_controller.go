@@ -149,10 +149,6 @@ func (c *BaseAdminController) UpsertSettings(ctx echo.Context) error {
 			out = append(out, errorResult(key, constant.SettingItemErr))
 			continue
 		}
-		if key == mdb.SettingKeyStrictPayment {
-			item.Group = mdb.SettingGroupSystem
-			item.Type = mdb.SettingTypeBool
-		}
 		if key == mdb.SettingKeyBrandWithdrawalReminder {
 			item.Group = mdb.SettingGroupBrand
 			item.Type = mdb.SettingTypeBool
@@ -231,10 +227,6 @@ func normalizeSettingValue(value interface{}) (string, error) {
 
 func normalizeAndValidateSettingItem(group, key, value string) (string, error) {
 	switch key {
-	case mdb.SettingKeyStrictPayment:
-		if group != mdb.SettingGroupSystem || (value != "true" && value != "false") {
-			return value, fmt.Errorf("%s requires a system boolean", key)
-		}
 	case mdb.SettingKeyBrandWithdrawalReminder:
 		if !strings.EqualFold(strings.TrimSpace(group), mdb.SettingGroupBrand) {
 			return value, fmt.Errorf("%s must use group %s", key, mdb.SettingGroupBrand)

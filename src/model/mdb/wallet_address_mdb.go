@@ -6,22 +6,14 @@ const (
 )
 
 const (
-	NetworkTron      = "tron"
-	NetworkSolana    = "solana"
-	NetworkEthereum  = "ethereum"
-	NetworkBsc       = "binance"
-	NetworkPolygon   = "polygon"
-	NetworkPlasma    = "plasma"
-	NetworkTon       = "ton"
-	NetworkAptos     = "aptos"
-	NetworkSui       = "sui"
-	NetworkArbitrum  = "arbitrum"
-	NetworkHyperEVM  = "hyperevm"
-	NetworkMonad     = "monad"
-	NetworkArc       = "arc"
-	NetworkAvalanche = "avalanche"
-	NetworkOptimism  = "optimism"
-	NetworkBase      = "base"
+	NetworkTron     = "tron"
+	NetworkSolana   = "solana"
+	NetworkEthereum = "ethereum"
+	NetworkBsc      = "binance"
+	NetworkPolygon  = "polygon"
+	NetworkPlasma   = "plasma"
+	NetworkTon      = "ton"
+	NetworkAptos    = "aptos"
 )
 
 const (

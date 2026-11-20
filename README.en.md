@@ -28,10 +28,6 @@
 
 ---
 
-## Payment verification
-
-Use the ChainScanner revision pinned in `chainscanner.rev` for standalone deployments so single-round queries and cross-round exclusions are supported. Register two independent fallback providers per payment network. They rotate failed-range repairs and can supply both votes for strict lookups. Ordinary nodes can fill a vacancy. After two unsuccessful rounds, EPUSDT stops automatic verification and exposes status `6` and the candidate hash for manual review. Merchant callbacks require successful verification. [Configure a fallback node](chainscanner/docs/api/en.md#fallback)
-
 ## What is Epusdt?
 
 **Epusdt** (Easy Payment USDT) is a self-hosted **multi-chain, multi-token crypto payment gateway** built with Go. It started as a TRC20-only solution and evolved into a broader **multi-chain receiving platform**, allowing websites and applications to accept crypto payments across multiple networks and token types. No third-party custody, no platform fees — funds go directly into your wallet.
@@ -118,7 +114,7 @@ Epusdt
 
 ## How It Works
 
-EPUSDT subscribes receiving addresses with ChainScanner. It matches incoming transfers to open orders by network, asset, amount and payment window.
+Epusdt listens to supported blockchain APIs or RPC nodes across multiple networks such as TRC20, ERC20, BEP20, and Polygon. It captures incoming token transfers in real time and matches ownership using **amount differentiation** and **time-bounded locks**:
 
 ```text
 Workflow:
@@ -126,8 +122,7 @@ Workflow:
 2. The system searches for an available wallet-address + amount combination
 3. If address_1:20.05 is free -> lock it for 10 minutes and return it
 4. If already occupied -> add 0.0001 and try the next amount combination
-5. A matching transfer moves the order to confirming
-6. The required confirmation depth and configured verification must pass before settlement and merchant notification
+5. Background listeners keep watching wallet deposits and mark the order paid once the amount matches
 ```
 
 ![Epusdt Payment Flow](wiki/img/implementation_principle.jpg)
@@ -187,11 +182,3 @@ Crypto assets are a high-risk emerging asset class. Stablecoins and other digita
     Epusdt · Easy Payment USDT · Open Source Payment Gateway · Multi-chain Collection
   </sub>
 </p>
-
-## ChainScanner integration
-
-Run ChainScanner as a separate service and configure EPUSDT with its HTTP(S) origin in `CHAINSCANNER_URL` and a dedicated consumer credential in `CHAINSCANNER_TOKEN`. Set a separate `CHAINSCANNER_ADMIN_TOKEN` for scan progress, node diagnostics and blacklist management. Configure persistent scanner storage and reconcile pending orders when migrating. The default event transport is WebSocket. Set `CHAINSCANNER_TRANSPORT=grpc` for bidirectional streaming or `http` for long polling.
-
-EPUSDT registers enabled receiving addresses and acknowledges events after persisting the payment decision. System settings enable strict verification by default. Candidate payments require matching results from two independent nodes, followed by order and depth checks. Two failed rounds trigger manual review. Disabling strict verification applies to newly queued candidates. The authenticated console API exposes scanner node, fallback, blacklist, height and transaction operations under `/admin/api/v1/chainscanner`. See the [v1 API](chainscanner/docs/api/en.md).
-
-While a network has active subscriptions, ChainScanner probes node heights and assigns each range to an idle node whose head covers the range at the configured confirmation depth. From the RPC nodes page, administrators can ask ChainScanner to retest one scanner node or all nodes on a selected network. The node list shows each node’s last reported height, latency and status. The dashboard reads `GET /admin/progress` for each network’s eligible target, contiguous cursor and observed lag. It warns above five minutes and distinguishes idle networks and stale heads. Viewing either page reads existing data from the scanner. [Node diagnostics](chainscanner/docs/api/en.md#test-one)

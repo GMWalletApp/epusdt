@@ -2,13 +2,17 @@ package service
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
 
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
+	"github.com/GMWalletApp/epusdt/model/request"
 	addressutil "github.com/GMWalletApp/epusdt/util/address"
+	"github.com/GMWalletApp/epusdt/util/constant"
+	"github.com/GMWalletApp/epusdt/util/log"
 	"github.com/GMWalletApp/epusdt/util/math"
 	"github.com/shopspring/decimal"
 	"github.com/xssnick/tonutils-go/address"
@@ -111,6 +115,77 @@ func ParseTonInboundTransfer(tx *tlb.Transaction, receive *address.Address, nati
 		TxHashHex:      txHashHex,
 		BlockID:        blockID,
 	}, nil
+}
+
+func TryProcessTonTransfer(transfer *TonObservedTransfer) {
+	if transfer == nil {
+		return
+	}
+	tokenSym := strings.ToUpper(strings.TrimSpace(transfer.Token.Symbol))
+	defer func() {
+		if err := recover(); err != nil {
+			log.Sugar.Errorf("[TON-%s][%s] TryProcessTonTransfer panic: %v", tokenSym, transfer.ReceiveAddress, err)
+		}
+	}()
+
+	receive := strings.TrimSpace(transfer.ReceiveAddress)
+	if tokenSym == "" || receive == "" || transfer.Amount <= 0 || transfer.BlockID == "" {
+		return
+	}
+	log.Sugar.Infof("[TON-%s][%s] observed transfer tx=%s lt=%d amount=%.6f", tokenSym, receive, transfer.BlockID, transfer.LT, transfer.Amount)
+
+	tradeID, err := data.GetTradeIdByWalletAddressAndAmountAndToken(mdb.NetworkTon, receive, tokenSym, transfer.Amount)
+	if err != nil {
+		log.Sugar.Warnf("[TON-%s][%s] lock lookup: %v", tokenSym, receive, err)
+		return
+	}
+	if tradeID == "" {
+		log.Sugar.Infof("[TON-%s][%s] skip unmatched transfer tx=%s amount=%.6f", tokenSym, receive, transfer.BlockID, transfer.Amount)
+		return
+	}
+
+	order, err := data.GetOrderInfoByTradeId(tradeID)
+	if err != nil {
+		log.Sugar.Warnf("[TON-%s][%s] load order: %v", tokenSym, receive, err)
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(order.Network)) != mdb.NetworkTon {
+		log.Sugar.Warnf("[TON-%s][%s] skip trade_id=%s network=%q", tokenSym, receive, tradeID, order.Network)
+		return
+	}
+	if strings.ToUpper(strings.TrimSpace(order.Token)) != tokenSym {
+		log.Sugar.Warnf("[TON-%s][%s] skip trade_id=%s token mismatch order=%s", tokenSym, receive, tradeID, order.Token)
+		return
+	}
+	if !tonOrderAddressMatches(order.ReceiveAddress, receive) {
+		log.Sugar.Warnf("[TON-%s][%s] skip trade_id=%s receive address mismatch order=%s", tokenSym, receive, tradeID, order.ReceiveAddress)
+		return
+	}
+	if transfer.BlockTimeMs > 0 && transfer.BlockTimeMs < order.CreatedAt.TimestampMilli() {
+		log.Sugar.Warnf("[TON-%s][%s] skip tx %s because block time %d is before order create time %d", tokenSym, receive, transfer.BlockID, transfer.BlockTimeMs, order.CreatedAt.TimestampMilli())
+		return
+	}
+
+	req := &request.OrderProcessingRequest{
+		ReceiveAddress:     order.ReceiveAddress,
+		Token:              tokenSym,
+		Network:            mdb.NetworkTon,
+		TradeId:            tradeID,
+		Amount:             transfer.Amount,
+		BlockTransactionId: transfer.BlockID,
+	}
+	err = OrderProcessing(req)
+	if err != nil {
+		if errors.Is(err, constant.OrderBlockAlreadyProcess) || errors.Is(err, constant.OrderStatusConflict) {
+			log.Sugar.Infof("[TON-%s][%s] skip resolved transfer trade_id=%s tx=%s err=%v", tokenSym, receive, tradeID, transfer.BlockID, err)
+			return
+		}
+		log.Sugar.Errorf("[TON-%s][%s] OrderProcessing trade_id=%s tx=%s: %v", tokenSym, receive, tradeID, transfer.BlockID, err)
+		return
+	}
+
+	sendPaymentNotification(order)
+	log.Sugar.Infof("[TON-%s][%s] payment processed trade_id=%s tx=%s", tokenSym, receive, tradeID, transfer.BlockID)
 }
 
 func tonOrderAddressMatches(a, b string) bool {

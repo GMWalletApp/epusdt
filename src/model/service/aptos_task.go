@@ -31,6 +31,17 @@ func AptosGetTransactionByHash(txID string) ([]byte, error) {
 	return aptosGet(fmt.Sprintf("/v1/transactions/by_hash/%s", txID))
 }
 
+func AptosGetTransactions(start int64, limit int64) ([]byte, error) {
+	if start < 0 {
+		start = 0
+	}
+	if limit <= 0 {
+		limit = 1
+	}
+	log.Sugar.Debugf("[APTOS] fetch transactions start=%d limit=%d", start, limit)
+	return aptosGet(fmt.Sprintf("/v1/transactions?start=%d&limit=%d", start, limit))
+}
+
 func ParseAptosTransfers(body []byte, address string, tokens []mdb.ChainToken) ([]MoveObservedTransfer, error) {
 	receive, err := addressutil.NormalizeMoveAddress(address)
 	if err != nil {

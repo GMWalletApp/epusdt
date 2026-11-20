@@ -1,7 +1,6 @@
 package service
 
 import (
-	"github.com/dromara/carbon/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	addressutil "github.com/GMWalletApp/epusdt/util/address"
+	"github.com/dromara/carbon/v2"
 )
 
 func seedTestAptosRPCNode(t *testing.T, url, purpose, status string, weight int) mdb.RpcNode {
@@ -90,6 +90,44 @@ func TestAptosGetLedgerVersionUsesRpcNodes(t *testing.T) {
 	}
 	if disabledCalls != 0 {
 		t.Fatalf("disabled rpc calls = %d, want 0", disabledCalls)
+	}
+}
+
+func TestAptosGetTransactionsFallsBackToAlternateRpcNode(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+	data.ResetRpcFailoverForTest()
+	t.Cleanup(data.ResetRpcFailoverForTest)
+
+	var primaryCalls int
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		primaryCalls++
+		http.Error(w, "temporary failure", http.StatusBadGateway)
+	}))
+	defer primary.Close()
+	var backupCalls int
+	backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backupCalls++
+		if r.URL.Path != "/v1/transactions" || r.URL.Query().Get("start") != "10" || r.URL.Query().Get("limit") != "2" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer backup.Close()
+	seedTestAptosRPCNode(t, primary.URL, mdb.RpcNodePurposeGeneral, mdb.RpcNodeStatusOk, 100)
+	seedTestAptosRPCNode(t, backup.URL, mdb.RpcNodePurposeGeneral, mdb.RpcNodeStatusOk, 1)
+
+	body, err := AptosGetTransactions(10, 2)
+	if err != nil {
+		t.Fatalf("AptosGetTransactions(): %v", err)
+	}
+	if string(body) != "[]" {
+		t.Fatalf("transactions body = %s, want []", string(body))
+	}
+	if primaryCalls != 1 || backupCalls != 1 {
+		t.Fatalf("rpc calls primary=%d backup=%d, want 1/1", primaryCalls, backupCalls)
 	}
 }
 

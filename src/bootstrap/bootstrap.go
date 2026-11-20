@@ -72,8 +72,8 @@ func InitApp() {
 		if err != nil {
 			color.Red.Printf("[bootstrap] ensure default api key err=%s\n", err)
 		}
-		task.Start()
 		mq.Start()
 		go telegram.BotStart()
+		go task.Start()
 	})
 }
