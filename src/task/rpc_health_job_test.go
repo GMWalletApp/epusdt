@@ -2,6 +2,8 @@ package task
 
 import (
 	"encoding/json"
+	"github.com/ethereum/go-ethereum/core/types"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -396,4 +398,33 @@ func newEvmHealthWSServer(t *testing.T, rejectSubscription bool) (*httptest.Serv
 		}
 	}))
 	return server, sawSubscribe
+}
+
+func TestManualVerificationNodeDoesNotRequireLogScanning(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+	seedEvmHealthProbeState(t)
+
+	server := newEvmHealthHTTPServer(t, func(method string, _ json.RawMessage) (interface{}, *rpcHealthTestError) {
+		switch method {
+		case "eth_blockNumber":
+			return "0x100", nil
+		case "eth_getBlockByNumber":
+			return &types.Header{Number: big.NewInt(256), Difficulty: big.NewInt(1)}, nil
+		case "eth_getTransactionReceipt":
+			return &types.Receipt{Status: types.ReceiptStatusSuccessful, BlockNumber: big.NewInt(256), Logs: []*types.Log{}}, nil
+		}
+		return nil, &rpcHealthTestError{Code: -32601, Message: "unsupported by this node"}
+	})
+	defer server.Close()
+
+	node := mdb.RpcNode{
+		Network: mdb.NetworkBsc,
+		Type:    mdb.RpcNodeTypeHttp,
+		Purpose: mdb.RpcNodePurposeManualVerify,
+		Url:     server.URL,
+	}
+	if status, _ := ProbeRpcNode(node); status != mdb.RpcNodeStatusOk {
+		t.Fatalf("manual verification node marked %s by scanner capability check", status)
+	}
 }

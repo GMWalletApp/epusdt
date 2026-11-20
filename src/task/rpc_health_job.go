@@ -58,8 +58,8 @@ func (r RpcHealthJob) Run() {
 }
 
 // ProbeRpcNode verifies the capability required by the configured node. EVM
-// HTTP nodes must serve both block height and the exact historical log filter
-// used by the backfill scanner; EVM WS nodes must accept that log subscription.
+// scanning nodes must serve the historical log filter or subscription
+// used by the scanner. Manual-only EVM nodes are checked by reading a block header.
 // Other node types retain the legacy TCP reachability probe.
 func ProbeRpcNode(node mdb.RpcNode) (string, int) {
 	status, latency, _ := probeRpcNode(node)
@@ -105,6 +105,12 @@ func probeEvmRpcNode(ctx context.Context, node mdb.RpcNode) error {
 		return fmt.Errorf("dial: %w", err)
 	}
 	defer client.Close()
+
+	// Manual verification reads receipts and block headers and does not scan logs.
+	if data.NormalizeRpcNodePurpose(node.Purpose) == mdb.RpcNodePurposeManualVerify {
+		_, err := client.HeaderByNumber(ctx, nil)
+		return err
+	}
 
 	head, err := client.BlockNumber(ctx)
 	if err != nil {
