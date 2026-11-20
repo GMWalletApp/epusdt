@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/GMWalletApp/ChainScanner/internal/chains"
 	"github.com/GMWalletApp/ChainScanner/internal/engine"
@@ -187,6 +188,8 @@ func TestNodePoolKeepsCursorOnProviderChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := newRegistryPool(ctx, r, settings)
+	now := time.Now()
+	p.now = func() time.Time { return now }
 	defer p.Close()
 	if _, err = store.Step(ctx, settings, p); err != nil {
 		t.Fatal(err)
@@ -208,6 +211,15 @@ func TestNodePoolKeepsCursorOnProviderChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	head.Store(44)
+	// The primary failed three height requests, including a pre-read height check.
+	// Removing the backup cannot reset the primary's circuit.
+	if _, err = store.Step(ctx, settings, p); err == nil {
+		t.Fatal("primary bypassed cooldown")
+	}
+	if h, err := store.Height(ctx, "base"); err != nil || h != 43 {
+		t.Fatal(h, err)
+	}
+	now = now.Add(time.Minute)
 	if _, err = store.Step(ctx, settings, p); err != nil {
 		t.Fatal(err)
 	}
@@ -293,5 +305,142 @@ func TestConcreteEVMNetworkDemand(t *testing.T) {
 	}
 	if _, e = s.Subscribe(ctx, "b", nil); e != nil || !s.Watching("ethereum") || s.Watching("base") {
 		t.Fatal("mixed EVM chains", e)
+	}
+}
+
+func TestReadFailureStatusSurvivesSuccessfulHeightProbe(t *testing.T) {
+	ctx := context.Background()
+	store, err := engine.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	rpc := testutil.RPCServer(t, func(req testutil.RPCRequest) (any, error) {
+		if req.Method == "eth_chainId" {
+			return "0x2105", nil
+		}
+		if req.Method == "eth_blockNumber" {
+			return "0x64", nil
+		}
+		return nil, fmt.Errorf("unexpected method %s", req.Method)
+	})
+	defer rpc.Close()
+	cfg := chains.Network{Name: "base", URL: rpc.URL, Protocol: "http"}
+	reg, err := NewNodeRegistry(ctx, store, []chains.Network{cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := reg.List(ctx, cfg.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id int64
+	for _, row := range rows {
+		if row.URL == cfg.URL {
+			id = row.ID
+			continue
+		}
+		if err = reg.Delete(ctx, row.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := newRegistryPool(ctx, reg, cfg)
+	defer p.Close()
+	if err = p.refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	p.now = func() time.Time { return now }
+	reject := true
+	calls := 0
+	p.open = func(context.Context, chains.Network) (chains.Source, error) {
+		return &mockLane{100, func(_ context.Context, _, end int64) (int64, []chains.Activity, error) {
+			calls++
+			if reject {
+				return 0, nil, chains.ErrRateLimited
+			}
+			return end, nil, nil
+		}}, nil
+	}
+	// Exercise the same rolling queue that dispatches reads in the server.
+	readBlock := func() error {
+		t.Helper()
+		if _, _, _, err := p.LiveWindow(ctx, ctx, time.Second); err != nil {
+			return err
+		}
+		var finished bool
+		var result error
+		finish := func(_ chains.Span, _ chains.BlockLink, _ []chains.Activity, readErr error) error {
+			finished = true
+			result = readErr
+			return nil
+		}
+		work := []chains.Span{{First: 99, Last: 99}}
+		for !finished {
+			more, err := p.AdvanceLive(ctx, work, finish)
+			if err != nil {
+				return err
+			}
+			if !more && !finished {
+				t.Fatal("live scheduler lost range")
+			}
+			work = nil
+		}
+		return result
+	}
+	for _, delay := range []time.Duration{time.Minute, 3 * time.Minute, 6 * time.Minute} {
+		for attempt := 1; attempt <= 3; attempt++ {
+			if _, err = p.Head(ctx); err != nil {
+				t.Fatal(err)
+			}
+			before := calls
+			if err = readBlock(); err == nil || calls != before+1 {
+				t.Fatal("expected failed read", err, calls)
+			}
+			row, err := reg.Test(ctx, id)
+			if err != nil || row.Height == nil || *row.Height != 100 || row.Status != "unavailable" || row.ReadFailure != "HTTP 429" {
+				t.Fatal(row, err)
+			}
+			if attempt == 3 && row.ReadRetryAt != now.Add(delay).UnixMilli() {
+				t.Fatal("cooldown deadline", row, delay)
+			}
+		}
+		before := calls
+		if err = readBlock(); err == nil || calls != before {
+			t.Fatal("dispatched while cooling", err)
+		}
+		// Resolving a new subscription must not contact the same cooling endpoint.
+		probe := newRegistryPool(ctx, reg, cfg)
+		probe.now = p.now
+		if _, err = probe.Head(ctx); err == nil {
+			t.Fatal("boundary lookup bypassed cooldown")
+		}
+		probe.Close()
+		now = now.Add(delay)
+	}
+	reject = false
+	if err = readBlock(); err != nil {
+		t.Fatal(err)
+	}
+	row, err := reg.get(ctx, id)
+	if err != nil || row.Status != "ok" || row.ReadFailure != "" || row.ReadRetryAt != 0 {
+		t.Fatal(row, err)
+	}
+	reject = true
+	if err = readBlock(); err == nil {
+		t.Fatal("expected read failure")
+	}
+	if err = reg.Delete(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := reg.Add(ctx, NodeOptions{NodeEndpoint: row.NodeEndpoint})
+	if err != nil || fresh.ReadFailure != "" || fresh.ReadRetryAt != 0 {
+		t.Fatal("replacement inherited old penalty", fresh, err)
+	}
+	if err = p.refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reg.readFailures.Load(row.version()); ok {
+		t.Fatal("retired node retained failure record")
 	}
 }

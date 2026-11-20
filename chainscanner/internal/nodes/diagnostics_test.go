@@ -42,6 +42,7 @@ func TestUnavailabilityPreservesCodesAndOmitsCredentials(t *testing.T) {
 		err  error
 		want string
 	}{
+		{fmt.Errorf("secret: %w", chains.ErrFork), chains.ErrFork.Error()},
 		{chains.ErrRateLimited, "HTTP 429"}, {status.Error(codes.ResourceExhausted, "secret-body"), "gRPC ResourceExhausted"},
 		{fmt.Errorf("secret: %w", context.DeadlineExceeded), "request timed out"}, {errors.New("secret"), "provider request or response validation failed"},
 	} {

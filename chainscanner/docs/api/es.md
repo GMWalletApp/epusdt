@@ -323,6 +323,7 @@ admin "$BASE/v1/admin/nodes?network=base"
 | `status` | `string` | Uno de `untested`, `ok`, `timeout`, `unavailable`. Compruébalo después de la prueba. |
 | `height, height_unit` | `int64? , string` | Altura del nodo o null. La unidad es `block`, `slot`, `checkpoint`, `ledger_version` o `beacon_slot`. |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | Tiempo de inicio en milisegundos Unix y duración en milisegundos. Ambos son null antes de la primera prueba. |
+| `read_failure, read_retry_at_ms` | `string?, int64?` | Un fallo de lectura da `status: unavailable`. La causa se conserva tras consultar la altura y se borra cuando una lectura tiene éxito. Durante la pausa se incluye su fin en milisegundos Unix. |
 | `scannable` | `bool` | Si permite escanear transacciones. UniSat solo informa la altura de Bitcoin. |
 
 <a id="add"></a>

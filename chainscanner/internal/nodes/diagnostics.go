@@ -22,8 +22,12 @@ func failureReason(err error) string {
 	var rpcErr rpc.Error
 	var networkError net.Error
 	switch {
-	case errors.Is(err, errNodeBehind), errors.Is(err, chains.ErrFork), errors.Is(err, errSlowGap):
-		return err.Error()
+	case errors.Is(err, errNodeBehind):
+		return errNodeBehind.Error()
+	case errors.Is(err, chains.ErrFork):
+		return chains.ErrFork.Error()
+	case errors.Is(err, errSlowGap):
+		return errSlowGap.Error()
 	case errors.Is(err, context.DeadlineExceeded):
 		return "request timed out"
 	case errors.As(err, &httpErr):

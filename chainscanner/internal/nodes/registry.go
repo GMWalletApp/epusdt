@@ -18,15 +18,17 @@ import (
 type Node struct {
 	ID int64 `json:"id"`
 	NodeEndpoint
-	Origin     string `json:"origin"`
-	Status     string `json:"status"`
-	Height     *int64 `json:"height"`
-	CheckedAt  *int64 `json:"checked_at_ms"`
-	Latency    *int64 `json:"latency_ms"`
-	HeightUnit string `json:"height_unit"`
-	options    NodeOptions
-	generation int64
-	Scannable  bool `json:"scannable"`
+	Origin      string `json:"origin"`
+	Status      string `json:"status"`
+	ReadFailure string `json:"read_failure,omitempty"`
+	ReadRetryAt int64  `json:"read_retry_at_ms,omitempty"`
+	Height      *int64 `json:"height"`
+	CheckedAt   *int64 `json:"checked_at_ms"`
+	Latency     *int64 `json:"latency_ms"`
+	HeightUnit  string `json:"height_unit"`
+	options     NodeOptions
+	generation  int64
+	Scannable   bool `json:"scannable"`
 }
 
 // NodeOptions accepts the same credentials and companion endpoint as a network configuration.
@@ -38,12 +40,13 @@ type NodeOptions struct {
 }
 
 type NodeRegistry struct {
-	db         *sql.DB
-	store      *engine.Store
-	configured map[NodeEndpoint]chains.Network
-	slots      chan struct{}
-	batch      sync.Mutex
-	revision   atomic.Uint64
+	db           *sql.DB
+	store        *engine.Store
+	configured   map[NodeEndpoint]chains.Network
+	slots        chan struct{}
+	batch        sync.Mutex
+	revision     atomic.Uint64
+	readFailures sync.Map // nodeVersion -> readFailure for the active watch period
 }
 
 func NewNodeRegistry(ctx context.Context, s *engine.Store, networks []chains.Network) (*NodeRegistry, error) {
@@ -114,6 +117,13 @@ const nodeFields = `id,network,protocol,url,origin,status,height,checked_at,late
 func (r *NodeRegistry) scan(row interface{ Scan(...any) error }) (Node, error) {
 	var n Node
 	err := row.Scan(&n.ID, &n.Network, &n.Protocol, &n.URL, &n.Origin, &n.Status, &n.Height, &n.CheckedAt, &n.Latency, &n.generation, &n.options.APIKey, &n.options.HistoryURL, &n.options.HistoryAPIKey)
+	if data, ok := r.readFailures.Load(n.version()); ok {
+		f := data.(readFailure)
+		n.Status, n.ReadFailure = "unavailable", f.reason
+		if f.retry.After(time.Now()) {
+			n.ReadRetryAt = f.retry.UnixMilli()
+		}
+	}
 	n.Scannable = chains.Supported(n.Network)
 	switch {
 	case n.Protocol == "sse":

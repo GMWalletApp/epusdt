@@ -6,6 +6,18 @@ import (
 	"time"
 )
 
+type nodeVersion struct {
+	id, generation int64
+	origin         string
+}
+
+func (n Node) version() nodeVersion { return nodeVersion{n.ID, n.generation, n.Origin} }
+
+type readFailure struct {
+	reason string
+	retry  time.Time
+}
+
 // measured belongs to the endpoint's current RPC worker; accepted is only
 // accessed by the scheduler after that worker returns.
 type headSample struct {

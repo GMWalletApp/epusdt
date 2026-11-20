@@ -32,8 +32,9 @@ type SourcePool struct {
 	open           func(context.Context, chains.Network) (chains.Source, error)
 	now            func() time.Time
 	// Report receives completed provider attempts. Reports from a Read are serialized.
-	Report  func(chains.Network, bool)
-	observe func(chains.Network, headSample)
+	Report      func(chains.Network, bool)
+	observe     func(chains.Network, headSample)
+	observeRead func(chains.Network, string, time.Time) // failed read or recovery, serialized by the scheduler
 }
 
 type endpoint struct {
@@ -129,8 +130,16 @@ func (n *endpoint) close() {
 func (p *SourcePool) Close() {
 	p.stopLive()
 	for _, n := range p.nodes {
-		n.close()
+		p.release(n)
 	}
+}
+
+// Discard a removed endpoint's watch-period health as well as its connection.
+func (p *SourcePool) release(n *endpoint) {
+	if p.observeRead != nil && n.readFailures != (failureStreak{}) {
+		p.observeRead(n.cfg, "", time.Time{})
+	}
+	n.close()
 }
 
 // Discovery can provide many URLs. Retain the recently used connections
@@ -188,6 +197,9 @@ func (p *SourcePool) connect(ctx context.Context, n *endpoint) error {
 	return nil
 }
 func (p *SourcePool) record(n *endpoint, read bool, err error) {
+	// fetch may have failed its prerequisite height check before issuing a read.
+	read = read && n.measured.err == nil
+	hadReadFailure := n.readFailures != (failureStreak{})
 	p.acceptHead(n)
 	if errors.Is(err, errNodeBehind) {
 		return
@@ -212,6 +224,13 @@ func (p *SourcePool) record(n *endpoint, read bool, err error) {
 			n.retry = p.now().Add(cooldown)
 		}
 		n.close()
+	}
+	if read && p.observeRead != nil && (err != nil || hadReadFailure) {
+		reason := ""
+		if err != nil {
+			reason = n.lastFailure
+		}
+		p.observeRead(n.cfg, reason, n.retry)
 	}
 	if p.Report != nil && (read || err != nil || n.readFailures == (failureStreak{})) {
 		p.Report(n.cfg, err == nil)

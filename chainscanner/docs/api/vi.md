@@ -323,6 +323,7 @@ admin "$BASE/v1/admin/nodes?network=base"
 | `status` | `string` | Một trong `untested`, `ok`, `timeout`, `unavailable`. Kiểm tra trường này sau khi thăm dò. |
 | `height, height_unit` | `int64? , string` | Độ cao của nút hoặc null. Đơn vị là `block`, `slot`, `checkpoint`, `ledger_version` hoặc `beacon_slot`. |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | Thời điểm bắt đầu theo mili giây Unix và thời lượng theo mili giây. Cả hai là null nếu chưa kiểm tra. |
+| `read_failure, read_retry_at_ms` | `string?, int64?` | Khi đọc khối thất bại, trạng thái là `unavailable`. Kiểm tra độ cao thành công vẫn giữ lý do lỗi cho đến khi đọc khối thành công. Thời điểm hết tạm dừng tính bằng mili giây Unix. |
 | `scannable` | `bool` | Khả năng quét giao dịch. UniSat chỉ báo độ cao Bitcoin. |
 
 <a id="add"></a>

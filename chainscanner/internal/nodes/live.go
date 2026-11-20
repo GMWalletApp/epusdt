@@ -71,7 +71,7 @@ func (p *SourcePool) retire(n *endpoint) {
 			<-c.done
 		}
 	}
-	n.close()
+	p.release(n)
 }
 
 // LiveWindow reports reservations still owned by this process. The store

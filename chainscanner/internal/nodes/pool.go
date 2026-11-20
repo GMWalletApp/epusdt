@@ -43,6 +43,17 @@ func newRegistryPool(ctx context.Context, r *NodeRegistry, n chains.Network) *no
 			log.Printf("chain %s: saving node health: %v", cfg.Name, err)
 		}
 	}
+	p.observeRead = func(cfg chains.Network, reason string, retry time.Time) {
+		node, ok := p.inventory[cfg]
+		if !ok {
+			return
+		}
+		if reason == "" {
+			r.readFailures.Delete(node.version())
+			return
+		}
+		r.readFailures.Store(node.version(), readFailure{reason: reason, retry: retry})
+	}
 	return p
 }
 
@@ -95,7 +106,7 @@ func (p *nodePool) refresh(ctx context.Context) error {
 		// scan steps. Its new owner gets a fresh connection and penalty.
 		p.nodes = slices.DeleteFunc(p.nodes, func(n *endpoint) bool {
 			old, cur := p.inventory[n.cfg], origins[n.cfg]
-			if old.ID != cur.ID || old.Origin != cur.Origin {
+			if old.version() != cur.version() {
 				p.retire(n)
 				return true
 			}
@@ -103,6 +114,14 @@ func (p *nodePool) refresh(ctx context.Context) error {
 		})
 		if err := p.SetNodes(slices.Concat(preferred, owned, discovered)); err != nil {
 			return err
+		}
+		// A temporary pool used to resolve a subscription boundary shares the
+		// active scanner's read cooldown for this node.
+		for _, n := range p.nodes {
+			row := origins[n.cfg]
+			if row.ReadRetryAt > 0 && time.UnixMilli(row.ReadRetryAt).After(n.retry) {
+				n.retry = time.UnixMilli(row.ReadRetryAt)
+			}
 		}
 		p.open = func(ctx context.Context, cfg chains.Network) (chains.Source, error) {
 			return openNode(ctx, origins[cfg], cfg)
