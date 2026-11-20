@@ -7,6 +7,14 @@
 
 ---
 
+## Vì sao chúng tôi xây dựng ChainScanner
+
+Khi phát triển GM Wallet và GMPay, chúng tôi thường gặp cùng một vấn đề. Ví cần biết địa chỉ nào cần cập nhật số dư, còn dịch vụ thanh toán cần phát hiện giao dịch mới tại các địa chỉ nhận tiền. Nếu mỗi ứng dụng liên tục truy vấn RPC cho từng địa chỉ, cả hai sẽ tốn hạn mức để phát hiện cùng một giao dịch.
+
+ChainScanner quét khối trên từng mạng một lần cho tất cả các dịch vụ đăng ký. Mỗi dịch vụ nhận những giao dịch liên quan đến địa chỉ mình theo dõi và xác nhận đã xử lý một cách độc lập. Ví có thể chỉ cập nhật số dư của các địa chỉ bị ảnh hưởng, còn GMPay có thể xác minh đơn hàng tương ứng. Khi đọc lại cùng bốn khối trên mạng chính Ethereum, số yêu cầu RPC đến nhà cung cấp vẫn là 11 dù theo dõi một địa chỉ, theo dõi 100 địa chỉ hay có hai dịch vụ cùng theo dõi 100 địa chỉ đó.
+
+Mỗi ứng dụng tự quản lý số dư và trạng thái đơn hàng. ChainScanner có trạng thái riêng, gồm các đăng ký, tiến độ quét và các sự kiện đang chờ xác nhận đã nhận. Khi cấu hình tệp SQLite, dịch vụ có thể tiếp tục từ tiến độ đã lưu sau khi khởi động lại.
+
 > [!IMPORTANT]
 > **Tra cứu giao dịch thường xuyên trên Solana và Plasma.** Chế độ xác minh nghiêm ngặt yêu cầu hai nhà cung cấp độc lập trả về kết quả giống nhau. Trong một lần thử nghiệm 15 phút trên mainnet với các RPC công cộng miễn phí, cả ba lượt tra cứu nghiêm ngặt trên mỗi mạng đều thất bại. Nếu dự kiến có nhiều truy vấn, hãy cấu hình hai nút dự phòng cho mỗi mạng, mỗi nút từ một nhà cung cấp khác nhau. ChainScanner dùng chung kết quả quét khối cho các địa chỉ theo dõi và các dịch vụ đăng ký, giúp giảm số yêu cầu RPC trùng lặp. Nếu chỉ thỉnh thoảng cần quét lại khối và xác minh giao dịch, gói miễn phí hoặc gói cơ bản của phần lớn nhà cung cấp thường là đủ. Khi lưu lượng cao kéo dài, hãy kiểm tra giới hạn yêu cầu mỗi giây và hạn mức hằng tháng. [Cấu hình nút dự phòng](docs/api/vi.md#fallback) · [So sánh các nhà cung cấp nút dự phòng](#fallback-providers)
 

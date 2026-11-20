@@ -7,6 +7,14 @@
 
 ---
 
+## Why we built ChainScanner
+
+While developing GM Wallet and GMPay, we kept running into the same problem. The wallet needed to know which balances to refresh, and the payment service needed to know when a receiving address had new activity. Polling RPC endpoints for each address in each app spent quota twice when both apps were looking for the same transaction.
+
+ChainScanner gives all subscribers on a network a shared block scan. Each service receives transactions that match its addresses and acknowledges them independently. A wallet can refresh just the affected balances, while GMPay can verify the corresponding orders. In an Ethereum mainnet replay, reading the same four blocks took 11 upstream RPC calls when watching one address, when watching 100 addresses, and when two services watched those same 100 addresses.
+
+Each application owns its balances and order status. ChainScanner keeps track of its own state, including subscriptions, scan progress and unacknowledged deliveries. Configure a SQLite file to resume that work after a restart.
+
 > [!IMPORTANT]
 > **Frequent transaction lookups on Solana and Plasma.** Strict verification needs matching results from two independent providers. In a 15-minute mainnet test using free public RPCs, all three strict lookups failed on each of these networks. If you expect frequent lookups, configure two fallback nodes per network, each from a different provider. ChainScanner scans each block once for all watched addresses and subscribers, reducing duplicate RPC requests. At most providers, a free or entry-level plan is usually enough for occasional block retries and transaction checks. For sustained traffic, check each plan’s rate limit and monthly quota. [Configure fallback nodes](docs/api/en.md#fallback) · [Compare fallback providers](#fallback-providers)
 
