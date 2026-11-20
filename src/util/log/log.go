@@ -42,6 +42,11 @@ func getConsoleEncoder() zapcore.Encoder {
 	encoderConfig := zap.NewDevelopmentEncoderConfig()
 	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	encoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	// Pad the caller column so messages start at the same position even
+	// when filenames and line numbers have different lengths.
+	encoderConfig.EncodeCaller = func(caller zapcore.EntryCaller, enc zapcore.PrimitiveArrayEncoder) {
+		enc.AppendString(fmt.Sprintf("%-24s", caller.TrimmedPath()))
+	}
 	return zapcore.NewConsoleEncoder(encoderConfig)
 }
 
