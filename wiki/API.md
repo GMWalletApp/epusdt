@@ -247,7 +247,8 @@ function epaySign(array $params, string $secretKey): string
       "website_title": "Acme Payments",
       "support_link": "https://example.com/support",
       "background_color": "#0f172a",
-      "background_image_url": "https://cdn.example.com/background.png"
+      "background_image_url": "https://cdn.example.com/background.png",
+      "withdrawal_reminder_enabled": true
     },
     "epay": {
       "default_token": "",
@@ -269,6 +270,22 @@ function epaySign(array $params, string $secretKey): string
 - 链已启用。
 - 该链有可用钱包地址。
 - 该链至少有一个启用中的 token。
+
+### 交易所提现提醒
+
+收银台从公共配置读取 `data.site.withdrawal_reminder_enabled`（布尔值，默认 `true`）。等配置返回后，仅在开关开启、订单处于链上待支付状态、已有收款地址且 `actual_amount > 0` 时，于到账金额下显示提醒。关闭时整块隐藏。对接旧版本后端时，已加载的配置缺少该字段可按默认开启处理。
+
+建议标题为「交易所提现提醒」，正文为「请核对交易所显示的实际到账数量。扣除手续费后，应为 **14.2857 USDT**。」其中金额与币种复用页面上方展示的订单金额（`actual_amount`）与 `token`，保留相同的小数位。提醒可使用浅琥珀色底、深色模式下使用深琥珀色底，并配图标与文字。各语言使用收银台当前语言。
+
+前端对接效果参考（示例订单）：[浅色预览](img/withdrawal-reminder-light.png) · [深色预览](img/withdrawal-reminder-dark.png)。
+
+后台可在品牌设置中添加「显示交易所提现提醒」开关，读取 `GET /admin/api/v1/settings?group=brand`，检查键 `brand.withdrawal_reminder_enabled` 的字符串值 `"true"` 或 `"false"`。缺少设置时默认开启。保存时调用已鉴权的 `PUT /admin/api/v1/settings`：
+
+```json
+{"items":[{"group":"brand","key":"brand.withdrawal_reminder_enabled","type":"bool","value":false}]}
+```
+
+响应中对应项的 `ok` 为 `true` 表示保存成功。重新打开收银台即可读取新值。
 
 ## 收银台页面
 
