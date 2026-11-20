@@ -7,6 +7,9 @@
 
 ---
 
+> [!IMPORTANT]
+> **Tra cứu giao dịch thường xuyên trên Solana và Plasma.** Chế độ xác minh nghiêm ngặt yêu cầu hai nhà cung cấp độc lập trả về kết quả giống nhau. Trong một lần thử nghiệm 15 phút trên mainnet với các RPC công cộng miễn phí, cả ba lượt tra cứu nghiêm ngặt trên mỗi mạng đều thất bại. Nếu dự kiến có nhiều truy vấn, hãy cấu hình hai nút dự phòng cho mỗi mạng, mỗi nút từ một nhà cung cấp khác nhau. Gói miễn phí thường đủ để thỉnh thoảng quét lại khối và xác minh giao dịch. Khi lưu lượng cao kéo dài, hãy kiểm tra giới hạn yêu cầu mỗi giây và hạn mức hằng tháng. [Cấu hình nút dự phòng](docs/api/vi.md#fallback)
+
 ## Tình huống sử dụng
 
 - **Cổng thanh toán.** [Tích hợp EPUSDT](https://github.com/GMWalletApp/epusdt/pull/127) theo dõi địa chỉ nhận tiền và xác minh giao dịch qua hai nút trước khi ghi có.

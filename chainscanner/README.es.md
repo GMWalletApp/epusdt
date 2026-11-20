@@ -7,6 +7,9 @@
 
 ---
 
+> [!IMPORTANT]
+> **Consultas frecuentes en Solana y Plasma.** La verificación estricta exige que dos proveedores independientes devuelvan el mismo resultado. En una prueba de 15 minutos en la red principal con RPC públicos gratuitos, fallaron las tres consultas estrictas de cada red. Si prevés muchas consultas, configura dos nodos de respaldo por red, uno de cada proveedor. El plan gratuito suele bastar para recuperar bloques y verificar transacciones de forma ocasional. Para tráfico sostenido, revisa el límite de solicitudes por segundo y la cuota mensual. [Configurar nodos de respaldo](docs/api/es.md#fallback)
+
 ## Casos de uso
 
 - **Cobros en cadena.** La [integración de EPUSDT](https://github.com/GMWalletApp/epusdt/pull/127) observa las direcciones de cobro y verifica la transacción con dos nodos antes de acreditar el pedido.

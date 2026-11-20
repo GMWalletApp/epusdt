@@ -7,6 +7,9 @@
 
 ---
 
+> [!IMPORTANT]
+> **Frequent transaction lookups on Solana and Plasma.** Strict verification needs matching results from two independent providers. In a 15-minute mainnet test using free public RPCs, all three strict lookups failed on each of these networks. If you expect frequent lookups, configure two fallback nodes per network, each from a different provider. A free plan is usually enough for occasional block retries and transaction checks. For sustained traffic, check each plan’s rate limit and monthly quota. [Configure fallback nodes](docs/api/en.md#fallback)
+
 ## Use cases
 
 - **On-chain checkout.** The [EPUSDT integration](https://github.com/GMWalletApp/epusdt/pull/127) subscribes to deposit addresses, marks a matching order as confirming and checks the transaction with two nodes before crediting it.
