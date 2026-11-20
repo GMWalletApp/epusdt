@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/GMWalletApp/ChainScanner/internal/chains"
@@ -236,4 +239,121 @@ func TestPartialLedgerPagesAndAllNodesUnavailable(t *testing.T) {
 	if end, rows, e := p.Read(ctx, 4, 6); e == nil || len(rows) != 0 || end != 0 {
 		t.Fatal(end, rows, e)
 	}
+}
+
+func TestSlowGapUsesFullLookahead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		p := NewSourcePool(ctx, "tron")
+		var configs []chains.Network
+		for i := range 4 {
+			configs = append(configs, chains.Network{Name: "tron", URL: fmt.Sprintf("http://node%d.test", i)})
+		}
+		if err := p.SetNodes(configs); err != nil {
+			t.Fatal(err)
+		}
+		const start = int64(100)
+		const head = start + 4*140 - 1
+		release := make(chan struct{})
+		var reads sync.Map
+		p.open = func(context.Context, chains.Network) (chains.Source, error) {
+			return &mockLane{head, func(ctx context.Context, a, b int64) (int64, []chains.Activity, error) {
+				if _, dup := reads.LoadOrStore(a, true); dup {
+					return 0, nil, fmt.Errorf("duplicate range %d", a)
+				}
+				if a == 104 {
+					select {
+					case <-release:
+					case <-ctx.Done():
+						return 0, nil, ctx.Err()
+					}
+				}
+				return b, []chains.Activity{{Height: b}}, nil
+			}}, nil
+		}
+		var ends []int64
+		var scanErr error
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			scanErr = p.Scan(ctx, start, head, func(h int64, rows []chains.Activity) error {
+				if len(rows) != 1 || rows[0].Height != h {
+					return fmt.Errorf("wrong rows for %d", h)
+				}
+				ends = append(ends, h)
+				return nil
+			})
+		}()
+		defer func() { cancel(); <-done; p.Close() }()
+		synctest.Wait() // all fast lanes have exhausted the window while 104 is still blocked
+		if !slices.Equal(ends, []int64{103}) {
+			t.Fatalf("committed past gap: %v", ends)
+		}
+		for i := 0; i <= 128; i++ {
+			if _, ok := reads.Load(start + int64(4*i)); !ok {
+				t.Fatalf("fast nodes stopped before range %d", i)
+			}
+		}
+		if _, ok := reads.Load(start + 4*129); ok {
+			t.Fatal("exceeded 128-range sliding window")
+		}
+		close(release)
+		<-done
+		if scanErr != nil || len(ends) != 140 {
+			t.Fatalf("completed %d ranges: %v", len(ends), scanErr)
+		}
+		for i, h := range ends {
+			if h != start+int64(4*i)+3 {
+				t.Fatal("out of order", i, h)
+			}
+		}
+	})
+}
+
+func TestBytePressureAllowsOldestGapRetry(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		p := NewSourcePool(ctx, "tron")
+		configs := []chains.Network{{Name: "tron", URL: "http://a.test"}, {Name: "tron", URL: "http://b.test"}}
+		if err := p.SetNodes(configs); err != nil {
+			t.Fatal(err)
+		}
+		reject := make(chan struct{})
+		var calls atomic.Int32
+		p.open = func(_ context.Context, cfg chains.Network) (chains.Source, error) {
+			return &mockLane{115, func(ctx context.Context, a, b int64) (int64, []chains.Activity, error) {
+				calls.Add(1)
+				if a == 100 && cfg == configs[0] {
+					select {
+					case <-reject:
+						return 0, nil, errors.New("unavailable")
+					case <-ctx.Done():
+						return 0, nil, ctx.Err()
+					}
+				}
+				row := chains.Activity{Height: b}
+				if a == 104 {
+					row.Data = make([]byte, reorderBytes)
+				}
+				return b, []chains.Activity{row}, nil
+			}}, nil
+		}
+		var ends []int64
+		var scanErr error
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			scanErr = p.Scan(ctx, 100, 115, func(h int64, _ []chains.Activity) error { ends = append(ends, h); return nil })
+		}()
+		defer func() { cancel(); <-done; p.Close() }()
+		synctest.Wait()
+		if calls.Load() != 2 || len(ends) != 0 {
+			t.Fatalf("read through byte pressure: %d calls, commits %v", calls.Load(), ends)
+		}
+		close(reject)
+		<-done
+		if scanErr != nil || calls.Load() != 5 || !slices.Equal(ends, []int64{103, 107, 111, 115}) {
+			t.Fatal(scanErr, calls.Load(), ends)
+		}
+	})
 }

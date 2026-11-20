@@ -12,7 +12,11 @@ import (
 	"github.com/GMWalletApp/ChainScanner/internal/chains"
 )
 
-const parallelism = 4
+const (
+	parallelism   = 4
+	reorderRanges = 128
+	reorderBytes  = 32 << 20
+)
 
 // SourcePool is owned by one scan loop. SetNodes, Head, Read and Close must be
 // called serially. Independent nodes within a Read are used concurrently.
@@ -215,7 +219,22 @@ type segment struct {
 	events        []chains.Activity
 	first, last   chains.BlockLink
 	owner         *endpoint
+	bufferedBytes int64
 }
+
+// Estimate retained decoded activity data without serializing it again.
+func activityBytes(events []chains.Activity) int64 {
+	size := int64(cap(events)) * 128
+	for i := range events {
+		ev := &events[i]
+		size += int64(cap(ev.Data)) + int64(len(ev.TxID)) + int64(len(ev.Network)) + int64(cap(ev.Addresses))*16
+		for _, a := range ev.Addresses {
+			size += int64(len(a))
+		}
+	}
+	return size
+}
+
 type linkedReader interface {
 	ReadLinkedBlock(context.Context, int64, *chains.BlockLink) (int64, []chains.Activity, error)
 }
@@ -285,6 +304,10 @@ type completion struct {
 // delivery, but other endpoints keep fetching up to the reorder buffer limit.
 // emit runs serially on complete, consecutive ranges while later RPCs run.
 func (p *SourcePool) Scan(ctx context.Context, next, head int64, emit func(int64, []chains.Activity) error) error {
+	return p.scan(ctx, next, head, 2*reorderRanges, emit)
+}
+
+func (p *SourcePool) scan(ctx context.Context, next, head int64, maxRanges int, emit func(int64, []chains.Activity) error) error {
 	defer p.trimConnections()
 	if next < 0 || next > head {
 		return errors.New("invalid scan window")
@@ -308,8 +331,11 @@ func (p *SourcePool) Scan(ctx context.Context, next, head int64, emit func(int64
 	}
 	width = min(width, max(1, (head-next+1)/int64(lanes)))
 	// Periodically return to the caller for updated configuration and tip.
+	if lanes == 1 {
+		maxRanges = min(maxRanges, 4)
+	}
 	var jobs []segment
-	for h := next; h <= head && len(jobs) < 4*lanes; {
+	for h := next; h <= head && len(jobs) < maxRanges; {
 		end := h + min(width-1, head-h)
 		jobs = append(jobs, segment{from: h, to: end})
 		h = end + 1
@@ -324,13 +350,19 @@ func (p *SourcePool) Scan(ctx context.Context, next, head int64, emit func(int64
 	if p.anchorHeight == next-1 {
 		previous = p.anchorHash
 	}
+	var bufferedBytes int64
 	for front := 0; front < len(jobs); {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		// First unassigned slot has priority. A failed slot is immediately
 		// eligible again, on any peer that has not failed this scan.
-		for slot := front; slot < min(len(jobs), front+2*lanes) && len(busy) < lanes; slot++ {
+		for slot := front; slot < min(len(jobs), front+reorderRanges) && len(busy) < lanes; slot++ {
+			// Even when full, allow the oldest missing range to retry:
+			// it is the only read that can release buffered results.
+			if slot != front && bufferedBytes >= reorderBytes {
+				break
+			}
 			j := &jobs[slot]
 			if j.running || j.done {
 				continue
@@ -371,13 +403,20 @@ func (p *SourcePool) Scan(ctx context.Context, next, head int64, emit func(int64
 		j.running = false
 		p.record(result.node, true, result.err)
 		if result.err != nil {
+			j.events = nil
 			failed[result.node] = true
 			continue
 		}
 		j.done = true
 		j.owner = result.node
+		if result.slot != front {
+			j.bufferedBytes = activityBytes(j.events)
+			bufferedBytes += j.bufferedBytes
+		}
 		for front < len(jobs) && jobs[front].done {
 			ready := &jobs[front]
+			bufferedBytes -= ready.bufferedBytes
+			ready.bufferedBytes = 0
 			if previous != "" && previous != ready.first.Parent {
 				// Another node may have a different view at the tip. Re-read
 				// only this range against the already emitted predecessor.
@@ -401,7 +440,9 @@ func (p *SourcePool) Scan(ctx context.Context, next, head int64, emit func(int64
 func (p *SourcePool) Read(ctx context.Context, next, head int64) (int64, []chains.Activity, error) {
 	var end int64
 	var events []chains.Activity
-	err := p.Scan(ctx, next, head, func(h int64, rows []chains.Activity) error { end = h; events = append(events, rows...); return nil })
+	// Read collects all rows in one slice. Keep this compatibility API bounded;
+	// the scan worker uses Scan to stream the longer window.
+	err := p.scan(ctx, next, head, 4*parallelism, func(h int64, rows []chains.Activity) error { end = h; events = append(events, rows...); return nil })
 	if err != nil {
 		return 0, nil, err
 	}
