@@ -6,6 +6,9 @@ require (
 	github.com/block-vision/sui-go-sdk v1.3.1
 	github.com/btcsuite/btcutil v1.0.2
 	github.com/ethereum/go-ethereum v1.15.11
+	github.com/fbsobreira/gotron-sdk v0.24.0
+	github.com/gorilla/websocket v1.5.3
+	github.com/rpcpool/yellowstone-grpc/examples/golang v0.0.0-20261118123819-b9a4f56a43a1
 	github.com/tidwall/gjson v1.18.0
 	github.com/xssnick/tonutils-go v1.16.0
 	golang.org/x/sync v0.22.0
@@ -23,7 +26,6 @@ require (
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/holiman/uint256 v1.3.2 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
@@ -37,6 +39,7 @@ require (
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	modernc.org/libc v1.70.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

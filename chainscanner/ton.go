@@ -46,22 +46,32 @@ func (s *tonSource) Head(ctx context.Context) (int64, error) {
 	return int64(b.SeqNo), nil
 }
 func (s *tonSource) Read(ctx context.Context, h, head int64) (int64, []Activity, error) {
+	return readTON(ctx, s.api, h)
+}
+
+type tonBlockReader interface {
+	LookupBlock(context.Context, int32, int64, uint32) (*ton.BlockIDExt, error)
+	GetBlockShardsInfo(context.Context, *ton.BlockIDExt) ([]*ton.BlockIDExt, error)
+	GetBlockData(context.Context, *ton.BlockIDExt) (*tlb.Block, error)
+}
+
+func readTON(ctx context.Context, api tonBlockReader, h int64) (int64, []Activity, error) {
 	if h == 0 {
 		return 0, nil, nil
 	}
-	master, err := s.api.LookupBlock(ctx, -1, -1<<63, uint32(h))
+	master, err := api.LookupBlock(ctx, -1, -1<<63, uint32(h))
 	if err != nil {
 		return 0, nil, err
 	}
-	prev, err := s.api.LookupBlock(ctx, -1, -1<<63, uint32(h-1))
+	prev, err := api.LookupBlock(ctx, -1, -1<<63, uint32(h-1))
 	if err != nil {
 		return 0, nil, err
 	}
-	old, err := s.api.GetBlockShardsInfo(ctx, prev)
+	old, err := api.GetBlockShardsInfo(ctx, prev)
 	if err != nil {
 		return 0, nil, err
 	}
-	shards, err := s.api.GetBlockShardsInfo(ctx, master)
+	shards, err := api.GetBlockShardsInfo(ctx, master)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -79,7 +89,7 @@ func (s *tonSource) Read(ctx context.Context, h, head int64) (int64, []Activity,
 		if depth > 256 {
 			return errors.New("TON shard ancestry exceeds one master interval")
 		}
-		block, err := s.api.GetBlockData(ctx, id)
+		block, err := api.GetBlockData(ctx, id)
 		if err != nil {
 			return err
 		}

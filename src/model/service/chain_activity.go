@@ -20,6 +20,7 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/tlb"
+	"github.com/xssnick/tonutils-go/ton"
 	"github.com/xssnick/tonutils-go/ton/jetton"
 	"github.com/xssnick/tonutils-go/tvm/cell"
 )
@@ -299,37 +300,9 @@ func applyTONActivity(ctx context.Context, e scanner.Activity, tokens []mdb.Chai
 		if d.Master == nil {
 			return errors.New("TON activity missing master block")
 		}
-		node, err := data.SelectGeneralRpcNode(mdb.NetworkTon, mdb.RpcNodeTypeLite)
+		wallets, err = tonJettonWallets(ctx, owner, d.Master, tokens)
 		if err != nil {
 			return err
-		}
-		if node == nil {
-			return errors.New("TON Jetton verification requires a general lite node")
-		}
-		ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
-		defer cancel()
-		api, close, err := ConnectTonLiteAPI(ctx, node.Url, 10*time.Second, 2)
-		if err != nil {
-			return err
-		}
-		defer close()
-		for _, t := range tokens {
-			if t.ContractAddress == "" {
-				continue
-			}
-			master, err := scanner.Canonical("ton", t.ContractAddress)
-			if err != nil {
-				continue
-			}
-			addr, err := address.ParseRawAddr(master)
-			if err != nil {
-				return err
-			}
-			w, err := jetton.NewJettonMasterClient(api, addr).GetJettonWalletAtBlock(ctx, owner, d.Master)
-			if err != nil {
-				return err
-			}
-			wallets[w.Address().StringRaw()] = t
 		}
 	}
 	tr, err := ParseTonInboundTransfer(&tx, owner, native, wallets)
@@ -337,4 +310,72 @@ func applyTONActivity(ctx context.Context, e scanner.Activity, tokens []mdb.Chai
 		return err
 	}
 	return settleActivity(e, tr.ReceiveAddress, tr.Token, tr.RawAmount, tr.BlockID)
+}
+
+// Resolve each configured Jetton wallet at the master block from the activity.
+func tonJettonWallets(ctx context.Context, owner *address.Address, block *ton.BlockIDExt, tokens []mdb.ChainToken) (map[string]mdb.ChainToken, error) {
+	nodes, err := data.GeneralScannerNodes("ton", scanner.Protocols("ton"))
+	if err != nil {
+		return nil, err
+	}
+	last := errors.New("no general TON state reader")
+	for _, node := range nodes {
+		probe, cancel := context.WithTimeout(ctx, 25*time.Second)
+		wallets, e := readJettonWallets(probe, node, owner, block, tokens)
+		cancel()
+		if e == nil {
+			return wallets, nil
+		}
+		last = e
+	}
+	return nil, last
+}
+func readJettonWallets(ctx context.Context, node mdb.RpcNode, owner *address.Address, block *ton.BlockIDExt, tokens []mdb.ChainToken) (map[string]mdb.ChainToken, error) {
+	var api ton.APIClientWrapped
+	if node.Type == mdb.RpcNodeTypeLite {
+		var close func()
+		var err error
+		api, close, err = ConnectTonLiteAPI(ctx, node.Url, 10*time.Second, 2)
+		if err != nil {
+			return nil, err
+		}
+		defer close()
+	}
+	wallets := map[string]mdb.ChainToken{}
+	for _, t := range tokens {
+		if t.ContractAddress == "" {
+			continue
+		}
+		raw, err := scanner.Canonical("ton", t.ContractAddress)
+		if err != nil {
+			continue
+		}
+		contract, err := address.ParseRawAddr(raw)
+		if err != nil {
+			return nil, err
+		}
+		var wallet *address.Address
+		if api != nil {
+			w, e := jetton.NewJettonMasterClient(api, contract).GetJettonWalletAtBlock(ctx, owner, block)
+			if e != nil {
+				return nil, e
+			}
+			wallet = w.Address()
+		} else {
+			arg := cell.BeginCell().MustStoreAddr(owner).EndCell()
+			result, e := scanner.TONReadSlice(ctx, scanner.Network{Name: "ton", Protocol: node.Type, URL: node.Url, APIKey: node.ApiKey}, block, contract, "get_wallet_address", arg)
+			if e != nil {
+				return nil, e
+			}
+			wallet, err = result.LoadAddr()
+			if err != nil {
+				return nil, err
+			}
+		}
+		if wallet == nil || wallet.Type() != address.StdAddress {
+			return nil, errors.New("invalid Jetton wallet address")
+		}
+		wallets[wallet.StringRaw()] = t
+	}
+	return wallets, nil
 }

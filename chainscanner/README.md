@@ -76,3 +76,24 @@ Sui events include successful and failed transactions, senders, sponsors, balanc
 `from_height` is inclusive. For a newly registered address it is the scanner's last committed height plus one, even if the provider is ahead or a block is being read. Unchanged addresses retain their original boundary across retries and restarts. Unsubscribe then re-register to start a new interval. A 409 means a requested network has no initialized cursor; the previous complete watch list stays in force. Retry after the node is ready. Existing v1 subscriptions from before this upgrade receive a conservative boundary on their first receipt; previously queued deliveries remain available. Aptos heights are ledger versions, Solana heights are slots, and Sui heights are checkpoint numbers.
 
 Use `GET /v2/events/next?network=arbitrum&wait=15` for independent per-network consumption and acknowledge each delivery on the existing v1 endpoint. Waits of 1–20 seconds park outside the database and wake on commit. Run one consumer worker per network and token, or use the global v1 queue. EVM catch-up concurrently reads up to four blocks and commits them in height order. The in-memory address index is refreshed when membership changes. Both cursor and outbox still use the same SQLite transaction. No additional broker or database is required.
+
+## Node protocols
+
+Set `protocol` explicitly when several interfaces use HTTPS. Existing configurations keep their defaults. A node must expose the methods for the chosen interface. One network still has exactly one scanner, cursor and delivery queue per consumer.
+
+| Network | Direct block or transaction reads | Additional interfaces |
+| --- | --- | --- |
+| Ethereum, BSC, Polygon, Plasma, Arbitrum One, Base, HyperEVM, Monad, Arc, Avalanche C-Chain, OP Mainnet | Execution JSON-RPC via HTTP(S) (`http` or `jsonrpc`) or WebSocket (`ws`) | Local Unix socket (`ipc`, e.g. `ipc:///run/geth.ipc`) and Geth-compatible `graphql` where enabled. Ethereum also accepts Beacon `sse` notifications paired with execution HTTP. |
+| TRON | Wallet native HTTP (`rest` or `http`) or Wallet `grpc`. Solidified blocks are available via `solidity-http` and `solidity-grpc` (WalletSolidity). | `jsonrpc` uses Ethereum-compatible block identifiers and a Wallet HTTP history endpoint. The scanner checks the block hash before emitting native contracts, receipts and recorded internal transfers. |
+| Solana | Finalized JSON-RPC via HTTP(S) (`http` or `jsonrpc`) | PubSub `ws` subscribes to roots. Yellowstone `grpc` subscribes to finalized slots. Both use an HTTP RPC history endpoint for skipped slots and full blocks. |
+| Sui | Native v2 `grpc` (also the legacy HTTPS default), or `graphql` | gRPC streams checkpoints. GraphQL paginates checkpoint transactions and nested events and supports transaction lookup by digest. |
+| Aptos | Fullnode REST (`rest` or `http`) | RawData `grpc` streams ledger versions. Indexer `graphql` reads processor progress. Both use fullnode REST for complete transaction evidence. GraphQL progress is capped by the REST ledger version. |
+| TON | LiteServer/ADNL (`lite`, URL points to a global config), TON Center v2 native HTTP (`rest`, base URL ending in `/api/v2`), or v2 `jsonrpc` (full URL ending in `/api/v2/jsonRPC`) | All three traverse the masterchain and shard ancestry. The HTTP adapters require `getBlock` and check the file and root hashes of the returned BOC. |
+
+For a paired interface, set `history_url` and, if needed, `history_api_key`. Each endpoint receives only its own credentials. Use `grpcs://host:port` or `https://host:port` for TLS gRPC and `grpc://host:port` for plaintext. TRON sends the provider key in `tron-pro-api-key`, Yellowstone in `x-token`, and Aptos and Sui in the bearer authorization header. The Ethereum SSE URL is the provider's `/eth/v1/events` route. GraphQL uses the full GraphQL URL. Internal EVM call tracing requires execution JSON-RPC with the call tracer enabled. Provider coverage and archival retention vary.
+
+```json
+{"name":"solana","protocol":"ws","url":"wss://api.mainnet-beta.solana.com","history_url":"https://api.mainnet-beta.solana.com"}
+```
+
+Protocol references include [Ethereum execution RPC](https://geth.ethereum.org/docs/interacting-with-geth/rpc), [Geth GraphQL](https://geth.ethereum.org/docs/interacting-with-geth/rpc/graphql), [Beacon events](https://ethereum.github.io/beacon-APIs/#/Events/eventstream), [TRON Wallet](https://developers.tron.network/reference/full-node-api-overview), [Solana PubSub](https://solana.com/docs/rpc/websocket), [Yellowstone](https://github.com/rpcpool/yellowstone-grpc), [Sui data APIs](https://docs.sui.io/develop/accessing-data), [Aptos indexing](https://aptos.dev/build/indexer) and [TON Center block BOCs](https://docs.ton.org/api/v2/rpc/get-block).

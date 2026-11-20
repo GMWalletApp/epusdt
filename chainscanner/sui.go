@@ -24,27 +24,7 @@ type suiSource struct {
 }
 
 func newSui(ctx context.Context, n Network, u *url.URL) (Source, error) {
-	var creds credentials.TransportCredentials
-	switch u.Scheme {
-	case "https", "grpcs":
-		creds = credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})
-	case "http", "grpc":
-		creds = insecure.NewCredentials()
-	default:
-		return nil, errors.New("Sui requires a gRPC endpoint")
-	}
-	if u.Path != "" && u.Path != "/" || u.RawQuery != "" {
-		return nil, errors.New("Sui gRPC endpoint must be host and port")
-	}
-	host := u.Host
-	if u.Port() == "" {
-		port := "443"
-		if u.Scheme == "http" || u.Scheme == "grpc" {
-			port = "80"
-		}
-		host += ":" + port
-	}
-	c, err := grpc.NewClient("dns:///"+host, grpc.WithTransportCredentials(creds), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64<<20)))
+	c, err := dialGRPC(u)
 	if err != nil {
 		return nil, err
 	}
@@ -66,6 +46,29 @@ func newSui(ctx context.Context, n Network, u *url.URL) (Source, error) {
 		}
 	})
 	return s, nil
+}
+func dialGRPC(u *url.URL) (*grpc.ClientConn, error) {
+	var creds credentials.TransportCredentials
+	switch u.Scheme {
+	case "https", "grpcs":
+		creds = credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})
+	case "http", "grpc":
+		creds = insecure.NewCredentials()
+	default:
+		return nil, errors.New("expected a gRPC endpoint")
+	}
+	if u.Path != "" && u.Path != "/" || u.RawQuery != "" {
+		return nil, errors.New("gRPC endpoint must be host and port")
+	}
+	host := u.Host
+	if u.Port() == "" {
+		port := "443"
+		if u.Scheme == "http" || u.Scheme == "grpc" {
+			port = "80"
+		}
+		host += ":" + port
+	}
+	return grpc.NewClient("dns:///"+host, grpc.WithTransportCredentials(creds), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64<<20)))
 }
 func (s *suiSource) auth(ctx context.Context) context.Context {
 	if s.key != "" {
@@ -153,6 +156,22 @@ func SuiTransaction(ctx context.Context, n Network, digest string) (Activity, er
 		return Activity{}, err
 	}
 	defer src.Close()
+	if g, ok := src.(*graphSource); ok {
+		r, e := g.query(ctx, `query($id:String!){transaction(digest:$id){`+suiGraphTx+`}}`, map[string]any{"id": digest})
+		if e != nil {
+			return Activity{}, e
+		}
+		if r.Get("transaction.digest").String() != digest {
+			return Activity{}, errors.New("Sui digest mismatch")
+		}
+		ev, e := g.suiGraphActivity(ctx, r.Get("transaction"))
+		if e != nil {
+			return Activity{}, e
+		}
+		tip, e := g.Head(ctx)
+		ev.Confirmations = tip - ev.Height + 1
+		return ev, e
+	}
 	s := src.(*suiSource)
 	fields := append([]string{"checkpoint", "timestamp"}, suiTxFields...)
 	res, err := s.ledger.GetTransaction(s.auth(ctx), &pb.GetTransactionRequest{Digest: &digest, ReadMask: &fieldmaskpb.FieldMask{Paths: fields}})

@@ -87,14 +87,14 @@ func validateManualSui(order *mdb.Orders, digest string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	nodes, err := data.ListManualPaymentRpcCandidates(order.Network, mdb.RpcNodeTypeHttp)
+	nodes, err := data.ListManualPaymentRpcCandidates(order.Network, mdb.RpcNodeTypeHttp, "grpc", "graphql")
 	if err != nil {
 		return "", err
 	}
 	last := errors.New("no Sui RPC node available")
 	for _, node := range nodes {
 		ctx, cancel := context.WithTimeout(context.Background(), manualVerifyRequestTimeout)
-		e, err := scanner.SuiTransaction(ctx, scanner.Network{Name: "sui", URL: node.Url, APIKey: node.ApiKey}, digest)
+		e, err := scanner.SuiTransaction(ctx, scanner.Network{Name: "sui", Protocol: node.Type, URL: node.Url, APIKey: node.ApiKey}, digest)
 		cancel()
 		if err != nil {
 			last = err

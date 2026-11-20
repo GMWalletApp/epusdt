@@ -125,6 +125,22 @@ func runEmbeddedNetwork(ctx context.Context, name string, store *scanner.Store) 
 	}
 }
 
+func scannerNodeConfig(node mdb.RpcNode, candidates []mdb.RpcNode) (scanner.Network, bool) {
+	n := scanner.Network{Name: node.Network, Protocol: node.Type, URL: node.Url, APIKey: node.ApiKey}
+	if scanner.NeedsHistory(n.Name, n.Protocol) {
+		for _, other := range candidates {
+			if other.ID == node.ID || other.Network != node.Network {
+				continue
+			}
+			if other.Type == mdb.RpcNodeTypeHttp || other.Type == "rest" || (n.Name == "solana" && other.Type == "jsonrpc") {
+				n.HistoryURL = other.Url
+				n.HistoryAPIKey = other.ApiKey
+				break
+			}
+		}
+	}
+	return n, scanner.ValidateNetwork(n) == nil
+}
 func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
 	delay := 5 * time.Second
 	chain, err := data.GetChainByNetwork(w.name)
@@ -138,31 +154,25 @@ func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
 	if chain.ScanIntervalSec > 0 {
 		delay = time.Duration(chain.ScanIntervalSec) * time.Second
 	}
-	kind := mdb.RpcNodeTypeHttp
-	if scanner.IsEVM(w.name) {
-		kind = mdb.RpcNodeTypeWs
-	}
-	if w.name == mdb.NetworkTon {
-		kind = mdb.RpcNodeTypeLite
-	}
-	node, err := data.SelectGeneralRpcNode(w.name, kind)
+	nodes, err := data.GeneralScannerNodes(w.name, scanner.Protocols(w.name))
 	if err != nil {
 		return delay, err
 	}
-	if scanner.IsEVM(w.name) && (node == nil || data.IsRpcNodeCoolingDown(node.ID)) {
-		alternate, err := data.SelectGeneralRpcNode(w.name, mdb.RpcNodeTypeHttp)
-		if err != nil {
-			return delay, err
-		}
-		if alternate != nil {
-			node = alternate
+	var node *mdb.RpcNode
+	var n scanner.Network
+	for i := range nodes {
+		candidate, ok := scannerNodeConfig(nodes[i], nodes)
+		if ok {
+			node = &nodes[i]
+			n = candidate
+			break
 		}
 	}
-	if node == nil || node.ID == 0 {
+	if node == nil {
 		w.close()
 		return delay, nil
 	}
-	n := scanner.Network{Name: w.name, URL: node.Url, APIKey: node.ApiKey, Confirmations: int64(chain.MinConfirmations)}
+	n.Confirmations = int64(chain.MinConfirmations)
 	if scanner.IsEVM(w.name) {
 		if scanner.NativeAsset(w.name) == "" {
 			n.Lookback = 2048

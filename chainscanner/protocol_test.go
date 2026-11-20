@@ -1,0 +1,309 @@
+package scanner
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/xssnick/tonutils-go/ton"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/fbsobreira/gotron-sdk/pkg/proto/core"
+	geyser "github.com/rpcpool/yellowstone-grpc/examples/golang/proto"
+	"github.com/tidwall/gjson"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
+)
+
+func TestProtocolMatrix(t *testing.T) {
+	for _, n := range []Network{
+		{Name: "aptos", Protocol: "jsonrpc", URL: "https://node"},
+		{Name: "ton", Protocol: "grpc", URL: "grpcs://node"},
+		{Name: "solana", Protocol: "ws", URL: "wss://node"},
+		{Name: "sui", Protocol: "grpc", URL: "https://node/graphql"},
+		{Name: "monad", Protocol: "graphql", TraceCalls: true, URL: "https://node/graphql"},
+		{Name: "ethereum", Protocol: "ipc", URL: "ipc://remote/relative"},
+		{Name: "ethereum", Protocol: "http", URL: "https://node", HistoryURL: "https://unused"},
+	} {
+		if ValidateNetwork(n) == nil {
+			t.Fatalf("accepted %+v", n)
+		}
+	}
+	for _, network := range []string{"aptos", "sui", "tron", "ton", "solana", "ethereum", "base", "arbitrum", "hyperevm", "monad", "arc", "optimism", "avalanche", "plasma", "binance", "polygon"} {
+		for _, p := range Protocols(network) {
+			n := Network{Name: network, Protocol: p, URL: "https://node"}
+			switch p {
+			case "ws":
+				n.URL = "wss://node"
+			case "ipc":
+				n.URL = "ipc:///var/run/geth.ipc"
+			case "grpc":
+				n.URL = "grpcs://node:443"
+			}
+			if NeedsHistory(network, p) {
+				n.HistoryURL = "https://separate"
+			}
+			if e := ValidateNetwork(n); e != nil {
+				t.Fatalf("%s %s: %v", network, p, e)
+			}
+		}
+	}
+}
+func TestTronWalletWireEvidence(t *testing.T) {
+	to := append([]byte{65}, bytes.Repeat([]byte{0x11}, 20)...)
+	a, e := anypb.New(&core.TransferContract{ToAddress: to, Amount: 9007199254740993})
+	if e != nil {
+		t.Fatal(e)
+	}
+	c := &core.Transaction_Contract{Type: core.Transaction_Contract_TransferContract, Parameter: a}
+	m, e := tronMessage(c.ProtoReflect())
+	if e != nil {
+		t.Fatal(e)
+	}
+	v := gjson.ParseBytes(object(m))
+	if v.Get("type").String() != "TransferContract" || v.Get("parameter.value.amount").Raw != "9007199254740993" || v.Get("parameter.value.to_address").String() != fmt.Sprintf("%x", to) {
+		t.Fatal(v)
+	}
+}
+func TestExecutionGraphQLRequiresCompleteReceipts(t *testing.T) {
+	ctx := context.Background()
+	complete := true
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct{ Query string }
+		json.NewDecoder(r.Body).Decode(&req)
+		if strings.Contains(req.Query, "chainID") {
+			fmt.Fprint(w, `{"data":{"chainID":"0xa","block":{"number":"0xa"}}}`)
+			return
+		}
+		var logs any
+		if complete {
+			logs = []any{}
+		}
+		tx := map[string]any{"hash": "hash", "from": map[string]string{"address": wallet}, "to": map[string]string{"address": wallet}, "value": "0xde0b6b3a7640000", "status": "0x1", "index": "0x0", "logs": logs}
+		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"block": map[string]any{"hash": "block", "number": "0xa", "timestamp": 12, "transactionCount": 1, "transactions": []any{tx}}}})
+	}))
+	defer server.Close()
+	src, e := NewSource(ctx, Network{Name: "optimism", URL: server.URL, Protocol: "graphql"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer src.Close()
+	_, ev, e := src.Read(ctx, 10, 10)
+	if e != nil || len(ev) != 1 || !slices.Contains(ev[0].Addresses, wallet) || gjson.GetBytes(ev[0].Data, "receipt.status").String() != "0x1" {
+		t.Fatal(ev, e)
+	}
+	complete = false
+	if _, _, e = src.Read(ctx, 10, 10); e == nil {
+		t.Fatal("advanced despite missing logs")
+	}
+}
+
+type geyserFixture struct {
+	geyser.UnimplementedGeyserServer
+	t *testing.T
+}
+
+func (g *geyserFixture) GetSlot(ctx context.Context, r *geyser.GetSlotRequest) (*geyser.GetSlotResponse, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	if !slices.Contains(md.Get("x-token"), "stream-secret") || r.GetCommitment() != geyser.CommitmentLevel_FINALIZED {
+		g.t.Error("wrong gRPC metadata or commitment")
+	}
+	return &geyser.GetSlotResponse{Slot: 99}, nil
+}
+func (g *geyserFixture) Subscribe(st grpc.BidiStreamingServer[geyser.SubscribeRequest, geyser.SubscribeUpdate]) error {
+	req, e := st.Recv()
+	if e != nil {
+		return e
+	}
+	if len(req.Slots) != 1 || req.GetCommitment() != geyser.CommitmentLevel_FINALIZED {
+		g.t.Error("invalid stream filter")
+	}
+	return st.Send(&geyser.SubscribeUpdate{UpdateOneof: &geyser.SubscribeUpdate_Slot{Slot: &geyser.SubscribeUpdateSlot{Slot: 99, Status: geyser.SlotStatus_SLOT_FINALIZED}}})
+}
+func startTestGRPC(t *testing.T, configure func(*grpc.Server)) string {
+	t.Helper()
+	ln, e := net.Listen("tcp", "127.0.0.1:0")
+	if e != nil {
+		t.Fatal(e)
+	}
+	server := grpc.NewServer()
+	configure(server)
+	go server.Serve(ln)
+	t.Cleanup(server.Stop)
+	return "grpc://" + ln.Addr().String()
+}
+func TestYellowstoneNotifiesAndReadsFinalizedHTTP(t *testing.T) {
+	target := startTestGRPC(t, func(s *grpc.Server) { geyser.RegisterGeyserServer(s, &geyserFixture{t: t}) })
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer history-secret" || r.Header.Get("x-token") != "" {
+			t.Error("history authentication isolation")
+		}
+		var req rpcRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		results := map[string]any{"getGenesisHash": "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d", "getSlot": 99, "getBlocks": []int{99}, "getBlock": map[string]any{"blockhash": "h", "transactions": []any{}}}
+		json.NewEncoder(w).Encode(map[string]any{"id": req.ID, "jsonrpc": "2.0", "result": results[req.Method]})
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	src, e := NewSource(ctx, Network{Name: "solana", Protocol: "grpc", URL: target, APIKey: "stream-secret", HistoryURL: server.URL, HistoryAPIKey: "history-secret"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer src.Close()
+	select {
+	case <-Wakeups(src):
+	case <-ctx.Done():
+		t.Fatal("no finalized wakeup")
+	}
+	end, _, e := src.Read(ctx, 99, 99)
+	if e != nil || end != 99 {
+		t.Fatal(end, e)
+	}
+}
+func TestAptosStreamIsIndependentOfHistory(t *testing.T) {
+	target := startTestGRPC(t, func(s *grpc.Server) {
+		s.RegisterService(&grpc.ServiceDesc{ServiceName: "aptos.indexer.v1.RawData", HandlerType: (*interface{})(nil), Streams: []grpc.StreamDesc{{StreamName: "GetTransactions", ServerStreams: true, Handler: func(_ any, stream grpc.ServerStream) error {
+			var req aptosRequest
+			if e := stream.RecvMsg(&req); e != nil {
+				return e
+			}
+			md, _ := metadata.FromIncomingContext(stream.Context())
+			if !slices.Contains(md.Get("authorization"), "Bearer stream") || req.Start == nil || *req.Start != 25 {
+				t.Error("invalid starting version or token")
+			}
+			return stream.SendMsg(&aptosBatch{ChainID: proto.Uint64(1), Transactions: []*aptosVersion{{Version: 25}}})
+		}}}}, struct{}{})
+	})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer history" {
+			t.Error("wrong history credential")
+		}
+		if r.URL.Path == "/v1" {
+			fmt.Fprint(w, `{"chain_id":1,"ledger_version":"25"}`)
+		} else {
+			fmt.Fprint(w, `[{"version":"25","hash":"h","sender":"0x1"}]`)
+		}
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	src, e := NewSource(ctx, Network{Name: "aptos", Protocol: "grpc", URL: target, HistoryURL: srv.URL, APIKey: "stream", HistoryAPIKey: "history"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer src.Close()
+	select {
+	case <-Wakeups(src):
+	case <-ctx.Done():
+		t.Fatal("missing wakeup")
+	}
+	h, ev, e := src.Read(ctx, 25, 25)
+	if e != nil || h != 25 || len(ev) != 1 {
+		t.Fatal(h, ev, e)
+	}
+}
+
+type ipcFixture struct{}
+
+func (ipcFixture) ChainId() string     { return "0x1" }
+func (ipcFixture) BlockNumber() string { return "0x37" }
+func TestIPCReadsExecutionHeight(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix sockets")
+	}
+	// Darwin limits Unix socket paths to 104 bytes.
+	dir, e := os.MkdirTemp("", "cs-ipc")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "s")
+	ln, svc, e := rpc.StartIPCEndpoint(path, []rpc.API{{Namespace: "eth", Service: ipcFixture{}}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer ln.Close()
+	defer svc.Stop()
+	src, e := NewSource(context.Background(), Network{Name: "ethereum", URL: "ipc://" + path})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer src.Close()
+	if h, e := src.Head(context.Background()); e != nil || h != 55 {
+		t.Fatal(h, e)
+	}
+}
+func TestBeaconSignalsUseExecutionHeights(t *testing.T) {
+	st := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("topics") != "head" {
+			t.Error("missing topic")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "event: head\ndata: {\"slot\":\"123456\"}\n\n")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer st.Close()
+	history := rpcFixture(t, func(r rpcRequest) (any, error) {
+		if r.Method == "eth_chainId" {
+			return "0x1", nil
+		}
+		if r.Method == "eth_blockNumber" {
+			return "0x42", nil
+		}
+		return nil, fmt.Errorf("unexpected method %s", r.Method)
+	})
+	defer history.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	src, e := NewSource(ctx, Network{Name: "ethereum", Protocol: "sse", URL: st.URL, HistoryURL: history.URL})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer src.Close()
+	select {
+	case <-Wakeups(src):
+	case <-ctx.Done():
+		t.Fatal("missing Beacon wakeup")
+	}
+	if h, e := src.Head(ctx); e != nil || h != 66 {
+		t.Fatal(h, e)
+	}
+}
+func TestSuiGraphPageMustAdvance(t *testing.T) {
+	seen := map[string]bool{}
+	v := gjson.Parse(`{"nodes":[{}],"pageInfo":{"hasNextPage":true,"endCursor":"one"}}`)
+	if c, e := graphPage(v, seen); e != nil || c != "one" {
+		t.Fatal(c, e)
+	}
+	if _, e := graphPage(v, seen); e == nil {
+		t.Fatal("repeated page cursor")
+	}
+}
+func TestTONCenterRejectsChangedBlock(t *testing.T) {
+	z := make([]byte, 32)
+	hash := base64.StdEncoding.EncodeToString(z)
+	id := &ton.BlockIDExt{Workchain: -1, Shard: -1 << 63, SeqNo: 42, RootHash: z, FileHash: z}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"result":{"data":"AAAA","id":{"workchain":-1,"shard":"-9223372036854775808","seqno":42,"root_hash":%q,"file_hash":%q}}}`, hash, hash)
+	}))
+	defer server.Close()
+	s := &tonCenter{&jsonSource{n: Network{Name: "ton", URL: server.URL}, http: server.Client()}, "rest"}
+	if _, e := s.GetBlockData(context.Background(), id); e == nil || !strings.Contains(e.Error(), "file hash") {
+		t.Fatal(e)
+	}
+}

@@ -45,6 +45,9 @@ func run() error {
 		if seen[n.Name] || !scanner.Supported(n.Name) || n.URL == "" || n.Confirmations < 0 || n.Lookback < 0 {
 			return fmt.Errorf("invalid or duplicate network %q", n.Name)
 		}
+		if err := scanner.ValidateNetwork(n); err != nil {
+			return fmt.Errorf("%s: %w", n.Name, err)
+		}
 		seen[n.Name] = true
 	}
 	s, err := scanner.Open(c.Database)

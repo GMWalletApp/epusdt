@@ -62,7 +62,7 @@ func (r RpcHealthJob) Run() {
 // reports read failures and rotates nodes. An explicit admin probe can run
 // the more expensive historical-log and subscription checks.
 func probeReachability(node mdb.RpcNode) (string, int, error) {
-	if !isEvmRpcNetwork(node.Network) {
+	if !isEvmRpcNetwork(node.Network) || (node.Type != "http" && node.Type != "ws") {
 		return probeRpcNode(node)
 	}
 	start := time.Now()
@@ -101,6 +101,32 @@ func probeRpcNode(node mdb.RpcNode) (string, int, error) {
 		return mdb.RpcNodeStatusOk, int(time.Since(start).Milliseconds()), nil
 	}
 
+	if node.Type != "http" && node.Type != "lite" || node.Network == "sui" {
+		start := time.Now()
+		var candidates []mdb.RpcNode
+		if scanner.NeedsHistory(node.Network, node.Type) {
+			var err error
+			candidates, err = data.GeneralScannerNodes(node.Network, scanner.Protocols(node.Network))
+			if err != nil {
+				return mdb.RpcNodeStatusDown, -1, err
+			}
+		}
+		n, ok := scannerNodeConfig(node, candidates)
+		if !ok {
+			return mdb.RpcNodeStatusDown, -1, fmt.Errorf("invalid or missing scanner endpoint")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		src, err := scanner.NewSource(ctx, n)
+		if err != nil {
+			return mdb.RpcNodeStatusDown, -1, fmt.Errorf("%s %s node open failed (%T)", node.Network, node.Type, err)
+		}
+		defer src.Close()
+		if _, err = src.Head(ctx); err != nil {
+			return mdb.RpcNodeStatusDown, -1, fmt.Errorf("%s %s head check failed (%T)", node.Network, node.Type, err)
+		}
+		return mdb.RpcNodeStatusOk, int(time.Since(start).Milliseconds()), nil
+	}
 	addr, err := ParseAddress(node.Url)
 	if err != nil {
 		return mdb.RpcNodeStatusDown, -1, err

@@ -121,3 +121,34 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 		t.Fatal(d, err)
 	}
 }
+
+func TestNetworkProtocolPairingAndRecurringProbe(t *testing.T) {
+	defer testutil.SetupTestDatabases(t)()
+	nodes := []mdb.RpcNode{
+		{Network: "solana", Type: "ws", Url: "wss://node.example", ApiKey: "stream", Weight: 80},
+		{Network: "solana", Type: "http", Url: "https://history.example", ApiKey: "history", Weight: 50},
+		{Network: "solana", Type: "http", Url: "https://manual.example", Purpose: mdb.RpcNodePurposeManualVerify, Weight: 1000},
+	}
+	for i := range nodes {
+		nodes[i].Enabled = true
+		if e := data.CreateRpcNode(&nodes[i]); e != nil {
+			t.Fatal(e)
+		}
+	}
+	rows, e := data.GeneralScannerNodes("solana", scanner.Protocols("solana"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	n, ok := scannerNodeConfig(nodes[0], rows)
+	if !ok || n.HistoryURL != nodes[1].Url || n.HistoryAPIKey != "history" || n.APIKey != "stream" {
+		t.Fatal("incorrect historical node selection")
+	}
+	gql := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":{"chainID":"0x2105","block":{"number":"0x10"}}}`)
+	}))
+	defer gql.Close()
+	status, _, e := probeReachability(mdb.RpcNode{Network: "base", Type: "graphql", Url: gql.URL})
+	if e != nil || status != mdb.RpcNodeStatusOk {
+		t.Fatal(status, e)
+	}
+}

@@ -10,10 +10,16 @@ import (
 )
 
 func (s *jsonSource) tron(ctx context.Context, h int64) (int64, []Activity, error) {
+	return s.tronBlock(ctx, h, "")
+}
+func (s *jsonSource) tronBlock(ctx context.Context, h int64, hash string) (int64, []Activity, error) {
 	params := map[string]int64{"num": h}
 	b, err := s.request(ctx, "/wallet/getblockbynum", params)
 	if err != nil {
 		return 0, nil, err
+	}
+	if hash != "" && !strings.EqualFold(hash, b.Get("blockID").String()) {
+		return 0, nil, errors.New("TRON JSON-RPC and Wallet block hashes differ")
 	}
 	if b.Get("blockID").String() == "" || b.Get("block_header.raw_data.number").Int() != h {
 		return 0, nil, errors.New("missing TRON block")
@@ -29,6 +35,9 @@ func (s *jsonSource) tron(ctx context.Context, h int64) (int64, []Activity, erro
 	if !rs.IsArray() {
 		return 0, nil, errors.New("missing TRON receipts")
 	}
+	return tronActivities(h, b.Get("block_header.raw_data.timestamp").Int(), txs, rs)
+}
+func tronActivities(h, stamp int64, txs []gjson.Result, rs gjson.Result) (int64, []Activity, error) {
 	receipts := map[string]gjson.Result{}
 	for _, r := range rs.Array() {
 		receipts[r.Get("id").String()] = r
@@ -40,7 +49,7 @@ func (s *jsonSource) tron(ctx context.Context, h int64) (int64, []Activity, erro
 		if !ok || r.Get("blockNumber").Int() != h {
 			return 0, nil, errors.New("incomplete TRON receipts")
 		}
-		e := Activity{Height: h, TxID: id, TimeMS: b.Get("block_header.raw_data.timestamp").Int(), Data: object(Evidence{Transaction: json.RawMessage(tx.Raw), Receipt: json.RawMessage(r.Raw)})}
+		e := Activity{Height: h, TxID: id, TimeMS: stamp, Data: object(Evidence{Transaction: json.RawMessage(tx.Raw), Receipt: json.RawMessage(r.Raw)})}
 		for _, c := range tx.Get("raw_data.contract").Array() {
 			var visit func(gjson.Result)
 			visit = func(v gjson.Result) {

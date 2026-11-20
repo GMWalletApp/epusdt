@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -66,11 +67,19 @@ func Canonical(n, a string) (string, error) {
 	return "", fmt.Errorf("invalid address or network %q", n)
 }
 func safeError(err error, n Network) string {
-	s := strings.ReplaceAll(err.Error(), n.URL, "<rpc>")
-	if n.APIKey != "" {
-		s = strings.ReplaceAll(s, n.APIKey, "<key>")
-	}
-	return s
+	return redactEndpointError(err.Error(), n)
+}
+
+var errRateLimited = errors.New("RPC HTTP 429")
+
+// RPC credentials belong to one origin, including provider-specific headers.
+func newNodeHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 || req.URL.Scheme != via[0].URL.Scheme || req.URL.Host != via[0].URL.Host {
+			return http.ErrUseLastResponse
+		}
+		return nil
+	}}
 }
 
 type jsonSource struct {
@@ -81,24 +90,44 @@ type jsonSource struct {
 }
 
 func NewSource(ctx context.Context, n Network) (Source, error) {
-	u, err := url.Parse(n.URL)
-	if err != nil || u.Host == "" {
-		return nil, errors.New("invalid RPC URL")
+	if err := ValidateNetwork(n); err != nil {
+		return nil, err
+	}
+	u, p, _ := n.endpoint()
+	if p == "graphql" && n.Name != "aptos" {
+		return newGraph(ctx, n)
+	}
+	if NeedsHistory(n.Name, p) {
+		return newPaired(ctx, n, u, p)
 	}
 	if n.Name == "sui" {
 		return newSui(ctx, n, u)
 	}
+	if n.Name == "ton" && p != "lite" {
+		return newTonCenter(ctx, n, p)
+	}
 	if n.Name == "ton" {
 		return newTON(ctx, n)
 	}
-	s := &jsonSource{n: n, http: &http.Client{Timeout: 25 * time.Second}}
+	if n.Name == "tron" && (p == "grpc" || p == "solidity-grpc") {
+		return newTronGRPC(ctx, n, u)
+	}
+	s := &jsonSource{n: n, http: newNodeHTTPClient(25 * time.Second)}
 	switch {
 	case IsEVM(n.Name) || n.Name == "solana":
 		opts := []rpc.ClientOption{rpc.WithHTTPClient(s.http)}
 		if n.APIKey != "" {
 			opts = append(opts, rpc.WithHeader("Authorization", "Bearer "+n.APIKey))
 		}
-		c, err := rpc.DialOptions(ctx, n.URL, opts...)
+		endpoint := n.URL
+		if p == "ipc" {
+			info, e := os.Stat(u.Path)
+			if e != nil || info.Mode()&os.ModeSocket == 0 {
+				return nil, errors.New("IPC endpoint must be a Unix socket")
+			}
+			endpoint = u.Path
+		}
+		c, err := rpc.DialOptions(ctx, endpoint, opts...)
 		if err != nil {
 			return nil, err
 		}
@@ -112,7 +141,7 @@ func NewSource(ctx context.Context, n Network) (Source, error) {
 				c.Close()
 				return nil, fmt.Errorf("chain ID check failed for %s (received %s): %v", n.Name, id.String(), e)
 			}
-			if u.Scheme == "ws" || u.Scheme == "wss" {
+			if p == "ws" || p == "ipc" {
 				s.heads = startSignals(ctx, func(ctx context.Context, wake func()) error {
 					heads := make(chan json.RawMessage, 8)
 					setup, cancel := context.WithTimeout(ctx, 8*time.Second)
@@ -151,7 +180,11 @@ func (s *jsonSource) Close() {
 	s.http.CloseIdleConnections()
 }
 func (s *jsonSource) request(ctx context.Context, path string, post any) (gjson.Result, error) {
-	if s.n.Name == "aptos" && strings.HasSuffix(strings.TrimRight(s.n.URL, "/"), "/v1") {
+	base, err := url.Parse(s.n.URL)
+	if err != nil {
+		return gjson.Result{}, err
+	}
+	if s.n.Name == "aptos" && strings.HasSuffix(strings.TrimRight(base.Path, "/"), "/v1") {
 		path = strings.TrimPrefix(path, "/v1")
 	}
 	method := "GET"
@@ -164,13 +197,28 @@ func (s *jsonSource) request(ctx context.Context, path string, post any) (gjson.
 		}
 		body = bytes.NewReader(b)
 	}
-	request, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(s.n.URL, "/")+path, body)
+	if s.n.Protocol == "solidity-http" && strings.HasPrefix(path, "/wallet/") {
+		path = "/walletsolidity/" + strings.TrimPrefix(path, "/wallet/")
+	}
+	if path != "" {
+		suffix, query, _ := strings.Cut(path, "?")
+		base.Path = strings.TrimRight(base.Path, "/") + suffix
+		if query != "" {
+			if base.RawQuery != "" {
+				base.RawQuery += "&"
+			}
+			base.RawQuery += query
+		}
+	}
+	request, err := http.NewRequestWithContext(ctx, method, base.String(), body)
 	if err != nil {
 		return gjson.Result{}, err
 	}
 	request.Header.Set("Content-Type", "application/json")
 	if s.n.APIKey != "" {
-		if s.n.Name == "tron" {
+		if s.n.Name == "ton" {
+			request.Header.Set("X-API-Key", s.n.APIKey)
+		} else if s.n.Name == "tron" {
 			request.Header.Set("TRON-PRO-API-KEY", s.n.APIKey)
 		} else {
 			request.Header.Set("Authorization", "Bearer "+s.n.APIKey)
@@ -182,6 +230,9 @@ func (s *jsonSource) request(ctx context.Context, path string, post any) (gjson.
 	}
 	defer res.Body.Close()
 	if res.StatusCode/100 != 2 {
+		if res.StatusCode == http.StatusTooManyRequests {
+			return gjson.Result{}, errRateLimited
+		}
 		return gjson.Result{}, fmt.Errorf("RPC HTTP %d", res.StatusCode)
 	}
 	b, err := io.ReadAll(io.LimitReader(res.Body, (64<<20)+1))

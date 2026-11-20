@@ -16,6 +16,9 @@ type Source interface {
 	Close()
 }
 type Network struct {
+	Protocol        string `json:"protocol,omitempty"`
+	HistoryURL      string `json:"history_url,omitempty"`
+	HistoryAPIKey   string `json:"history_api_key,omitempty"`
 	Name            string `json:"name"`
 	URL             string `json:"url"`
 	APIKey          string `json:"api_key,omitempty"`
