@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"github.com/GMWalletApp/ChainScanner/internal/chains"
@@ -20,24 +21,31 @@ func (r *NodeRegistry) Run(ctx context.Context, n chains.Network) {
 
 type nodePool struct {
 	*SourcePool
-	registry *NodeRegistry
-	settings chains.Network
-	revision uint64
-	loaded   bool
+	registry  *NodeRegistry
+	settings  chains.Network
+	revision  uint64
+	loaded    bool
+	inventory map[chains.Network]Node
 }
 
 func newRegistryPool(ctx context.Context, r *NodeRegistry, n chains.Network) *nodePool {
 	return &nodePool{SourcePool: NewSourcePool(ctx, n.Name), registry: r, settings: n}
 }
 func (p *nodePool) Head(ctx context.Context) (int64, error) {
+	if err := p.refresh(ctx); err != nil {
+		return 0, err
+	}
+	return p.SourcePool.Head(ctx)
+}
+func (p *nodePool) refresh(ctx context.Context) error {
 	v := p.registry.revision.Load()
 	if !p.loaded || v != p.revision {
 		rows, err := p.registry.List(ctx, p.settings.Name)
 		if err != nil {
-			return 0, err
+			return err
 		}
 		origins := make(map[chains.Network]Node, len(rows))
-		var preferred, others []chains.Network
+		var preferred, owned, discovered []chains.Network
 		for _, n := range rows {
 			if !n.Scannable || (strings.HasPrefix(p.settings.Protocol, "solidity-") && !strings.HasPrefix(n.Protocol, "solidity-")) {
 				continue
@@ -49,17 +57,29 @@ func (p *nodePool) Head(ctx context.Context) (int64, error) {
 			origins[cfg] = n
 			if _, ok := p.registry.configured[n.NodeEndpoint]; ok {
 				preferred = append(preferred, cfg)
+			} else if n.Origin == "chainlist" {
+				discovered = append(discovered, cfg)
 			} else {
-				others = append(others, cfg)
+				owned = append(owned, cfg)
 			}
 		}
-		if err := p.SetNodes(append(preferred, others...)); err != nil {
-			return 0, err
+		// A retired and rediscovered URL can acquire a new row ID between
+		// scan steps. Its new owner gets a fresh connection and penalty.
+		p.nodes = slices.DeleteFunc(p.nodes, func(n *endpoint) bool {
+			old, cur := p.inventory[n.cfg], origins[n.cfg]
+			if old.ID != cur.ID || old.Origin != cur.Origin {
+				n.close()
+				return true
+			}
+			return false
+		})
+		if err := p.SetNodes(slices.Concat(preferred, owned, discovered)); err != nil {
+			return err
 		}
 		p.open = func(ctx context.Context, cfg chains.Network) (chains.Source, error) {
 			return openNode(ctx, origins[cfg], cfg)
 		}
-		p.loaded, p.revision = true, v
+		p.loaded, p.revision, p.inventory = true, v, origins
 	}
-	return p.SourcePool.Head(ctx)
+	return nil
 }

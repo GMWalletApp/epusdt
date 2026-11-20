@@ -233,7 +233,7 @@ func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
 			return delay, nil
 		}
 		data.RecordRpcFailure(w.name)
-		return delay, fmt.Errorf("%s scan stopped at the last committed range: %w", w.name, err)
+		return delay, fmt.Errorf("%s scanner: %w", w.name, err)
 	}
 	data.RecordRpcSuccess(w.name)
 	if h, err := w.store.Height(ctx, w.name); err == nil && h >= 0 {

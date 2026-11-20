@@ -74,7 +74,7 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 		case "eth_blockNumber":
 			result = "0x12"
 		case "eth_getBlockByNumber":
-			result = map[string]any{"number": "0x11", "hash": "block", "timestamp": fmt.Sprintf("0x%x", time.Now().Unix()+1), "transactions": []any{map[string]any{"hash": "out", "from": wallet, "to": contract}, map[string]any{"hash": "in", "from": contract, "to": wallet}}}
+			result = map[string]any{"number": "0x11", "hash": "block", "parentHash": "parent", "timestamp": fmt.Sprintf("0x%x", time.Now().Unix()+1), "transactions": []any{map[string]any{"hash": "out", "from": wallet, "to": contract}, map[string]any{"hash": "in", "from": contract, "to": wallet}}}
 		case "eth_getLogs":
 			var logs []any
 			for i, id := range []string{"out", "in"} {

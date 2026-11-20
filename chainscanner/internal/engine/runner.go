@@ -3,7 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
-	"fmt"
+
 	"log"
 	"sync"
 	"time"
@@ -21,7 +21,7 @@ func ActivationCursor(tip int64, n chains.Network) int64 {
 	return max(int64(-1), eligible-n.Lookback)
 }
 
-// Step commits each contiguous range and its matching deliveries atomically.
+// Step reserves confirmed work and atomically queues deliveries as each read completes.
 func (s *Store) Step(ctx context.Context, n chains.Network, source chains.Source) (bool, error) {
 	lock, _ := s.workers.LoadOrStore(n.Name, new(sync.Mutex))
 	worker := lock.(*sync.Mutex)
@@ -65,43 +65,97 @@ func (s *Store) Step(ctx context.Context, n chains.Network, source chains.Source
 			return false, err
 		}
 	}
-	if prev >= head {
+	// Publish each completed span immediately. Reservations and completions
+	// both verify the watch generation while holding the subscription lock.
+	s.demandMu.Lock()
+	if s.periodLocked(n.Name).active != period {
+		s.demandMu.Unlock()
 		return false, nil
 	}
-	commit := func(end int64, events []chains.Activity) error {
-		if end <= prev || end > head {
-			return fmt.Errorf("invalid batch end %d after %d", end, prev)
-		}
-		for i := range events {
-			if events[i].Height <= prev || events[i].Height > end {
-				return errors.New("event height outside batch")
-			}
-			events[i].Confirmations = latest - events[i].Height + 1
-		}
+	limit := 16
+	if pool, ok := source.(interface{ ScanWindow() int }); ok {
+		limit = pool.ScanWindow()
+	}
+	work, high, err := s.plan(ctx, n.Name, prev, head, limit)
+	s.demandMu.Unlock()
+	if err != nil || len(work) == 0 {
+		return false, err
+	}
+	completed := 0
+	var unavailable error
+	finish := func(span chains.Span, link chains.BlockLink, events []chains.Activity, readErr error) error {
 		s.demandMu.Lock()
 		defer s.demandMu.Unlock()
 		if s.periodLocked(n.Name).active != period {
 			return context.Canceled
 		}
-		if err := s.commit(ctx, n.Name, prev, end, events); err != nil {
+		if readErr != nil {
+			unavailable = readErr
+			return s.deferGap(ctx, n.Name, span)
+		}
+		for i := range events {
+			e := &events[i]
+			if e.Height < span.First || e.Height > span.Last || (e.Network != "" && e.Network != n.Name) {
+				return errors.New("event outside assigned range")
+			}
+			e.Confirmations = latest - e.Height + 1
+		}
+		if err := s.complete(ctx, n.Name, span, link, events); err != nil {
 			return err
 		}
-		prev = end
+		completed++
 		return nil
 	}
-	if pool, ok := source.(interface {
-		Scan(context.Context, int64, int64, func(int64, []chains.Activity) error) error
-	}); ok {
-		err = pool.Scan(ctx, prev+1, head, commit)
-	} else {
-		var end int64
-		var events []chains.Activity
-		end, events, err = source.Read(ctx, prev+1, head)
-		if err == nil {
-			err = commit(end, events)
+	if err = scanWork(ctx, n.Name, source, work, finish); err != nil {
+		return false, err
+	}
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+	if completed == 0 {
+		return false, unavailable
+	}
+	// Keep catching up while fresh work is available. Failed holes alone
+	// wait for the next head notification or poll, avoiding a retry spin.
+	var untried bool
+	if high >= head {
+		if e := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM scan_gaps WHERE network=? AND attempted=0 AND last<=?)`, n.Name, head).Scan(&untried); e != nil {
+			return false, e
 		}
 	}
-	return err == nil && prev < head, err
+	if high < head || untried {
+		return true, nil
+	}
+	return false, unavailable
+}
+
+func scanWork(ctx context.Context, network string, source chains.Source, work []chains.Span, finish func(chains.Span, chains.BlockLink, []chains.Activity, error) error) error {
+	if pool, ok := source.(interface {
+		ScanPending(context.Context, []chains.Span, func(chains.Span, chains.BlockLink, []chains.Activity, error) error) error
+	}); ok {
+		return pool.ScanPending(ctx, work, finish)
+	}
+	for _, span := range work {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		call, cancel := context.WithTimeout(ctx, 60*time.Second)
+		part, link, events, err := chains.ReadSpan(call, network, source, span)
+		cancel()
+		if err == nil {
+			err = finish(part, link, events, nil)
+			if err == nil {
+				continue
+			}
+			if !errors.Is(err, chains.ErrFork) {
+				return err
+			}
+		}
+		if err = finish(span, chains.BlockLink{}, nil, err); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func (s *Store) Run(ctx context.Context, n chains.Network) {
 	s.WhileWatched(ctx, n.Name, func(live context.Context) { RunWithSource(live, s, n, chains.NewSource, chains.Wakeups) })

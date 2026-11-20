@@ -42,6 +42,14 @@ func Open(path string) (*Store, error) {
  CREATE TABLE IF NOT EXISTS watches(consumer TEXT NOT NULL, network TEXT NOT NULL, address TEXT NOT NULL, PRIMARY KEY(consumer,network,address));
  CREATE INDEX IF NOT EXISTS by_address ON watches(network,address);
  CREATE TABLE IF NOT EXISTS cursors(network TEXT PRIMARY KEY,height INTEGER NOT NULL);
+ CREATE TABLE IF NOT EXISTS scan_gaps(network TEXT NOT NULL,first INTEGER NOT NULL,last INTEGER NOT NULL,attempted INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(network,first));
+ CREATE INDEX IF NOT EXISTS gap_retry ON scan_gaps(network,attempted,first);
+ CREATE UNIQUE INDEX IF NOT EXISTS gap_end ON scan_gaps(network,last);
+ CREATE TABLE IF NOT EXISTS scan_edges(network TEXT NOT NULL,height INTEGER NOT NULL,hash TEXT NOT NULL,PRIMARY KEY(network,height));
+ CREATE TRIGGER IF NOT EXISTS clear_scan_work AFTER DELETE ON cursors BEGIN
+ DELETE FROM scan_gaps WHERE network=OLD.network;
+ DELETE FROM scan_edges WHERE network=OLD.network;
+ END;
  CREATE TABLE IF NOT EXISTS deliveries(id INTEGER PRIMARY KEY AUTOINCREMENT, consumer TEXT NOT NULL, payload BLOB NOT NULL);
  CREATE INDEX IF NOT EXISTS by_consumer ON deliveries(consumer,id);`)
 	if err != nil {
@@ -243,9 +251,7 @@ func (s *Store) register(ctx context.Context, consumer string, watches []feed.Wa
 			if _, err = tx.ExecContext(ctx, "INSERT INTO watches(consumer,network,address,from_height) VALUES(?,?,?,?) ON CONFLICT(consumer,network,address) DO UPDATE SET from_height=excluded.from_height", consumer, w.Network, w.Address, start); err != nil {
 				return nil, err
 			}
-			if !exists {
-				touched[w.Network] = true
-			}
+			touched[w.Network] = true
 		}
 		if start.Valid {
 			receipts = append(receipts, feed.Registration{Watch: w, FromHeight: start.Int64})
@@ -345,22 +351,14 @@ func (s *Store) cursor(ctx context.Context, network string) (int64, bool, error)
 	}
 	return height, err == nil, err
 }
-func (s *Store) commit(ctx context.Context, network string, prev, end int64, events []chains.Activity) error {
+func (s *Store) complete(ctx context.Context, network string, span chains.Span, link chains.BlockLink, events []chains.Activity) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, "UPDATE cursors SET height=? WHERE network=? AND height=?", end, network, prev)
-	if err != nil {
+	if err = finishGap(ctx, tx, network, span, link); err != nil {
 		return err
-	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n != 1 {
-		return fmt.Errorf("cursor changed for %s", network)
 	}
 	// Match against the subscription set at commit time. Registration and block
 	// delivery are serialized by SQLite. Each consumer gets one event per tx.
@@ -386,7 +384,9 @@ func (s *Store) commit(ctx context.Context, network string, prev, end int64, eve
 			}
 			seen[a] = true
 			for _, c := range watchers[a] {
-				targets[c] = append(targets[c], a)
+				if e.Height >= c.from {
+					targets[c.consumer] = append(targets[c.consumer], a)
+				}
 			}
 		}
 		for c, matched := range targets {
@@ -420,18 +420,24 @@ func (s *Store) commit(ctx context.Context, network string, prev, end int64, eve
 
 // Access under the store's single SQLite connection orders index invalidation
 // with watch mutations and block commits, including rolled-back registrations.
-func (s *Store) addressIndex(ctx context.Context, tx *sql.Tx, network string) (map[string][]string, error) {
+type watcher struct {
+	consumer string
+	from     int64
+}
+
+func (s *Store) addressIndex(ctx context.Context, tx *sql.Tx, network string) (map[string][]watcher, error) {
 	if v, ok := s.indexes.Load(network); ok {
-		return v.(map[string][]string), nil
+		return v.(map[string][]watcher), nil
 	}
-	watchers := map[string][]string{}
-	rows, err := tx.QueryContext(ctx, "SELECT address,consumer FROM watches WHERE network=?", network)
+	watchers := map[string][]watcher{}
+	rows, err := tx.QueryContext(ctx, "SELECT address,consumer,COALESCE(from_height,0) FROM watches WHERE network=?", network)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
-		var a, c string
-		if err = rows.Scan(&a, &c); err != nil {
+		var a string
+		var c watcher
+		if err = rows.Scan(&a, &c.consumer, &c.from); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -459,16 +465,15 @@ func (s *Store) SeedCursor(ctx context.Context, network string, height int64) er
 	if _, err = tx.ExecContext(ctx, "UPDATE watches SET from_height=(SELECT height+1 FROM cursors WHERE network=?) WHERE network=? AND from_height IS NULL", network, network); err != nil {
 		return err
 	}
+	s.indexes.Delete(network)
 	return tx.Commit()
 }
 
 // Height returns the last fully committed height or -1 before first use.
 func (s *Store) Height(ctx context.Context, network string) (int64, error) {
-	h, ok, e := s.cursor(ctx, network)
-	if !ok {
-		return -1, e
-	}
-	return h, e
+	var h int64
+	err := s.db.QueryRowContext(ctx, `SELECT COALESCE((SELECT min(first)-1 FROM scan_gaps WHERE network=?),(SELECT height FROM cursors WHERE network=?),-1)`, network, network).Scan(&h)
+	return h, err
 }
 
 // Database returns the shared SQLite connection for the node registry.

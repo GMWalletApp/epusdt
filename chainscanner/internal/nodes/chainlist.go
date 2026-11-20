@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,10 +19,8 @@ const chainListURL = "https://chainlist.org/rpcs.json"
 
 // RunChainList refreshes the node inventory independently of the scan workers.
 func (r *NodeRegistry) RunChainList(ctx context.Context) {
-	ticker := time.NewTicker(time.Hour)
-	defer ticker.Stop()
 	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	for ctx.Err() == nil {
+	runChainListSchedule(ctx, func(ctx context.Context) {
 		round, cancel := context.WithTimeout(ctx, 15*time.Minute)
 		count, err := r.refreshChainList(round, client, chainListURL, chains.ProbePublicRPC)
 		cancel()
@@ -33,6 +32,14 @@ func (r *NodeRegistry) RunChainList(ctx context.Context) {
 		} else {
 			log.Printf("ChainList refresh: %d healthy discovered RPCs", count)
 		}
+	})
+}
+
+func runChainListSchedule(ctx context.Context, refresh func(context.Context)) {
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	for ctx.Err() == nil {
+		refresh(ctx)
 		select {
 		case <-ctx.Done():
 			return
@@ -85,6 +92,7 @@ func fetchChainList(ctx context.Context, client *http.Client, address string) ([
 		}
 		for _, entry := range chain.RPC {
 			e := NodeEndpoint{name, chains.PublicRPCProtocol(entry.URL), entry.URL}
+			e = e.identity()
 			if e.Protocol != "" && !seen[e] {
 				endpoints = append(endpoints, e)
 				seen[e] = true
@@ -109,24 +117,7 @@ func (r *NodeRegistry) refreshChainList(ctx context.Context, client *http.Client
 	if err != nil {
 		return 0, err
 	}
-	rows, err := r.db.QueryContext(ctx, "SELECT network,protocol,url FROM rpc_nodes WHERE removed=1 OR origin!='chainlist'")
-	if err != nil {
-		return 0, err
-	}
-	excluded := map[NodeEndpoint]bool{}
-	for rows.Next() {
-		var e NodeEndpoint
-		if err = rows.Scan(&e.Network, &e.Protocol, &e.URL); err != nil {
-			rows.Close()
-			return 0, err
-		}
-		if e.Protocol == "jsonrpc" {
-			e.Protocol = "http"
-		}
-		excluded[e] = true
-	}
-	err = rows.Err()
-	rows.Close()
+	excluded, _, err := discoveryInventory(ctx, r.db)
 	if err != nil {
 		return 0, err
 	}
@@ -165,18 +156,61 @@ func (r *NodeRegistry) refreshChainList(ctx context.Context, client *http.Client
 	return r.applyChainList(ctx, results)
 }
 
+// Protected identities include all built-ins, private entries and tombstones.
+// Match against both snapshots: an operator may add or delete an endpoint
+// while discovery is waiting on network probes.
+func discoveryInventory(ctx context.Context, db interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}) (map[NodeEndpoint]bool, map[NodeEndpoint]NodeEndpoint, error) {
+	rows, err := db.QueryContext(ctx, "SELECT network,protocol,url,origin,removed FROM rpc_nodes ORDER BY id")
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	protected := map[NodeEndpoint]bool{}
+	existing := map[NodeEndpoint]NodeEndpoint{}
+	for rows.Next() {
+		var e NodeEndpoint
+		var origin string
+		var removed bool
+		if err := rows.Scan(&e.Network, &e.Protocol, &e.URL, &origin, &removed); err != nil {
+			return nil, nil, err
+		}
+		key := e.identity()
+		if removed || origin != "chainlist" {
+			protected[key] = true
+			continue
+		}
+		if _, ok := existing[key]; !ok {
+			existing[key] = e
+		}
+	}
+	return protected, existing, rows.Err()
+}
+
 func (r *NodeRegistry) applyChainList(ctx context.Context, results []observation) (int, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback()
+	protected, existing, err := discoveryInventory(ctx, tx)
+	if err != nil {
+		return 0, err
+	}
 	keep := map[NodeEndpoint]bool{}
 	for _, obs := range results {
 		if obs.height == 0 {
 			continue
 		}
-		e := obs.endpoint
+		key := obs.endpoint.identity()
+		if protected[key] {
+			continue
+		}
+		e, ok := existing[key]
+		if !ok {
+			e = key
+		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO rpc_nodes(network,protocol,url,origin,status,height,checked_at,latency)
         VALUES(?,?,?,'chainlist','ok',?,?,?) ON CONFLICT(network,protocol,url) DO UPDATE SET
         status='ok',height=excluded.height,checked_at=excluded.checked_at,latency=excluded.latency

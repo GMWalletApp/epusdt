@@ -14,6 +14,17 @@ import (
 	"github.com/GMWalletApp/ChainScanner/internal/feed"
 )
 
+// Reserve a single range as the runner would, then commit its deliveries.
+func completeNext(s *Store, ctx context.Context, network string, prev, end int64, events []chains.Activity) error {
+	work, _, err := s.plan(ctx, network, prev, end, 16)
+	if err != nil {
+		return err
+	}
+	if len(work) != 1 {
+		return fmt.Errorf("unexpected work %v", work)
+	}
+	return s.complete(ctx, network, work[0], chains.BlockLink{}, events)
+}
 func TestRegistrationBoundaries(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "cursors.db")
@@ -41,7 +52,7 @@ func TestRegistrationBoundaries(t *testing.T) {
 	}
 	ready := make(chan *feed.Delivery, 1)
 	go func() { d, _ := c.PendingWait(ctx, "", 3*time.Second); ready <- d }()
-	if err = s.commit(ctx, w.Network, 99, 100, []chains.Activity{{Height: 100, TxID: "payment", Addresses: []string{wallet}}}); err != nil {
+	if err = completeNext(s, ctx, w.Network, 99, 100, []chains.Activity{{Height: 100, TxID: "payment", Addresses: []string{wallet}}}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -67,7 +78,7 @@ func TestRegistrationBoundaries(t *testing.T) {
 	if !errors.Is(err, feed.ErrCursorNotReady) {
 		t.Fatal(err)
 	}
-	if err = s.commit(ctx, w.Network, 100, 101, nil); err != nil {
+	if err = completeNext(s, ctx, w.Network, 100, 101, nil); err != nil {
 		t.Fatal(err)
 	}
 	rows, err = s.SubscribeFrom(ctx, "merchant", []feed.Watch{w})
@@ -113,13 +124,13 @@ func TestConcurrentRegisterAndCommit(t *testing.T) {
 		}()
 	}
 	for h := int64(1); h <= 50; h++ {
-		if err = s.commit(ctx, "optimism", h-1, h, []chains.Activity{{Height: h, TxID: fmt.Sprint(h), Addresses: []string{wallet}}}); err != nil {
+		if err = completeNext(s, ctx, "optimism", h-1, h, []chains.Activity{{Height: h, TxID: fmt.Sprint(h), Addresses: []string{wallet}}}); err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(time.Millisecond)
 	}
 	registered.Wait()
-	if err = s.commit(ctx, "optimism", 50, 51, []chains.Activity{{Height: 51, TxID: "51", Addresses: []string{wallet}}}); err != nil {
+	if err = completeNext(s, ctx, "optimism", 50, 51, []chains.Activity{{Height: 51, TxID: "51", Addresses: []string{wallet}}}); err != nil {
 		t.Fatal(err)
 	}
 	wg.Wait()
@@ -141,13 +152,14 @@ func BenchmarkCommitIndexedWatches(b *testing.B) {
 	if err = s.SeedCursor(ctx, "ethereum", 0); err != nil {
 		b.Fatal(err)
 	}
-	e := []chains.Activity{{TxID: "transfer", Addresses: []string{watches[9999].Address}}}
-	if err = s.commit(ctx, "ethereum", 0, 1, e); err != nil {
+	e := []chains.Activity{{Height: 1, TxID: "transfer", Addresses: []string{watches[9999].Address}}}
+	if err = completeNext(s, ctx, "ethereum", 0, 1, e); err != nil {
 		b.Fatal(err)
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err = s.commit(ctx, "ethereum", int64(i+1), int64(i+2), e); err != nil {
+		e[0].Height = int64(i + 2)
+		if err = completeNext(s, ctx, "ethereum", int64(i+1), int64(i+2), e); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -180,7 +192,7 @@ func TestUnacknowledgedNetworkDoesNotBlockOthers(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, n := range nets {
-		if err = s.commit(ctx, n, 1, 2, []chains.Activity{{Height: 2, TxID: n, Addresses: []string{wallet}}}); err != nil {
+		if err = completeNext(s, ctx, n, 1, 2, []chains.Activity{{Height: 2, TxID: n, Addresses: []string{wallet}}}); err != nil {
 			t.Fatal(err)
 		}
 	}
