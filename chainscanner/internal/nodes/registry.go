@@ -186,7 +186,7 @@ func (r *NodeRegistry) List(ctx context.Context, network string) ([]Node, error)
 	return out, rows.Err()
 }
 func (r *NodeRegistry) visible(n Node) bool {
-	if blocked := r.blacklist.hosts(); len(blocked) > 0 {
+	if blocked := r.blacklist.hosts(); len(blocked.rules) > 0 {
 		route := r.network(n, chains.Network{})
 		if blocked.matches(route.URL) || blocked.matches(route.HistoryURL) {
 			return false
@@ -235,7 +235,7 @@ func (r *NodeRegistry) add(ctx context.Context, options NodeOptions, fallback bo
 		return Node{}, errInvalidNode
 	}
 	if e.Network == "ton" && e.Protocol == "toncenter-v3" {
-		if fallback || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") || options.HistoryURL != "" || options.HistoryAPIKey != "" {
+		if u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") || options.HistoryURL != "" || options.HistoryAPIKey != "" {
 			return Node{}, errInvalidNode
 		}
 	} else if e.Network == "bitcoin" {

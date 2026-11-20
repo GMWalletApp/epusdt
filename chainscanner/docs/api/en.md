@@ -51,13 +51,14 @@ Send a consumer bearer token and the configured network ID. No address subscript
 
 The ordinary route picks one idle endpoint at random, preferring healthy nodes. The strict route queries two distinct endpoints concurrently and returns their complete transaction result if both replies match. If the pair fails to agree, it retries once with two unused endpoints. Missing transactions and RPC errors do not count as votes. Failure responses contain no transaction. JSON object order and whitespace are ignored; field values, array order and large integers are preserved.
 
-Strict mode prefers one eligible fallback, then a distinct provider. Ordinary lookups skip fallback nodes. Both routes skip nodes in cooldown. Cold providers are checked before receiving the hash. Aliases on the same host and port count once per network. Different hostnames can belong to one operator. Each round allows up to four seconds to select providers and nine seconds to retrieve transactions. HTTP 400 means invalid input, 401 invalid credentials, 404 an ordinary lookup found no transaction, 502 lookup or agreement failed, and 503 too few eligible nodes or unavailable inventory.
+Register two independent fallbacks on the same network by calling the endpoint once per provider. Failed ranges rotate across eligible fallbacks. Strict lookups prefer two fallback votes. With only one eligible fallback, an ordinary node can supply the other vote. Ordinary lookups skip fallback nodes. Both routes skip nodes in cooldown. Cold providers are checked before receiving the hash. Aliases on the same host and port count once per network. Different hostnames can belong to one operator. Each round allows up to four seconds to select providers and nine seconds to retrieve transactions. HTTP 400 means invalid input, 401 invalid credentials, 404 an ordinary lookup found no transaction, 502 lookup or agreement failed, and 503 too few eligible nodes or unavailable inventory.
 
 TON uses a v3 index as a location hint and queries two direct ADNL LiteServers with distinct hosts and public keys. Each verifies the transaction inclusion proof. The verified result includes the transaction BOC, transaction hash, account, LT, timestamp, and shard and masterchain block roots. When a proof pair cannot be formed, two distinct v3 indexes may instead agree on a complete index record. A global-config URL cannot cast a LiteServer vote. Durable clients may request one round with `?rounds=1`, then pass the opaque `X-ChainScanner-Pair` response header as `X-ChainScanner-Exclude` on their final attempt. The default endpoint performs both rounds internally.
 
 ```sh
 consumer "$BASE/v1/transactions/base/$TX_HASH"
 consumer "$BASE/v1/transactions/base/$TX_HASH/strict"
+consumer "$BASE/v1/transactions/base/$TX_HASH/strict?fallback_only=true"
 ```
 
 <a id="trust"></a>
@@ -71,6 +72,8 @@ Register a fallback from an operator you trust, independent of your general node
 If the default strict request exhausts both rounds, the response includes `X-ChainScanner-Manual-Review: required`. Stop automatic retries for that payment and retain its network and hash for review. `X-ChainScanner-Strict-Rounds` gives the number of rounds attempted.
 
 [Node blacklist](#blacklist)
+
+To restrict every upstream to your fallbacks, use `?fallback_only=true` on the strict route. A retry needs two unused voters. If only the original pair exists, the response is 503. On TON, proof reads also need an eligible v3 locator. In fallback-only mode register it as a fallback too, or use two independent v3 fallback indexes. A v3 index cannot repair blocks. On TON, two fallback v3 indexes may supply the pair when fewer than two fallback LiteServers are configured.
 
 <a id="subscriptions"></a>
 
@@ -376,10 +379,11 @@ admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http"
 
 ### `POST /v1/admin/nodes/fallback`
 
-Register an operator-funded history endpoint for one network with the same fields and administrator token as normal node creation. The response is **201** with `origin: fallback`. After a normal range read fails, a free fallback can take that range immediately. It also handles previously failed ranges recovered from SQLite. The scheduler checks the fallback’s own confirmation height for the repair. Fresh blocks, subscription boundaries and automatic head polling use ordinary nodes. Explicit administrator tests can contact the paid endpoint. Failed repairs remain in the retry queue and the same three-failure cooldown applies. List, test and delete by the returned node ID. Strict mode prefers one eligible fallback, then a distinct provider. Ordinary lookups skip fallback nodes. Both routes skip nodes in cooldown.
+Register an operator-funded history endpoint for one network with the same fields and administrator token as normal node creation. The response is **201** with `origin: fallback`. After a normal range read fails, a free fallback can take that range immediately. It also handles previously failed ranges recovered from SQLite. The scheduler checks the fallback’s own confirmation height for the repair. Fresh blocks, subscription boundaries and automatic head polling use ordinary nodes. Explicit administrator tests can contact the paid endpoint. Failed repairs remain in the retry queue and the same three-failure cooldown applies. List, test and delete by the returned node ID. Register two independent fallbacks on the same network by calling the endpoint once per provider. Failed ranges rotate across eligible fallbacks. Strict lookups prefer two fallback votes. With only one eligible fallback, an ordinary node can supply the other vote. Ordinary lookups skip fallback nodes. Both routes skip nodes in cooldown.
 
 ```sh
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
+admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://second-rpc.example.net","api_key":"SECOND_PROVIDER_KEY"}'
 ```
 
 <a id="test-one"></a>
@@ -419,10 +423,14 @@ admin -X DELETE "$BASE/v1/admin/nodes/$NODE_ID"
 
 Use an administrator token. A domain rule matches the domain and all its subdomains across ports and networks. An IP literal matches that address. Rules inspect both the registered endpoint URL and its history URL before selection or discovery probes. They do not resolve DNS aliases or identify hidden upstreams behind proxies or TON global configurations.
 
+Use `keyword:acme` for a case-insensitive substring of the hostname, `exact:rpc.example.org` for a single host, or an unprefixed domain to include subdomains. The same spelling works in the configuration and both admin routes. Paths, credentials and query strings are excluded from keyword matching.
+
 ```sh
-admin -X PUT "$BASE/v1/admin/blacklist/rpc.example.org"
+admin -X PUT "$BASE/v1/admin/blacklist/keyword:acme"
+admin -X PUT "$BASE/v1/admin/blacklist/exact:rpc.example.org"
 admin "$BASE/v1/admin/blacklist"
-admin -X DELETE "$BASE/v1/admin/blacklist/rpc.example.org"
+admin -X DELETE "$BASE/v1/admin/blacklist/keyword:acme"
+admin -X DELETE "$BASE/v1/admin/blacklist/exact:rpc.example.org"
 ```
 
 List returns a sorted JSON array of `{host, source}`. PUT and DELETE are idempotent and return 204. Rules take effect for new selections, and active scanners refresh their pools. File-backed SQLite preserves API rules across restarts. Set `"blacklist": ["rpc.example.org"]` at the top level of the server configuration to pin a rule. Deleting a configuration rule through the API returns 409. Edit the file and restart to remove it.

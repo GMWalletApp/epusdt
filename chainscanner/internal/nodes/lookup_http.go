@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -38,7 +39,13 @@ func (r *NodeRegistry) lookupHandler(configured map[string]chains.Network, stric
 		if strict {
 			count, rounds = strictGroupSize, 2
 		}
-		single := strict && req.URL.Query().Get("rounds") == "1"
+		params := req.URL.Query()
+		fallbackOnly := params.Get("fallback_only") == "true"
+		if params.Has("fallback_only") && (!strict || !fallbackOnly || len(params["fallback_only"]) != 1) {
+			http.Error(w, "fallback_only=true requires strict lookup", http.StatusBadRequest)
+			return
+		}
+		single := strict && params.Get("rounds") == "1"
 		if strict && req.URL.Query().Has("rounds") && !single {
 			http.Error(w, "rounds must be 1 when supplied", 400)
 			return
@@ -69,6 +76,9 @@ func (r *NodeRegistry) lookupHandler(configured map[string]chains.Network, stric
 			if err != nil {
 				lastStatus = http.StatusServiceUnavailable
 				continue
+			}
+			if fallbackOnly {
+				candidates = slices.DeleteFunc(candidates, func(c lookupCandidate) bool { return !c.fallback })
 			}
 			if len(omitted) > 0 {
 				for _, c := range candidates {
@@ -154,7 +164,7 @@ func voterToken(key string) string { h := sha256.Sum256([]byte(key)); return hex
 func (r *NodeRegistry) groupAllowed(group []lookupLease) bool {
 	blocked := r.blacklist.hosts()
 	for _, node := range group {
-		if blocked.matches(node.cfg.URL) || blocked.matches(node.cfg.HistoryURL) {
+		if blocked.matches(node.primaryURL) || blocked.matches(node.cfg.URL) {
 			return false
 		}
 	}

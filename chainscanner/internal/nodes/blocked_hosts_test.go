@@ -17,7 +17,7 @@ import (
 )
 
 func TestBlockedHostBoundaries(t *testing.T) {
-	rules, err := parseBlockedHosts([]string{" Provider.Example. ", "2001:db8::1", "192.0.2.1"})
+	rules, err := parseBlockedHosts([]string{" Provider.Example. ", "2001:db8::1", "192.0.2.1", "keyword:Acme", "exact:only.example"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,13 +28,17 @@ func TestBlockedHostBoundaries(t *testing.T) {
 		"adnl://192.0.2.1:22/key":                         true,
 		"https://notprovider.example/rpc":                 false,
 		"https://provider.example.other/provider.example": false,
+		"https://rpc-ACME-2.example":                      true,
+		"https://clear.example/rpc-acme?key=acme":         false,
+		"wss://only.example.:987":                         true,
+		"https://sub.only.example":                        false,
 		"ipc:///tmp/provider.example":                     false,
 	} {
 		if rules.matches(url) != want {
 			t.Error(url, want)
 		}
 	}
-	for _, invalid := range []string{"", "*.example", "https://example.com", "site:443", "a..b"} {
+	for _, invalid := range []string{"", "*.example", "https://example.com", "site:443", "a..b", "keyword:", "keyword:a*", "exact:"} {
 		if _, err := parseBlockedHosts([]string{invalid}); err == nil {
 			t.Error(invalid)
 		}
@@ -140,6 +144,8 @@ func TestBlacklistAdminLifecycle(t *testing.T) {
 	}
 	request("PUT", "/rpc.example", user, 401)
 	request("PUT", "/rpc.example:443", admin, 400)
+	request("PUT", "/keyword:Rpc", admin, 204)
+	request("PUT", "/exact:fixed.other", admin, 204)
 	request("PUT", "/Rpc.Example.", admin, 204)
 	request("PUT", "/rpc.example", admin, 204)
 	request("DELETE", "/fixed.example", admin, 409)
@@ -154,7 +160,7 @@ func TestBlacklistAdminLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, h = open()
-	want := `[{"host":"fixed.example","source":"config"},{"host":"rpc.example","source":"admin"}]`
+	want := `[{"host":"exact:fixed.other","source":"admin"},{"host":"fixed.example","source":"config"},{"host":"keyword:rpc","source":"admin"},{"host":"rpc.example","source":"admin"}]`
 	if got := request("GET", "", admin, 200); got != want {
 		t.Fatal(got)
 	}
@@ -163,6 +169,10 @@ func TestBlacklistAdminLifecycle(t *testing.T) {
 	}
 	request("DELETE", "/rpc.example", admin, 204)
 	request("DELETE", "/rpc.example", admin, 204)
+	if _, err := r.get(ctx, n.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatal("keyword rule lost", err)
+	}
+	request("DELETE", "/keyword:rpc", admin, 204)
 	if _, err := r.get(ctx, n.ID); err != nil {
 		t.Fatal(err)
 	}

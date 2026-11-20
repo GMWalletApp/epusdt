@@ -51,13 +51,14 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 普通查询随机选择一个空闲节点，优先使用已有健康记录的节点。严格查询每轮只向两个不同节点并发请求。两份完整交易结果一致就返回，否则换两个未使用的节点重试一次。报错和查无交易均不计票。比较时忽略 JSON 对象键顺序与空白，保留字段值、数组顺序和大整数精度。
 
-严格查询优先使用一个可用的兜底节点，另一票由不同节点提供。普通查询跳过兜底节点，两种查询都跳过冷却节点。 缺少近期健康记录的节点先查高度，再接收交易哈希。同链、同主机和端口的别名或共享历史接口只算一个节点，不同域名仍可能属于同一运营商。每轮选节点最多 4 秒，并发查交易最多 9 秒。400 表示参数无效，401 表示鉴权失败，404 表示普通查询未找到交易，502 表示查询失败或两轮均未达成一致，503 表示可用节点不足或节点列表不可用。失败响应不含交易数据。
+同一条链可配置两个独立运营商的兜底节点，每个节点单独登记一次。失败区块在符合高度要求的兜底节点间轮询补扫。严格查询优先让两个可用的兜底节点同时核验；仅有一个可用时，默认可由普通节点补足另一票。普通查询跳过兜底节点，两种查询都跳过冷却节点。 缺少近期健康记录的节点先查高度，再接收交易哈希。同链、同主机和端口的别名或共享历史接口只算一个节点，不同域名仍可能属于同一运营商。每轮选节点最多 4 秒，并发查交易最多 9 秒。400 表示参数无效，401 表示鉴权失败，404 表示普通查询未找到交易，502 表示查询失败或两轮均未达成一致，503 表示可用节点不足或节点列表不可用。失败响应不含交易数据。
 
 TON 先用 v3 索引定位交易，再由两个主机和公钥均不同的直连 ADNL LiteServer 分别验证交易包含证明。返回的核验结果包含交易 BOC、交易哈希、账户、逻辑时间、时间戳，以及分片和主链区块根哈希。无法组成证明节点对时，也可由两个独立的 v3 索引核对完整记录。全局配置 URL 不能充当直连证明节点。 需要持久化尝试次数的客户端可使用 `?rounds=1`，第二轮通过 `X-ChainScanner-Exclude` 回传首轮响应的 `X-ChainScanner-Pair`，排除已用节点。默认接口自行完成两轮。
 
 ```sh
 consumer "$BASE/v1/transactions/base/$TX_HASH"
 consumer "$BASE/v1/transactions/base/$TX_HASH/strict"
+consumer "$BASE/v1/transactions/base/$TX_HASH/strict?fallback_only=true"
 ```
 
 <a id="trust"></a>
@@ -71,6 +72,8 @@ consumer "$BASE/v1/transactions/base/$TX_HASH/strict"
 默认严格接口两轮耗尽时，响应带有 `X-ChainScanner-Manual-Review: required`。支付系统应停止对本笔交易自动重试，保存网络与哈希，交由人工复核。`X-ChainScanner-Strict-Rounds` 表示本次已尝试的轮数。
 
 [节点黑名单](#blacklist)
+
+严格接口加上 `?fallback_only=true` 可限定所有上游请求只用兜底节点。重试须换两个未用过的节点；若只有首轮那一对，返回 503。TON 的证明查询还需要 v3 索引定位交易，仅兜底模式下也要把定位索引登记为兜底，或配置两个独立的 v3 兜底索引直接核对。v3 索引只用于查询，不能补扫区块。 在 TON 上，如果配置的兜底 LiteServer 不足两个，可优先由两个独立的兜底 v3 索引核对完整交易记录。
 
 <a id="subscriptions"></a>
 
@@ -376,10 +379,11 @@ admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http"
 
 ### `POST /v1/admin/nodes/fallback`
 
-使用管理员令牌为指定链登记付费历史节点，参数与普通节点相同。成功返回 **201**，节点的 `origin` 为 `fallback`。普通节点读块失败后，空闲的兜底节点可立即接手该区间；已记录到 SQLite 的缺块在重启后也可用它补扫。补扫前会核对该节点自身的高度与确认数。新块首扫、订阅边界查询和日常链头轮询均使用普通节点。管理员主动测试（含批量测试）会请求付费节点。补扫再次失败会保留缺块，节点同样遵循连续三次失败后的阶梯冷却。可用返回的节点 ID 查询列表、测试或删除。 严格查询优先使用一个可用的兜底节点，另一票由不同节点提供。普通查询跳过兜底节点，两种查询都跳过冷却节点。
+使用管理员令牌为指定链登记付费历史节点，参数与普通节点相同。成功返回 **201**，节点的 `origin` 为 `fallback`。普通节点读块失败后，空闲的兜底节点可立即接手该区间；已记录到 SQLite 的缺块在重启后也可用它补扫。补扫前会核对该节点自身的高度与确认数。新块首扫、订阅边界查询和日常链头轮询均使用普通节点。管理员主动测试（含批量测试）会请求付费节点。补扫再次失败会保留缺块，节点同样遵循连续三次失败后的阶梯冷却。可用返回的节点 ID 查询列表、测试或删除。 同一条链可配置两个独立运营商的兜底节点，每个节点单独登记一次。失败区块在符合高度要求的兜底节点间轮询补扫。严格查询优先让两个可用的兜底节点同时核验；仅有一个可用时，默认可由普通节点补足另一票。普通查询跳过兜底节点，两种查询都跳过冷却节点。
 
 ```sh
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
+admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://second-rpc.example.net","api_key":"SECOND_PROVIDER_KEY"}'
 ```
 
 <a id="test-one"></a>
@@ -419,10 +423,14 @@ admin -X DELETE "$BASE/v1/admin/nodes/$NODE_ID"
 
 使用管理员令牌。域名规则覆盖该域名及其全部子域名，跨端口、跨网络生效；IP 规则精确匹配该地址。节点发现探测和节点选择都会检查登记的主节点与配套历史节点 URL。规则按 URL 主机匹配，无法识别 DNS 别名、反向代理或 TON 全局配置背后的实际运营商。
 
+`keyword:acme` 按主机名做不区分大小写的子串匹配；`exact:rpc.example.org` 只封禁完整主机名；直接填写域名则同时封禁子域名。配置文件和添加、移除接口使用同一种写法。关键词不匹配 URL 路径、查询参数或凭据。
+
 ```sh
-admin -X PUT "$BASE/v1/admin/blacklist/rpc.example.org"
+admin -X PUT "$BASE/v1/admin/blacklist/keyword:acme"
+admin -X PUT "$BASE/v1/admin/blacklist/exact:rpc.example.org"
 admin "$BASE/v1/admin/blacklist"
-admin -X DELETE "$BASE/v1/admin/blacklist/rpc.example.org"
+admin -X DELETE "$BASE/v1/admin/blacklist/keyword:acme"
+admin -X DELETE "$BASE/v1/admin/blacklist/exact:rpc.example.org"
 ```
 
 列表按主机名排序，格式为 `[{"host":"rpc.example.org","source":"admin"}]`。添加和删除可重复调用，均返回 204。规则用于新的节点选择，运行中的扫描器会刷新节点池。文件型 SQLite 会保留 API 规则。也可在服务配置顶层写入 `"blacklist": ["rpc.example.org"]` 固定规则；此类规则来源为 `config`，API 删除返回 409，需修改配置文件并重启。

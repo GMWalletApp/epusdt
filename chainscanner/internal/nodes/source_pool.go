@@ -28,6 +28,7 @@ type SourcePool struct {
 	network        string
 	nodes          []*endpoint
 	next, headNext int
+	repairNext     int
 	anchorHeight   int64
 	anchorHash     string
 	open           func(context.Context, chains.Network) (chains.Source, error)

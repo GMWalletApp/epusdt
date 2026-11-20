@@ -30,7 +30,7 @@
 
 ## Payment verification
 
-Use the ChainScanner revision pinned in `chainscanner.rev` for standalone deployments so single-round queries and cross-round exclusions are supported. For standalone ChainScanner, configure one fallback per payment network with a different operator from your general nodes. It can repair failed block reads and is preferred for one of the two strict lookup votes. After two unsuccessful rounds, EPUSDT stops automatic verification and exposes status `6` and the candidate hash for manual review. Merchant callbacks require successful verification. [Configure a fallback node](chainscanner/docs/api/en.md#fallback)
+Use the ChainScanner revision pinned in `chainscanner.rev` for standalone deployments so single-round queries and cross-round exclusions are supported. Register two independent fallback providers per payment network. They rotate failed-range repairs and can supply both votes for strict lookups. Ordinary nodes can fill a vacancy. After two unsuccessful rounds, EPUSDT stops automatic verification and exposes status `6` and the candidate hash for manual review. Merchant callbacks require successful verification. [Configure a fallback node](chainscanner/docs/api/en.md#fallback)
 
 ## What is Epusdt?
 

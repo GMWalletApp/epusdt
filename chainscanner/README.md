@@ -31,7 +31,7 @@ The response includes `from_height`, the first block covered. [Receive and ackno
 
 ## Recommended fallback node
 
-For each network you accept payments on, register a reliable fallback from a different operator than your other nodes. It can repair a failed block read and gets priority for one of the two strict transaction lookup slots. If two rounds fail, send the payment to manual review. [API](docs/api/en.md#fallback)
+Register two independent fallbacks on the same network by calling the endpoint once per provider. Failed ranges rotate across eligible fallbacks. Strict lookups prefer two fallback votes. With only one eligible fallback, an ordinary node can supply the other vote. [API](docs/api/en.md#fallback)
 
 ```sh
 BASE=http://127.0.0.1:9081
@@ -41,6 +41,22 @@ curl -fsS -X POST "$BASE/v1/admin/nodes/fallback" \
   -H 'Content-Type: application/json' \
   -d '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
 ```
+
+<a id="fallback-providers"></a>
+
+### Fallback providers
+
+Provider shortlist, checked 2026-11-21. Choose independently. ChainScanner does not guarantee availability, data accuracy or pricing. Credits, CU and RU depend on the RPC method and are not interchangeable. Check network, history and protocol support for both endpoints.
+
+| Website | Founded or first public release | Free allowance |
+| --- | --- | --- |
+| [Ankr](https://www.ankr.com/) | [2017 · distributed node infrastructure](https://www.ankr.com/ankr-whitepaper-2.0.pdf) | [200M API credits/month with a Freemium account](https://www.ankr.com/docs/rpc-service/charging-policy/) |
+| [Infura](https://www.infura.io/) | [2016 · Consensys Ethereum and IPFS infrastructure](https://consensys.io/blog/press-release-infura-a-consensys-company-launches-infura-for-improved-ethereum-infrastructure-support) | [3M credits/day on Core, per the pricing documentation](https://docs.infura.io/get-started/pricing/) |
+| [PublicNode](https://www.publicnode.com/) | [2018 · operator Allnodes began offering node infrastructure](https://www.allnodes.com/about/) | [Shared public RPC, no fixed per-user monthly allowance published](https://www.publicnode.com/) |
+| [QuickNode](https://www.quicknode.com/) | [2017 · managed multichain RPC and data streams](https://www.quicknode.com/about) | [10M API credits for a 30-day trial](https://support.quicknode.com/articles/5387074982-1-month-free-trial) |
+| [Alchemy](https://www.alchemy.com/) | [2017 · blockchain developer APIs and node access](https://www.alchemy.com/company) | [30M CU/month](https://www.alchemy.com/docs/reference/pricing-plans) |
+| [BlockPI](https://blockpi.io/) | [2022-10-25 · distributed RPC network alpha launch](https://docs.blockpi.io/welcome-to-blockpi/about-blockpi) | [50M RU/month for registered users](https://docs.blockpi.io/pricing/pricing-and-rate-limit) |
+| [dRPC](https://drpc.org/) | [2023-03 · decentralized RPC gateway opened to the public](https://blog.drpc.org/how-drpcs-free-tier-works/) | [50M CU per 30 days](https://drpc.org/docs/howitworks/ratelimiting) |
 
 ## A note from the maintainers
 

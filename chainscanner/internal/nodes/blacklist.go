@@ -21,7 +21,7 @@ type hostBlacklist struct {
 	current atomic.Pointer[blockedHosts]
 }
 
-func (b *hostBlacklist) hosts() blockedHosts { return *b.current.Load() }
+func (b *hostBlacklist) hosts() *blockedHosts { return b.current.Load() }
 
 func (b *hostBlacklist) load(ctx context.Context, tx *sql.Tx, config blockedHosts) error {
 	if _, err := tx.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS node_blacklist (host TEXT PRIMARY KEY)"); err != nil {
@@ -32,34 +32,35 @@ func (b *hostBlacklist) load(ctx context.Context, tx *sql.Tx, config blockedHost
 		return err
 	}
 	defer rows.Close()
-	hosts := maps.Clone(config)
+	rules := maps.Clone(config.rules)
 	for rows.Next() {
 		var host string
 		if err := rows.Scan(&host); err != nil {
 			return err
 		}
-		hosts[host] = true
+		rules[host] = true
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
 	b.config = config
-	b.current.Store(&hosts)
+	snapshot := compileBlacklist(rules)
+	b.current.Store(&snapshot)
 	return nil
 }
 
 func (r *NodeRegistry) setBlocked(ctx context.Context, raw string, block bool) error {
-	host, err := normalizeHost(raw)
+	host, err := normalizeRule(raw)
 	if err != nil {
 		return err
 	}
 	b := &r.blacklist
 	b.writers.Lock()
 	defer b.writers.Unlock()
-	if !block && b.config[host] {
+	if !block && b.config.rules[host] {
 		return errConfiguredRule
 	}
-	current := b.hosts()
+	current := b.hosts().rules
 	if current[host] == block {
 		return nil
 	}
@@ -74,7 +75,8 @@ func (r *NodeRegistry) setBlocked(ctx context.Context, raw string, block bool) e
 	if err != nil {
 		return err
 	}
-	b.current.Store(&next)
+	snapshot := compileBlacklist(next)
+	b.current.Store(&snapshot)
 	r.revision.Add(1)
 	return nil
 }
@@ -85,11 +87,11 @@ func (r *NodeRegistry) registerBlacklistRoutes(mux *http.ServeMux) {
 		Source string `json:"source"`
 	}
 	mux.HandleFunc("GET /v1/admin/blacklist", func(w http.ResponseWriter, req *http.Request) {
-		hosts := slices.Sorted(maps.Keys(r.blacklist.hosts()))
+		hosts := slices.Sorted(maps.Keys(r.blacklist.hosts().rules))
 		entries := make([]entry, 0, len(hosts))
 		for _, host := range hosts {
 			source := "admin"
-			if r.blacklist.config[host] {
+			if r.blacklist.config.rules[host] {
 				source = "config"
 			}
 			entries = append(entries, entry{host, source})

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"math/rand/v2"
 	"sync"
 	"time"
@@ -18,13 +19,14 @@ var errCapacity = errors.New("insufficient available transaction nodes")
 var errAgreement = errors.New("transaction lookup failed")
 
 type lookupCandidate struct {
-	healthy  bool
-	fallback bool
-	peerID   string
-	cfg      chains.Network
-	public   bool
-	version  nodeVersion
-	key      string
+	healthy    bool
+	fallback   bool
+	peerID     string
+	primaryURL string
+	cfg        chains.Network
+	public     bool
+	version    nodeVersion
+	key        string
 }
 type lookupPenalty struct {
 	streak                   failureStreak
@@ -105,7 +107,7 @@ func (r *NodeRegistry) lookupCandidates(ctx context.Context, network string, str
 		candidates = append(candidates, lookupCandidate{
 			healthy: recent && n.Status == "ok", fallback: n.Origin == "fallback",
 			cfg: cfg, version: n.version(), public: isDiscoveryOrigin(n.Origin),
-			key: key, peerID: peerID,
+			key: key, peerID: peerID, primaryURL: n.URL,
 		})
 	}
 	rand.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
@@ -169,8 +171,8 @@ func (l *transactionLookup) group(ctx context.Context, candidates []lookupCandid
 	idleCtx, stop := context.WithTimeout(ctx, idleWindow)
 	var group []lookupLease
 	if count == strictGroupSize && len(paidFresh)+len(paidCold) > 0 {
-		// Reserve at most one preferred slot before admitting general providers.
-		group = l.fill(idleCtx, paidFresh, paidCold, used, 1, true)
+		// Independent fallback providers may fill both voting slots.
+		group = l.fill(idleCtx, paidFresh, paidCold, used, count, true)
 	}
 	group = append(group, l.fill(idleCtx, fresh, cold, used, count-len(group), false)...)
 	stop()
@@ -191,6 +193,9 @@ func (l *transactionLookup) group(ctx context.Context, candidates []lookupCandid
 }
 
 func (l *transactionLookup) fill(ctx context.Context, fresh, cold []lookupCandidate, used map[string]bool, count int, allowBusy bool) []lookupLease {
+	if count <= 0 {
+		return nil
+	}
 	group := l.take(fresh, used, count, allowBusy)
 	for len(group) < count && ctx.Err() == nil {
 		batch := l.take(cold, used, count-len(group), allowBusy)
@@ -255,15 +260,30 @@ func (l *transactionLookup) round(ctx context.Context, group []lookupLease, hash
 	return results[0].value, nil
 }
 
-// Prefer a proven LiteServer pair. Two independent v3 indexes can still
-// serve strict lookups when the deployment has no available proof pair.
+// Prefer a pair of operator-selected voters. Otherwise use LiteServer proofs
+// when available, with independent v3 indexes as an alternative.
 func (r *NodeRegistry) tonGroup(ctx context.Context, candidates []lookupCandidate, used map[string]bool, hash string) ([]lookupLease, transactionReader) {
-	var peers, indexes []lookupCandidate
+	var peers, indexes, fallbackIndexes []lookupCandidate
+	paidPeers := 0
 	for _, c := range candidates {
 		if c.peerID != "" {
 			peers = append(peers, c)
+			if c.fallback {
+				paidPeers++
+			}
 		} else {
 			indexes = append(indexes, c)
+			if c.fallback {
+				fallbackIndexes = append(fallbackIndexes, c)
+			}
+		}
+	}
+	if paidPeers < strictGroupSize && len(fallbackIndexes) >= strictGroupSize {
+		// An incomplete reservation must not exclude a healthy index from the mixed pair below.
+		selected := maps.Clone(used)
+		if group := r.lookup.group(ctx, fallbackIndexes, selected, strictGroupSize); len(group) == strictGroupSize {
+			maps.Copy(used, selected)
+			return group, r.lookup.read
 		}
 	}
 	if len(peers) >= 2 {

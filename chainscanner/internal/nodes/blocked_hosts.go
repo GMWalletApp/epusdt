@@ -8,11 +8,27 @@ import (
 	"strings"
 )
 
-type blockedHosts map[string]bool
+// rules uses the same spelling as the API and SQLite. Build the keyword slice
+// once on edits so domain-only installations keep their label lookup cost.
+type blockedHosts struct {
+	rules    map[string]bool
+	keywords []string
+}
+
+func compileBlacklist(rules map[string]bool) blockedHosts {
+	compiled := blockedHosts{rules: rules}
+	for rule := range rules {
+		if keyword, ok := strings.CutPrefix(rule, "keyword:"); ok {
+			compiled.keywords = append(compiled.keywords, keyword)
+		}
+	}
+	return compiled
+}
 
 var hostnameLabel = regexp.MustCompile("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
-var errBlacklistHost = errors.New("blacklist expects a domain or IP literal without scheme, wildcard, port or path")
+var keywordPattern = regexp.MustCompile("^[a-z0-9._-]{1,253}$")
+var errBlacklistHost = errors.New("expected a domain, IP, exact:host or keyword:text")
 
 func normalizeHost(entry string) (string, error) {
 	host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(entry)), ".")
@@ -27,22 +43,39 @@ func normalizeHost(entry string) (string, error) {
 	return host, nil
 }
 
-func parseBlockedHosts(entries []string) (blockedHosts, error) {
-	hosts := make(blockedHosts, len(entries))
-	for _, entry := range entries {
-		host, err := normalizeHost(entry)
-		if err != nil {
-			return nil, err
+func normalizeRule(raw string) (string, error) {
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	if word, ok := strings.CutPrefix(raw, "keyword:"); ok {
+		if !keywordPattern.MatchString(word) {
+			return "", errBlacklistHost
 		}
-		hosts[host] = true
+		return "keyword:" + word, nil
 	}
-	return hosts, nil
+	if value, ok := strings.CutPrefix(raw, "exact:"); ok {
+		host, err := normalizeHost(value)
+		if err != nil {
+			return "", err
+		}
+		return "exact:" + host, nil
+	}
+	return normalizeHost(raw)
 }
 
-// Match URL hosts at label boundaries. Ports, paths and credentials do not
-// change the host. IP literals match only their normalized address.
+func parseBlockedHosts(entries []string) (blockedHosts, error) {
+	rules := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		host, err := normalizeRule(entry)
+		if err != nil {
+			return blockedHosts{}, err
+		}
+		rules[host] = true
+	}
+	return compileBlacklist(rules), nil
+}
+
+// Match only the URL hostname. Unprefixed domains include their subdomains.
 func (hosts blockedHosts) matches(raw string) bool {
-	if len(hosts) == 0 || raw == "" {
+	if len(hosts.rules) == 0 || raw == "" {
 		return false
 	}
 	u, err := url.Parse(raw)
@@ -50,11 +83,23 @@ func (hosts blockedHosts) matches(raw string) bool {
 		return false
 	}
 	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
-	if ip, err := netip.ParseAddr(host); err == nil {
-		return hosts[ip.Unmap().String()]
+	ip, ipErr := netip.ParseAddr(host)
+	if ipErr == nil {
+		host = ip.Unmap().String()
+	}
+	if hosts.rules["exact:"+host] {
+		return true
+	}
+	for _, word := range hosts.keywords {
+		if strings.Contains(host, word) {
+			return true
+		}
+	}
+	if ipErr == nil {
+		return hosts.rules[host]
 	}
 	for host != "" {
-		if hosts[host] {
+		if hosts.rules[host] {
 			return true
 		}
 		_, host, _ = strings.Cut(host, ".")

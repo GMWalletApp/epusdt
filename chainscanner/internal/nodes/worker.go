@@ -146,8 +146,12 @@ func (p *SourcePool) pickRole(last int64, busy map[string]bool, excluded func(*e
 	selected := -1
 	waiting := false
 	now := p.now()
+	cursor := &p.next
+	if fallback {
+		cursor = &p.repairNext
+	}
 	for offset := range p.nodes {
-		i := (p.next + offset) % len(p.nodes)
+		i := (*cursor + offset) % len(p.nodes)
 		n := p.nodes[i]
 		if n.fallback != fallback || excluded(n) || now.Before(n.retry) {
 			continue
@@ -167,6 +171,6 @@ func (p *SourcePool) pickRole(last int64, busy map[string]bool, excluded func(*e
 	if selected < 0 {
 		return nil, waiting
 	}
-	p.next = (selected + 1) % len(p.nodes)
+	*cursor = (selected + 1) % len(p.nodes)
 	return p.nodes[selected], waiting
 }

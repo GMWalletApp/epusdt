@@ -51,13 +51,14 @@ Usa el token del consumidor y una red configurada. No se necesita una suscripci�
 
 La ruta normal elige un nodo libre al azar y da prioridad a los sanos. La ruta estricta consulta dos nodos distintos en paralelo. Si ambos devuelven el mismo resultado completo, lo devuelve. En caso contrario, prueba una vez más con dos nodos nuevos. Los errores y las transacciones ausentes no cuentan como votos. El orden de las claves JSON y los espacios no afectan la comparación.
 
-El modo estricto da prioridad a un nodo de respaldo y requiere otro nodo distinto. La consulta normal omite los de respaldo. Ambos modos omiten nodos en pausa. Cada ronda permite hasta 4 segundos para seleccionar nodos y 9 para consultar la transacción. 400 indica datos inválidos, 401 acceso denegado, 404 ausencia en la consulta normal, 502 fallo de consulta o consenso y 503 falta de nodos disponibles.
+Registra dos respaldos independientes en la misma red, uno por solicitud. Los bloques fallidos se reparten por turnos entre respaldos aptos. La consulta estricta prefiere dos respaldos y puede completar el par con nodos normales. La consulta normal omite los de respaldo. Ambos modos omiten nodos en pausa. Cada ronda permite hasta 4 segundos para seleccionar nodos y 9 para consultar la transacción. 400 indica datos inválidos, 401 acceso denegado, 404 ausencia en la consulta normal, 502 fallo de consulta o consenso y 503 falta de nodos disponibles.
 
 En TON, un índice v3 localiza la transacción. Dos LiteServers ADNL directos con hosts y claves diferentes verifican la inclusión. Se devuelven el BOC, el hash, la cuenta, LT, la fecha y las raíces de ambos bloques. Si no hay un par de LiteServers, dos índices v3 distintos pueden cotejar el registro completo.
 
 ```sh
 consumer "$BASE/v1/transactions/base/$TX_HASH"
 consumer "$BASE/v1/transactions/base/$TX_HASH/strict"
+consumer "$BASE/v1/transactions/base/$TX_HASH/strict?fallback_only=true"
 ```
 
 <a id="trust"></a>
@@ -73,6 +74,8 @@ Si se agotan ambas rondas, la ruta predeterminada devuelve `X-ChainScanner-Manua
 `?rounds=1` · `X-ChainScanner-Pair` → `X-ChainScanner-Exclude`
 
 [Lista negra de nodos](#blacklist)
+
+Usa `?fallback_only=true` para limitar todas las consultas a respaldos. Un reintento requiere dos votantes nuevos y devuelve 503 si faltan. En TON registra también un índice v3 de respaldo para localizar la prueba, o usa dos índices v3 independientes. Estos índices no reparan bloques. En TON, dos índices v3 de respaldo pueden formar la pareja preferida cuando hay menos de dos LiteServers de respaldo configurados.
 
 <a id="subscriptions"></a>
 
@@ -378,10 +381,11 @@ admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http"
 
 ### `POST /v1/admin/nodes/fallback`
 
-Registra un nodo de historial de pago para una red con los mismos campos y el token de administrador de la ruta normal. Devuelve **201** con `origin: fallback`. Tras un fallo de lectura, un nodo de respaldo libre puede tomar el intervalo y verificar sus confirmaciones. También repara huecos guardados en SQLite tras reiniciar. Las lecturas iniciales y las consultas de altura para suscripciones usan nodos ordinarios. Las pruebas manuales pueden consumir cuota. Los huecos pendientes se reintentan y tres fallos consecutivos activan la pausa progresiva. Usa el ID devuelto para probar o eliminar el nodo. El modo estricto da prioridad a un nodo de respaldo y requiere otro nodo distinto. La consulta normal omite los de respaldo. Ambos modos omiten nodos en pausa.
+Registra un nodo de historial de pago para una red con los mismos campos y el token de administrador de la ruta normal. Devuelve **201** con `origin: fallback`. Tras un fallo de lectura, un nodo de respaldo libre puede tomar el intervalo y verificar sus confirmaciones. También repara huecos guardados en SQLite tras reiniciar. Las lecturas iniciales y las consultas de altura para suscripciones usan nodos ordinarios. Las pruebas manuales pueden consumir cuota. Los huecos pendientes se reintentan y tres fallos consecutivos activan la pausa progresiva. Usa el ID devuelto para probar o eliminar el nodo. Registra dos respaldos independientes en la misma red, uno por solicitud. Los bloques fallidos se reparten por turnos entre respaldos aptos. La consulta estricta prefiere dos respaldos y puede completar el par con nodos normales. La consulta normal omite los de respaldo. Ambos modos omiten nodos en pausa.
 
 ```sh
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
+admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://second-rpc.example.net","api_key":"SECOND_PROVIDER_KEY"}'
 ```
 
 <a id="test-one"></a>
@@ -421,10 +425,14 @@ admin -X DELETE "$BASE/v1/admin/nodes/$NODE_ID"
 
 Usa el token de administración. Un dominio incluye sus subdominios en todas las redes y puertos. Una IP se compara de forma exacta. Se revisan las URL principal e histórica al seleccionar nodos y sondear candidatos. La regla no descubre operadores tras alias DNS, proxies o configuraciones globales TON.
 
+Usa `keyword:acme` para una subcadena del nombre de host sin distinguir mayúsculas, `exact:rpc.example.org` para un host exacto o un dominio sin prefijo para incluir subdominios. Usa el mismo formato en la configuración y en ambas rutas. Se excluyen rutas, credenciales y parámetros.
+
 ```sh
-admin -X PUT "$BASE/v1/admin/blacklist/rpc.example.org"
+admin -X PUT "$BASE/v1/admin/blacklist/keyword:acme"
+admin -X PUT "$BASE/v1/admin/blacklist/exact:rpc.example.org"
 admin "$BASE/v1/admin/blacklist"
-admin -X DELETE "$BASE/v1/admin/blacklist/rpc.example.org"
+admin -X DELETE "$BASE/v1/admin/blacklist/keyword:acme"
+admin -X DELETE "$BASE/v1/admin/blacklist/exact:rpc.example.org"
 ```
 
 GET devuelve una lista ordenada de `{host, source}`. PUT y DELETE son idempotentes y devuelven 204. Las nuevas selecciones aplican la regla y el escáner actualiza su grupo. SQLite en archivo conserva las reglas. Fija reglas con `"blacklist": ["rpc.example.org"]` en la raíz de la configuración. DELETE devuelve 409 para reglas de configuración. Para retirarlas, edita el archivo y reinicia.

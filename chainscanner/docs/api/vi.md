@@ -51,13 +51,14 @@ Gửi mã xác thực của dịch vụ và ID mạng đã cấu hình. Không c
 
 Truy vấn thường chọn ngẫu nhiên một nút rảnh, ưu tiên nút đang hoạt động tốt. Truy vấn nghiêm ngặt gửi yêu cầu đồng thời đến hai nút khác nhau. Nếu cả hai trả về cùng một kết quả giao dịch đầy đủ, dịch vụ trả kết quả. Nếu không, dịch vụ thử lại một lần với hai nút chưa dùng. Lỗi và phản hồi không tìm thấy giao dịch không được tính. Thứ tự khóa JSON và khoảng trắng không ảnh hưởng đến so sánh.
 
-Chế độ nghiêm ngặt ưu tiên một nút dự phòng và yêu cầu một nút khác để đối chiếu. Tra cứu thường bỏ qua nút dự phòng. Cả hai chế độ bỏ qua các nút đang tạm dừng. Mỗi lượt có tối đa 4 giây để chọn nút và 9 giây để tra giao dịch. HTTP 400 là đầu vào sai, 401 là lỗi xác thực, 404 là không tìm thấy khi tra thường, 502 là truy vấn lỗi hoặc kết quả khác nhau và 503 là thiếu nút khả dụng.
+Đăng ký riêng từng nút để thêm hai nút dự phòng độc lập trên cùng mạng. Các nút đủ điều kiện luân phiên quét bù. Truy vấn nghiêm ngặt ưu tiên hai nút dự phòng và có thể thêm nút thường nếu thiếu. Tra cứu thường bỏ qua nút dự phòng. Cả hai chế độ bỏ qua các nút đang tạm dừng. Mỗi lượt có tối đa 4 giây để chọn nút và 9 giây để tra giao dịch. HTTP 400 là đầu vào sai, 401 là lỗi xác thực, 404 là không tìm thấy khi tra thường, 502 là truy vấn lỗi hoặc kết quả khác nhau và 503 là thiếu nút khả dụng.
 
 Trên TON, chỉ mục v3 cung cấp vị trí giao dịch. Hai LiteServer ADNL trực tiếp có máy chủ và khóa khác nhau kiểm tra bằng chứng giao dịch nằm trong khối. Kết quả gồm BOC, mã băm, tài khoản, LT, thời gian và hai mã băm gốc của khối shard và masterchain. Nếu không đủ hai LiteServer, hai chỉ mục v3 khác nhau có thể đối chiếu bản ghi đầy đủ.
 
 ```sh
 consumer "$BASE/v1/transactions/base/$TX_HASH"
 consumer "$BASE/v1/transactions/base/$TX_HASH/strict"
+consumer "$BASE/v1/transactions/base/$TX_HASH/strict?fallback_only=true"
 ```
 
 <a id="trust"></a>
@@ -73,6 +74,8 @@ Khi hết hai vòng, API mặc định trả về `X-ChainScanner-Manual-Review:
 `?rounds=1` · `X-ChainScanner-Pair` → `X-ChainScanner-Exclude`
 
 [Danh sách đen nút](#blacklist)
+
+Dùng `?fallback_only=true` để chỉ gửi yêu cầu tới nút dự phòng. Lần thử lại cần hai nút mới và trả về 503 nếu thiếu. Trên TON, hãy đăng ký thêm chỉ mục v3 dự phòng để định vị giao dịch cho bằng chứng, hoặc dùng hai chỉ mục v3 dự phòng độc lập. Chỉ mục không quét bù khối. Trên TON, hai chỉ mục v3 dự phòng có thể được ưu tiên khi cấu hình chưa đủ hai LiteServer dự phòng.
 
 <a id="subscriptions"></a>
 
@@ -378,10 +381,11 @@ admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http"
 
 ### `POST /v1/admin/nodes/fallback`
 
-Đăng ký nút lịch sử trả phí cho một mạng bằng các trường và token quản trị như khi thêm nút thường. Phản hồi **201** có `origin: fallback`. Khi đọc khối thất bại, nút dự phòng đang rảnh có thể nhận khoảng đó ngay và kiểm tra độ cao xác nhận. Nút này cũng quét bù các khoảng lỗi đã lưu trong SQLite sau khi khởi động lại. Nút thường đảm nhiệm khối mới, mốc đăng ký và việc kiểm tra đầu chuỗi định kỳ. Kiểm tra thủ công có thể dùng hạn mức trả phí. Lỗi quét bù giữ nguyên khoảng cần thử lại, ba lỗi liên tiếp kích hoạt thời gian tạm dừng tăng dần. Dùng ID trả về để kiểm tra hoặc xóa nút. Chế độ nghiêm ngặt ưu tiên một nút dự phòng và yêu cầu một nút khác để đối chiếu. Tra cứu thường bỏ qua nút dự phòng. Cả hai chế độ bỏ qua các nút đang tạm dừng.
+Đăng ký nút lịch sử trả phí cho một mạng bằng các trường và token quản trị như khi thêm nút thường. Phản hồi **201** có `origin: fallback`. Khi đọc khối thất bại, nút dự phòng đang rảnh có thể nhận khoảng đó ngay và kiểm tra độ cao xác nhận. Nút này cũng quét bù các khoảng lỗi đã lưu trong SQLite sau khi khởi động lại. Nút thường đảm nhiệm khối mới, mốc đăng ký và việc kiểm tra đầu chuỗi định kỳ. Kiểm tra thủ công có thể dùng hạn mức trả phí. Lỗi quét bù giữ nguyên khoảng cần thử lại, ba lỗi liên tiếp kích hoạt thời gian tạm dừng tăng dần. Dùng ID trả về để kiểm tra hoặc xóa nút. Đăng ký riêng từng nút để thêm hai nút dự phòng độc lập trên cùng mạng. Các nút đủ điều kiện luân phiên quét bù. Truy vấn nghiêm ngặt ưu tiên hai nút dự phòng và có thể thêm nút thường nếu thiếu. Tra cứu thường bỏ qua nút dự phòng. Cả hai chế độ bỏ qua các nút đang tạm dừng.
 
 ```sh
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
+admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://second-rpc.example.net","api_key":"SECOND_PROVIDER_KEY"}'
 ```
 
 <a id="test-one"></a>
@@ -421,10 +425,14 @@ admin -X DELETE "$BASE/v1/admin/nodes/$NODE_ID"
 
 Dùng token quản trị. Quy tắc tên miền bao gồm các tên miền con trên mọi mạng và cổng. IP được so khớp chính xác. Hệ thống kiểm tra URL chính và URL lịch sử khi chọn nút hoặc thăm dò nút mới. Quy tắc không xác định nhà vận hành sau bí danh DNS, proxy hay cấu hình TON toàn cục.
 
+`keyword:acme` khớp chuỗi con của tên máy chủ không phân biệt hoa thường, `exact:rpc.example.org` chỉ khớp đúng tên đó, còn miền không tiền tố bao gồm cả miền con. Cấu hình và cả hai API dùng cùng cú pháp. Đường dẫn, thông tin xác thực và tham số không được so khớp.
+
 ```sh
-admin -X PUT "$BASE/v1/admin/blacklist/rpc.example.org"
+admin -X PUT "$BASE/v1/admin/blacklist/keyword:acme"
+admin -X PUT "$BASE/v1/admin/blacklist/exact:rpc.example.org"
 admin "$BASE/v1/admin/blacklist"
-admin -X DELETE "$BASE/v1/admin/blacklist/rpc.example.org"
+admin -X DELETE "$BASE/v1/admin/blacklist/keyword:acme"
+admin -X DELETE "$BASE/v1/admin/blacklist/exact:rpc.example.org"
 ```
 
 GET trả về mảng `{host, source}` đã sắp xếp. PUT và DELETE có thể gọi lặp lại và trả về 204. Lần chọn nút mới áp dụng quy tắc và bộ quét cập nhật nhóm nút. SQLite dạng tệp giữ các quy tắc qua lần khởi động lại. Đặt `"blacklist": ["rpc.example.org"]` ở cấp gốc của cấu hình để cố định quy tắc. Xóa quy tắc cấu hình qua API sẽ trả về 409. Sửa tệp rồi khởi động lại để gỡ.

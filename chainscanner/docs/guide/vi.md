@@ -56,7 +56,7 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 | `protocol` · `api_key` · `history_url` · `history_api_key` | Chọn giao thức trong bảng bên dưới. Điền `history_url` cho giao thức dùng nút lịch sử riêng. Thông tin xác thực của hai URL độc lập. |
 | `trace_calls` | Bật thu thập lời gọi nội bộ EVM qua JSON-RPC tầng thực thi trên nút hỗ trợ call tracer. |
 | `consumers` · `admin_token` | Ánh xạ tên dịch vụ sang token riêng, mỗi token ít nhất 24 byte. Token quản trị riêng bật chức năng quản lý nút. |
-| `blacklist` | Tên miền hoặc IP bị chặn trên mọi mạng. [API](../api/vi.md#blacklist) |
+| `blacklist` | `keyword:acme` khớp chuỗi con của tên máy chủ không phân biệt hoa thường, `exact:rpc.example.org` chỉ khớp đúng tên đó, còn miền không tiền tố bao gồm cả miền con. Cấu hình và cả hai API dùng cùng cú pháp. Đường dẫn, thông tin xác thực và tham số không được so khớp. [API](../api/vi.md#blacklist) |
 
 <a id="networks"></a>
 

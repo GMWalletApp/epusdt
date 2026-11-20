@@ -31,7 +31,7 @@ Trường `from_height` trong phản hồi cho biết khối đầu tiên đư�
 
 ## Nút dự phòng được khuyến nghị
 
-Với mỗi mạng nhận thanh toán, hãy đăng ký một nút tin cậy của nhà vận hành khác. Nút này có thể đọc lại khối bị lỗi và được ưu tiên cho một trong hai vị trí tra cứu nghiêm ngặt. Sau hai lượt thất bại, đơn chuyển sang kiểm tra thủ công. [API](docs/api/vi.md#fallback)
+Đăng ký riêng từng nút để thêm hai nút dự phòng độc lập trên cùng mạng. Các nút đủ điều kiện luân phiên quét bù. Truy vấn nghiêm ngặt ưu tiên hai nút dự phòng và có thể thêm nút thường nếu thiếu. [API](docs/api/vi.md#fallback)
 
 ```sh
 BASE=http://127.0.0.1:9081
@@ -41,6 +41,22 @@ curl -fsS -X POST "$BASE/v1/admin/nodes/fallback" \
   -H 'Content-Type: application/json' \
   -d '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
 ```
+
+<a id="fallback-providers"></a>
+
+### Nhà cung cấp nút dự phòng
+
+Kiểm tra ngày 2026-11-21. Bạn tự lựa chọn nhà cung cấp. ChainScanner không bảo đảm độ sẵn sàng, độ chính xác hay giá. Credits, CU và RU phụ thuộc vào phương thức RPC. Hãy kiểm tra mạng, dữ liệu lịch sử và giao thức.
+
+| Trang web | Thành lập hoặc ra mắt và lĩnh vực | Hạn mức miễn phí |
+| --- | --- | --- |
+| [Ankr](https://www.ankr.com/) | [2017 · hạ tầng nút phân tán](https://www.ankr.com/ankr-whitepaper-2.0.pdf) | [200 triệu API credits/tháng với tài khoản Freemium](https://www.ankr.com/docs/rpc-service/charging-policy/) |
+| [Infura](https://www.infura.io/) | [2016 · hạ tầng Ethereum và IPFS của Consensys](https://consensys.io/blog/press-release-infura-a-consensys-company-launches-infura-for-improved-ethereum-infrastructure-support) | [3 triệu credits/ngày với Core theo tài liệu tính phí](https://docs.infura.io/get-started/pricing/) |
+| [PublicNode](https://www.publicnode.com/) | [2018 · nhà vận hành Allnodes bắt đầu cung cấp hạ tầng nút](https://www.allnodes.com/about/) | [RPC công cộng dùng chung, chưa công bố hạn mức cố định theo tháng cho từng người](https://www.publicnode.com/) |
+| [QuickNode](https://www.quicknode.com/) | [2017 · RPC đa chuỗi và luồng dữ liệu](https://www.quicknode.com/about) | [10 triệu API credits cho 30 ngày dùng thử](https://support.quicknode.com/articles/5387074982-1-month-free-trial) |
+| [Alchemy](https://www.alchemy.com/) | [2017 · API phát triển blockchain và truy cập nút](https://www.alchemy.com/company) | [30 triệu CU/tháng](https://www.alchemy.com/docs/reference/pricing-plans) |
+| [BlockPI](https://blockpi.io/) | [2022-10-25 · ra mắt bản alpha của mạng RPC phân tán](https://docs.blockpi.io/welcome-to-blockpi/about-blockpi) | [50 triệu RU/tháng cho tài khoản đăng ký](https://docs.blockpi.io/pricing/pricing-and-rate-limit) |
+| [dRPC](https://drpc.org/) | [2023-03 · mở cổng RPC phi tập trung cho công chúng](https://blog.drpc.org/how-drpcs-free-tier-works/) | [50 triệu CU mỗi 30 ngày](https://drpc.org/docs/howitworks/ratelimiting) |
 
 ## Lời cảm ơn
 

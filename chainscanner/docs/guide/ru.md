@@ -56,7 +56,7 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 | `protocol` · `api_key` · `history_url` · `history_api_key` | Выберите интерфейс из таблицы. Для парных транспортов укажите `history_url`. У каждого URL свои учётные данные. |
 | `trace_calls` | Включает данные о внутренних вызовах EVM через JSON-RPC уровня исполнения. Узел должен поддерживать call tracer. |
 | `consumers` · `admin_token` | Каждому потребителю назначается свой токен длиной от 24 байт. Отдельный токен администратора открывает управление узлами. |
-| `blacklist` | Список запрещённых доменов и IP для всех сетей. [API](../api/ru.md#blacklist) |
+| `blacklist` | `keyword:acme` ищет подстроку в имени узла без учёта регистра, `exact:rpc.example.org` задаёт точное имя, домен без префикса включает поддомены. Формат общий для конфигурации и обоих методов API. Пути, параметры и ключи доступа не проверяются. [API](../api/ru.md#blacklist) |
 
 <a id="networks"></a>
 

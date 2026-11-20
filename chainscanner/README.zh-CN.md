@@ -31,7 +31,7 @@ curl -fsS -X PUT http://127.0.0.1:9081/v1/subscriptions \
 
 ## 建议为每条收款链配置兜底节点
 
-建议选用与普通节点不同运营商的可靠节点。普通节点读块失败时，兜底节点可接手补扫；严格哈希查询优先把两个核验名额中的一个给兜底节点。两轮都失败后，支付订单转人工复核。 [API](docs/api/zh-CN.md#fallback)
+同一条链可配置两个独立运营商的兜底节点，每个节点单独登记一次。失败区块在符合高度要求的兜底节点间轮询补扫。严格查询优先让两个可用的兜底节点同时核验；仅有一个可用时，默认可由普通节点补足另一票。 [API](docs/api/zh-CN.md#fallback)
 
 ```sh
 BASE=http://127.0.0.1:9081
@@ -41,6 +41,22 @@ curl -fsS -X POST "$BASE/v1/admin/nodes/fallback" \
   -H 'Content-Type: application/json' \
   -d '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
 ```
+
+<a id="fallback-providers"></a>
+
+### 兜底节点供应商推荐
+
+资料核对日期为 2026-11-21。以下仅供选型参考，请自行选择。ChainScanner 不担保第三方的可用性、数据准确性或价格。Credits、CU、RU 均按供应商和 RPC 方法计量，不能直接换算成请求次数。接入前请分别核对目标链、历史数据和协议支持。
+
+| 官网 | 成立或公开上线时间及背景 | 免费额度 |
+| --- | --- | --- |
+| [Ankr](https://www.ankr.com/) | [2017 年成立，提供分布式节点基础设施](https://www.ankr.com/ankr-whitepaper-2.0.pdf) | [Freemium 账户每月 2 亿 API credits](https://www.ankr.com/docs/rpc-service/charging-policy/) |
+| [Infura](https://www.infura.io/) | [2016 年成立，Consensys 旗下的以太坊与 IPFS 基础设施](https://consensys.io/blog/press-release-infura-a-consensys-company-launches-infura-for-improved-ethereum-infrastructure-support) | [按官方计费文档，Core 免费版每日 300 万 credits](https://docs.infura.io/get-started/pricing/) |
+| [PublicNode](https://www.publicnode.com/) | [运营方 Allnodes 自 2018 年提供节点基础设施](https://www.allnodes.com/about/) | [共享公共 RPC，官网未公布固定的单用户月额度](https://www.publicnode.com/) |
+| [QuickNode](https://www.quicknode.com/) | [2017 年成立，提供托管多链 RPC 和数据流](https://www.quicknode.com/about) | [30 天试用共 1,000 万 API credits](https://support.quicknode.com/articles/5387074982-1-month-free-trial) |
+| [Alchemy](https://www.alchemy.com/) | [2017 年成立，提供区块链开发 API 与节点访问](https://www.alchemy.com/company) | [每月 3,000 万 CU](https://www.alchemy.com/docs/reference/pricing-plans) |
+| [BlockPI](https://blockpi.io/) | [2022-10-25 分布式 RPC 网络上线 Alpha 版](https://docs.blockpi.io/welcome-to-blockpi/about-blockpi) | [注册用户每月 5,000 万 RU](https://docs.blockpi.io/pricing/pricing-and-rate-limit) |
+| [dRPC](https://drpc.org/) | [2023 年 3 月已开放服务，聚合多家运营商的 RPC 网关](https://blog.drpc.org/how-drpcs-free-tier-works/) | [每 30 天 5,000 万 CU](https://drpc.org/docs/howitworks/ratelimiting) |
 
 ## 致使用 ChainScanner 的你
 

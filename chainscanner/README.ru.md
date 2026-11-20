@@ -31,7 +31,7 @@ curl -fsS -X PUT http://127.0.0.1:9081/v1/subscriptions \
 
 ## Рекомендуемый резервный узел
 
-Для каждой платёжной сети добавьте надёжный узел другого оператора. Он повторяет чтение пропущенных блоков и занимает одно из двух мест в строгом запросе. После двух неудачных попыток платёж передаётся на ручную проверку. [API](docs/api/ru.md#fallback)
+Добавьте два резервных узла разных операторов для одной сети отдельными запросами. Повторное чтение блоков распределяется между доступными резервами по очереди. Строгий запрос предпочитает два резерва, при нехватке дополняя пару обычными узлами. [API](docs/api/ru.md#fallback)
 
 ```sh
 BASE=http://127.0.0.1:9081
@@ -41,6 +41,22 @@ curl -fsS -X POST "$BASE/v1/admin/nodes/fallback" \
   -H 'Content-Type: application/json' \
   -d '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
 ```
+
+<a id="fallback-providers"></a>
+
+### Поставщики резервных узлов
+
+Сведения проверены 2026-11-21. Выбирайте самостоятельно. ChainScanner не гарантирует доступность, точность данных и цены. Стоимость вызова в кредитах, CU или RU зависит от метода. Уточняйте поддержку сети, истории и протокола.
+
+| Сайт | Основание или запуск и профиль | Бесплатная квота |
+| --- | --- | --- |
+| [Ankr](https://www.ankr.com/) | [2017 · распределённая инфраструктура узлов](https://www.ankr.com/ankr-whitepaper-2.0.pdf) | [200 млн API-кредитов в месяц на Freemium](https://www.ankr.com/docs/rpc-service/charging-policy/) |
+| [Infura](https://www.infura.io/) | [2016 · инфраструктура Ethereum и IPFS от Consensys](https://consensys.io/blog/press-release-infura-a-consensys-company-launches-infura-for-improved-ethereum-infrastructure-support) | [3 млн кредитов в сутки на Core по документации](https://docs.infura.io/get-started/pricing/) |
+| [PublicNode](https://www.publicnode.com/) | [2018 · начало работы оператора Allnodes](https://www.allnodes.com/about/) | [Общие публичные RPC, фиксированная месячная квота на пользователя не опубликована](https://www.publicnode.com/) |
+| [QuickNode](https://www.quicknode.com/) | [2017 · управляемые RPC и потоки данных](https://www.quicknode.com/about) | [10 млн API-кредитов на 30 дней пробного доступа](https://support.quicknode.com/articles/5387074982-1-month-free-trial) |
+| [Alchemy](https://www.alchemy.com/) | [2017 · API для разработчиков и доступ к узлам](https://www.alchemy.com/company) | [30 млн CU в месяц](https://www.alchemy.com/docs/reference/pricing-plans) |
+| [BlockPI](https://blockpi.io/) | [2022-10-25 · запуск альфа-версии распределённой RPC-сети](https://docs.blockpi.io/welcome-to-blockpi/about-blockpi) | [50 млн RU в месяц после регистрации](https://docs.blockpi.io/pricing/pricing-and-rate-limit) |
+| [dRPC](https://drpc.org/) | [2023-03 · открыт публичный доступ к децентрализованному шлюзу RPC](https://blog.drpc.org/how-drpcs-free-tier-works/) | [50 млн CU за 30 дней](https://drpc.org/docs/howitworks/ratelimiting) |
 
 ## Спасибо, что пользуетесь ChainScanner
 
