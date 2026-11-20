@@ -118,7 +118,7 @@ Epusdt
 
 ## How It Works
 
-Epusdt listens to supported blockchain APIs or RPC nodes across multiple networks such as TRC20, ERC20, BEP20, and Polygon. It captures incoming token transfers in real time and matches ownership using **amount differentiation** and **time-bounded locks**:
+EPUSDT subscribes receiving addresses with ChainScanner. It matches incoming transfers to open orders by network, asset, amount and payment window.
 
 ```text
 Workflow:
@@ -126,7 +126,8 @@ Workflow:
 2. The system searches for an available wallet-address + amount combination
 3. If address_1:20.05 is free -> lock it for 10 minutes and return it
 4. If already occupied -> add 0.0001 and try the next amount combination
-5. Background listeners keep watching wallet deposits and mark the order paid once the amount matches
+5. A matching transfer moves the order to confirming
+6. The required confirmation depth and configured verification must pass before settlement and merchant notification
 ```
 
 ![Epusdt Payment Flow](wiki/img/implementation_principle.jpg)
@@ -186,3 +187,9 @@ Crypto assets are a high-risk emerging asset class. Stablecoins and other digita
     Epusdt · Easy Payment USDT · Open Source Payment Gateway · Multi-chain Collection
   </sub>
 </p>
+
+## ChainScanner integration
+
+Run ChainScanner as a separate service and configure EPUSDT with its HTTP(S) origin in `CHAINSCANNER_URL` and a dedicated consumer credential in `CHAINSCANNER_TOKEN`. Set a separate `CHAINSCANNER_ADMIN_TOKEN` for node and blacklist management. Configure persistent scanner storage and reconcile pending orders when migrating. The default event transport is WebSocket. Set `CHAINSCANNER_TRANSPORT=grpc` for bidirectional streaming or `http` for long polling.
+
+EPUSDT registers enabled receiving addresses and acknowledges events after persisting the payment decision. System settings enable strict verification by default. Candidate payments require matching results from two independent nodes, followed by order and depth checks. Two failed rounds trigger manual review. Disabling strict verification applies to newly queued candidates. The authenticated console API exposes scanner node, fallback, blacklist, height and transaction operations under `/admin/api/v1/chainscanner`. See the [v1 API](chainscanner/docs/api/en.md).

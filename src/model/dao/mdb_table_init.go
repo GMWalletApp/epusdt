@@ -213,6 +213,7 @@ func seedDefaultSettings() {
 	defaultRateMode := defaultRateModeForSeed()
 	defaults := []mdb.Setting{
 		{Group: mdb.SettingGroupSystem, Key: mdb.SettingKeyAmountPrecision, Value: "2", Type: mdb.SettingTypeInt},
+		{Group: mdb.SettingGroupSystem, Key: mdb.SettingKeyStrictPayment, Value: "true", Type: mdb.SettingTypeBool},
 		{Group: mdb.SettingGroupSystem, Key: mdb.SettingKeySystemLogLevel, Value: mdb.SettingDefaultSystemLogLevel, Type: mdb.SettingTypeString},
 		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateForcedRateList, Value: mdb.SettingDefaultRateForcedRateList, Type: mdb.SettingTypeJSON},
 		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateMode, Value: defaultRateMode, Type: mdb.SettingTypeString},

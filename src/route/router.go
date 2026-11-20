@@ -267,6 +267,7 @@ func registerAdminRoutes(e *echo.Echo) {
 
 	// Authenticated
 	authed := adminV1.Group("", middleware.CheckAdminJWT())
+	registerScannerAdmin(authed)
 	authed.POST("/auth/logout", admin.Ctrl.Logout)
 	authed.GET("/auth/me", admin.Ctrl.Me)
 	authed.POST("/auth/password", admin.Ctrl.ChangePassword)

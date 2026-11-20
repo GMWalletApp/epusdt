@@ -60,8 +60,23 @@ func queueConfirmation(order *mdb.Orders, e scanner.Activity) error {
 				}
 			}
 		}
+		// Read the policy transactionally across payment replicas. Re-inclusion
+		// or redelivery of the same hash keeps the original strict decision.
+		var previous mdb.PaymentConfirmation
+		q := tx.Select("id", "skip_strict").Where("order_id = ? AND hash = ?", order.ID, e.TxID).Order("id").Limit(1).Find(&previous)
+		if q.Error != nil {
+			return q.Error
+		}
+		skipStrict := previous.SkipStrict
+		if previous.ID == 0 {
+			var setting mdb.Setting
+			if err := tx.Select("value").Where(&mdb.Setting{Key: mdb.SettingKeyStrictPayment}).Limit(1).Find(&setting).Error; err != nil {
+				return err
+			}
+			skipStrict = setting.Value == "false"
+		}
 		digest := sha256.Sum256(payload) // A re-included transaction may have new block evidence.
-		job := mdb.PaymentConfirmation{Position: hex.EncodeToString(digest[:]), OrderID: order.ID, Hash: e.TxID, Activity: string(payload), RetryAt: time.Now().UnixMilli()}
+		job := mdb.PaymentConfirmation{SkipStrict: skipStrict, Position: hex.EncodeToString(digest[:]), OrderID: order.ID, Hash: e.TxID, Activity: string(payload), RetryAt: time.Now().UnixMilli()}
 		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&job).Error
 	})
 }
@@ -143,7 +158,7 @@ func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup Stric
 		attempted = readErr != nil
 		return v, readErr
 	}, job)
-	if errors.Is(err, ErrStrictRoundUnsupported) || errors.Is(err, errRoundLimit) || job.Attempts >= 2 && (attempted || errors.Is(err, errPaymentMismatch)) {
+	if job.SkipStrict && errors.Is(err, errPaymentMismatch) || errors.Is(err, ErrStrictRoundUnsupported) || errors.Is(err, errRoundLimit) || job.Attempts >= 2 && (attempted || errors.Is(err, errPaymentMismatch)) {
 		return true, markPaymentForReview(db, job, lease)
 	}
 	if err != nil && !errors.Is(err, errInactiveCandidate) {
@@ -198,16 +213,19 @@ func ConfirmPayment(ctx context.Context, feed scanner.Feed, lookup StrictLookup,
 			return errors.New("waiting for required block depth")
 		}
 	}
-	if lookup == nil {
-		return errors.New("strict lookup unavailable")
-	}
-	result, err := lookup(ctx, e.Network, e.TxID)
-	if err != nil {
-		return err
-	}
-	verified, err := strictActivity(e, result)
-	if err != nil {
-		return fmt.Errorf("%w: %v", errPaymentMismatch, err)
+	verified := e
+	if !job.SkipStrict {
+		if lookup == nil {
+			return errors.New("strict lookup unavailable")
+		}
+		result, err := lookup(ctx, e.Network, e.TxID)
+		if err != nil {
+			return err
+		}
+		verified, err = strictActivity(e, result)
+		if err != nil {
+			return fmt.Errorf("%w: %v", errPaymentMismatch, err)
+		}
 	}
 	blockID, err := verifiedOrderCredit(ctx, &order, verified)
 	if err != nil {

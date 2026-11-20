@@ -153,7 +153,7 @@ Epusdt
 
 ## 实现原理
 
-Epusdt 通过监听多条区块链网络（TRC20、ERC20、BEP20、Polygon 等）的 API 或 RPC 节点，实时捕获钱包地址的代币入账事件，利用**金额差异**与**时效性**精确匹配交易归属：
+EPUSDT 向 ChainScanner 订阅收款地址，根据推送中的链、资产、金额和订单有效期匹配订单。
 
 ```text
 工作流程：
@@ -161,7 +161,8 @@ Epusdt 通过监听多条区块链网络（TRC20、ERC20、BEP20、Polygon 等�
 2. 系统在哈希表中查找可用的钱包地址 + 金额组合
 3. 若 address_1:20.05 未被占用 -> 锁定该组合（有效期 10 分钟），返回给客户
 4. 若已被占用 -> 自动累加 0.0001 尝试下一个金额组合（最多 100 次）
-5. 后台线程持续监听所有钱包的入账事件，金额匹配则确认支付成功
+5. 收到匹配的转账后，订单进入确认中
+6. 达到确认深度并通过配置的核验后，订单到账并触发商户回调
 ```
 
 ![Epusdt 支付流程图](wiki/img/implementation_principle.jpg)
@@ -224,11 +225,29 @@ Good Morning Technology, LLC 为依据美国法律设立的主体，并将在适
 
 ## ChainScanner 地址订阅
 
-单实例默认使用随仓库附带的 ChainScanner，按后台启用的网络、普通 RPC 节点和确认数运行。扫描进度及待投递事件保存在运行时 SQLite 文件旁的 `.chainscanner` 数据库中。每个节点必须指定具体网络，例如 Ethereum、BSC 或 Base，连接时校验 EVM chain ID。每条链只有在至少有一个地址订阅时才开始读取；最后一个地址退订会固定终止块，待该块及之前的缺块全部确认并处理后，关闭该链连接并清除游标。相同地址在不同链上分别注册。全块模式需要节点支持整块交易与日志查询，RPC 用量与链上流量有关。
+EPUSDT 作为消费者连接独立运行的 ChainScanner。区块读取、节点发现、故障转移、缺块补扫和游标均由 ChainScanner 负责。EPUSDT 将启用的收款地址按具体链订阅，在展示新付款地址前检查订阅回执。每条链独立接收活动，按收款地址、资产、原始金额和订单时间窗匹配候选订单。确认任务落库后才 ACK；断线后允许重复投递。建议独立服务配置持久化 `database`，升级时为现有待付订单设置交接回看窗口并核对覆盖范围。
 
-多个支付实例或其他业务共享监听时，独立运行一个 ChainScanner，给不同业务配置独立令牌，再为 EPUSDT 进程设置环境变量 `CHAINSCANNER_URL` 和 `CHAINSCANNER_TOKEN`。此模式由独立服务持有 RPC 和游标。EPUSDT 注册启用的钱包，在展示新收款地址前确认订阅，并在持久化支付结果后确认事件。TON Jetton 入账使用后台配置的 LiteServer 或 TON Center v2 节点，在交易所属的历史主链区块校验 Jetton 钱包归属。独立服务默认使用内存，重启后 EPUSDT 会重新提交钱包订阅；中断期间的交易及尚未确认投递的事件需由消费方对账。需要跨重启自动恢复时，在独立服务配置中指定 `database` 文件。
+在 EPUSDT 进程环境或启动用的 `.env` 填写以下设置，修改连接信息后重启。
 
-独立部署时，ChainScanner 的版本应与本仓库 `chainscanner.rev` 记录的版本同步，以支持支付端的单轮查询和跨轮节点排除。建议在独立部署的 ChainScanner 中，为每条收款链配置两个分属不同运营商的兜底节点。失败区块在可用兜底节点间轮询补扫；严格哈希查询优先由两个兜底节点同时核验，可用节点不足时由普通节点补位。两轮核验失败后，EPUSDT 将订单置为待人工复核（状态 `6`），保留候选交易哈希，停止自动查询并暂停到账回调。[兜底节点配置示例](chainscanner/docs/api/zh-CN.md#fallback)
+| 配置 | 用途 |
+| --- | --- |
+| `CHAINSCANNER_URL` | 服务的 HTTP(S) 源站，例如同机部署的 `http://127.0.0.1:9081`。容器间使用可达的服务名。 |
+| `CHAINSCANNER_TOKEN` | 独立服务分配给 EPUSDT 的消费者令牌。各业务使用不同令牌。 |
+| `CHAINSCANNER_ADMIN_TOKEN` | 启用后台节点管理和黑名单所需的独立管理员令牌。 |
+| `CHAINSCANNER_TRANSPORT` | 默认 `ws` 推送，也支持 `grpc` 双向流和 `http` 长轮询。gRPC 需要 HTTP/2 或内网 h2c。 |
+
+**后台 → 系统设置 → 链上到账前严格验证** 默认开启。匹配后订单进入确认中。ChainScanner 向两个独立节点核验交易，EPUSDT 根据返回证据重新核对入账和确认数。失败最多两轮，仍失败转人工复核，保留候选哈希并暂停回调。关闭开关仅影响之后新建的候选任务；已有任务和重投保留原核验方式。关闭后仍检查订阅交易、订单匹配和确认深度。TON Jetton 仍按事件所属历史区块校验钱包归属，人工按哈希认领仍执行严格核验。
+
+后台调用下表接口时使用 EPUSDT 管理员 JWT。公共前缀为 `/admin/api/v1/chainscanner`，服务器按路由选用相应的 ChainScanner 令牌。
+
+| 用途 | 方法和相对路径 |
+| --- | --- |
+| 普通节点、兜底节点 | `GET /admin/nodes`、`POST /admin/nodes`、`POST /admin/nodes/fallback`、`DELETE /admin/nodes/{id}` |
+| 测试单节点或批量节点 | `POST /admin/nodes/{id}/test`、`POST /admin/nodes/test?network=solana` |
+| RPC 地址黑名单 | `GET /admin/blacklist`、`PUT /admin/blacklist/{rule}`、`DELETE /admin/blacklist/{rule}`。例如 `keyword:acme`、`exact:rpc.example.org` |
+| 连续进度、普通与严格交易查询 | `GET /heights/{network}`、`GET /transactions/{network}/{hash}`、`GET /transactions/{network}/{hash}/strict` |
+
+建议为每条收款链配置两家独立的兜底服务商。节点参数、规则格式、订阅边界和跨轮节点排除见 [ChainScanner v1 API 文档](chainscanner/docs/api/zh-CN.md)。
 
 上游为 [GMWalletApp/ChainScanner](https://github.com/GMWalletApp/ChainScanner)。`chainscanner/` 保存完整源码，`chainscanner.rev` 记录上游提交。运行 `scripts/sync-chainscanner <commit>` 可同步指定版本。GitHub Actions 每天检查上游并提交更新 PR，需要在仓库 Actions 设置中允许创建 PR。
 
@@ -236,4 +255,4 @@ Good Morning Technology, LLC 为依据美国法律设立的主体，并将在适
 
 EVM 优先使用支持普通 RPC 读取的 WSS 节点，收到新区块头即按持久化游标补齐；没有可用 WSS 时使用 HTTPS。Sui 使用复用的 gRPC 连接监听检查点。Base 默认支持 ETH 和 Circle 原生 USDC。Base、Arbitrum One 和 OP Mainnet 的确认数以 L2 区块计算。支付端按网络独立消费，一条链的支付处理重试不会阻塞其他链。独立服务的 `PUT /v1/subscriptions` 返回订阅起点 `from_height` 和退订终点 `to_height`（两端均含）。退订返回 202 时，可重发同一份完整订阅列表查询完成状态，已入队事件仍可领取，接口示例见 ChainScanner README。
 
-后台的 RPC 节点表单会按网络列出可用接口。为 Solana 的 WebSocket 或 Yellowstone gRPC、Aptos 的 gRPC 或 GraphQL、TRON 的 JSON-RPC、Ethereum 的 Beacon SSE 添加节点时，再添加同一网络的普通 HTTP 历史节点。支付端自动配对，分别使用各自的 API Key。优先使用健康、权重较高的节点，同权重时按协议优先级选择。独立部署的接口名、URL 格式和完整矩阵见 [ChainScanner 节点协议](chainscanner/README.md#node-protocols)。
+扫块节点和兜底节点通过 ChainScanner 节点管理接口配置。原有 RPC 配置仍供人工验单及特定链的按笔读取使用。各链协议和历史节点配置见 [ChainScanner 节点文档](chainscanner/docs/api/zh-CN.md)。

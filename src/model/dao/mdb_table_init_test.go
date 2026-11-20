@@ -169,6 +169,11 @@ func TestSeedDefaultSettingsIncludesSystemLogLevel(t *testing.T) {
 	if row.Type != mdb.SettingTypeString {
 		t.Fatalf("system.log_level type = %q, want %q", row.Type, mdb.SettingTypeString)
 	}
+	var strict mdb.Setting
+	if err := Mdb.Where(&mdb.Setting{Key: mdb.SettingKeyStrictPayment}).Take(&strict).Error; err != nil || strict.Value != "true" || strict.Type != mdb.SettingTypeBool {
+		t.Fatal(strict, err)
+	}
+
 }
 
 func TestSeedDefaultSettingsIncludesDefaultForcedRateList(t *testing.T) {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	scanner "github.com/GMWalletApp/ChainScanner"
+	api "github.com/GMWalletApp/ChainScanner/api/activity/v1"
 	"github.com/GMWalletApp/epusdt/internal/testutil"
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/data"
@@ -95,21 +96,14 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
 	}))
 	defer rpc.Close()
-	// Drive the payment worker through its normal database node selection.
-	if err = dao.Mdb.Model(&mdb.RpcNode{}).Where("network = ?", net).Update("enabled", false).Error; err != nil {
+	// Only the external scanner fixture reads blocks. EPUSDT consumes its feed.
+	cfg := scanner.Network{Name: net, Protocol: "http", URL: rpc.URL, Confirmations: 2}
+	source, err := scanner.NewSource(ctx, cfg)
+	if err != nil {
 		t.Fatal(err)
 	}
-	unavailable := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "busy", http.StatusTooManyRequests) }))
-	defer unavailable.Close()
-	for i, url := range []string{unavailable.URL, rpc.URL} {
-		node := mdb.RpcNode{Network: net, Type: "http", Url: url, Enabled: true, Weight: 100 - i}
-		if err = data.CreateRpcNode(&node); err != nil {
-			t.Fatal(err)
-		}
-	}
-	worker := embeddedWorker{name: net, store: store}
-	defer worker.close()
-	if _, err = worker.step(ctx); err != nil {
+	defer source.Close()
+	if _, err = store.Pump(ctx, cfg, source); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -161,8 +155,7 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 	}
 	api := httptest.NewServer(h)
 	defer api.Close()
-	remote := newStrictClient(scanner.Client{URL: api.URL, Token: token}, nil)
-	embedded := newStrictClient(scanner.Client{Token: token}, h)
+	remote := newStrictClient(scanner.Client{URL: api.URL, Token: token})
 	var mode atomic.Int32
 	counts := [2]atomic.Int32{}
 	for i := range 2 {
@@ -203,9 +196,6 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 	for _, phase := range []int32{0, 1, 2} {
 		mode.Store(phase)
 		lookup := remote
-		if phase == 1 {
-			lookup = embedded
-		}
 		if phase < 2 {
 			if err := service.ConfirmPayment(ctx, client, lookup.full, job); err == nil {
 				t.Fatalf("phase %d accepted unverified transfer", phase)
@@ -261,7 +251,7 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 
 }
 
-func TestNetworkProtocolPairingAndRecurringProbe(t *testing.T) {
+func TestManualNodeProtocolPairingAndProbe(t *testing.T) {
 	defer testutil.SetupTestDatabases(t)()
 	nodes := []mdb.RpcNode{
 		{Network: "solana", Type: "ws", Url: "wss://node.example", ApiKey: "stream", Weight: 80},
@@ -286,8 +276,107 @@ func TestNetworkProtocolPairingAndRecurringProbe(t *testing.T) {
 		fmt.Fprint(w, `{"data":{"chainID":"0x2105","block":{"number":"0x10"}}}`)
 	}))
 	defer gql.Close()
-	status, _, e := probeReachability(mdb.RpcNode{Network: "base", Type: "graphql", Url: gql.URL})
+	status, _, e := probeRpcNode(mdb.RpcNode{Network: "base", Type: "graphql", Url: gql.URL})
 	if e != nil || status != mdb.RpcNodeStatusOk {
 		t.Fatal(status, e)
+	}
+}
+
+type eventSource struct{ rows []scanner.Activity }
+
+func (s eventSource) Head(context.Context) (int64, error) { return 2, nil }
+func (s eventSource) Read(_ context.Context, _, end int64) (int64, []scanner.Activity, error) {
+	return end, s.rows, nil
+}
+func (eventSource) Close() {}
+
+func TestRemotePushAcknowledgesCommittedActivity(t *testing.T) {
+	for _, transport := range []string{"ws", "grpc"} {
+		t.Run(transport, func(t *testing.T) {
+			defer testutil.SetupTestDatabases(t)()
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			const network = "ethereum"
+			const addr = "0x1111111111111111111111111111111111111111"
+			store, err := scanner.Open(":memory:")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			if err := store.SeedCursor(ctx, network, 1); err != nil {
+				t.Fatal(err)
+			}
+			token := strings.Repeat("c", 32)
+			handler, err := scanner.Handler(store, map[string]string{paymentConsumer: token})
+			if err != nil {
+				t.Fatal(err)
+			}
+			srv := httptest.NewUnstartedServer(handler)
+			protocols := new(http.Protocols)
+			protocols.SetHTTP1(true)
+			protocols.SetUnencryptedHTTP2(true)
+			srv.Config.Protocols = protocols
+			srv.Start()
+			defer srv.Close()
+			c := scanner.Client{URL: srv.URL, Token: token}
+			if _, err := c.Subscribe(ctx, paymentConsumer, []scanner.Watch{{Network: network, Address: addr}}); err != nil {
+				t.Fatal(err)
+			}
+			source := eventSource{[]scanner.Activity{{Network: network, Height: 2, TxID: "unmatched", TimeMS: time.Now().UnixMilli(), Addresses: []string{addr}, Data: json.RawMessage("{}")}}}
+			if _, err := store.Step(ctx, scanner.Network{Name: network}, source); err != nil {
+				t.Fatal(err)
+			}
+			next := func() *scanner.Delivery {
+				d, err := store.PendingNetwork(ctx, paymentConsumer, network, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return d
+			}
+			if next() == nil {
+				t.Fatal("fixture did not enqueue")
+			}
+			done := make(chan error, 1)
+			go func() {
+				if transport == "ws" {
+					done <- websocketFeed(ctx, c, network)
+				} else {
+					done <- grpcFeed(ctx, c, network)
+				}
+			}()
+			defer func() { cancel(); <-done }()
+			for next() != nil {
+				select {
+				case <-ctx.Done():
+					t.Fatal("delivery not acknowledged")
+				case <-time.After(10 * time.Millisecond):
+				}
+			}
+		})
+	}
+}
+
+func TestStreamLeavesFailedDeliveryUnacknowledged(t *testing.T) {
+	defer testutil.SetupTestDatabases(t)()
+	frames := []*api.ServerFrame{
+		{Result: &api.ServerFrame_Ready{Ready: &api.Ready{}}},
+		{Result: &api.ServerFrame_Delivery{Delivery: &api.Delivery{Id: 1, Network: "ethereum", TxId: "bad", TimeMs: 1, Addresses: []string{"address"}, DataJson: "not json"}}},
+	}
+	acked := false
+	err := readFrames(t.Context(), "ethereum", func(f *api.ClientFrame) error {
+		if f.GetAck() != 0 {
+			acked = true
+		}
+		return nil
+	}, func() (*api.ServerFrame, error) {
+		if len(frames) == 0 {
+			t.Fatal("read after failed event")
+		}
+		f := frames[0]
+		frames = frames[1:]
+		return f, nil
+	})
+	if err == nil || acked {
+		t.Fatalf("err=%v ack=%v", err, acked)
 	}
 }

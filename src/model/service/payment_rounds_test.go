@@ -100,3 +100,31 @@ func TestCrashAfterReservingLastStrictRoundRequiresReview(t *testing.T) {
 		t.Fatal(got, err)
 	}
 }
+
+func TestVerificationPolicySurvivesSettingChangeAndReplay(t *testing.T) {
+	defer testutil.SetupTestDatabases(t)()
+	if err := data.ReloadSettings(); err != nil {
+		t.Fatal(err)
+	}
+	o := mdb.Orders{TradeId: "settings", OrderId: "settings", Status: mdb.StatusWaitPay}
+	if err := dao.Mdb.Create(&o).Error; err != nil {
+		t.Fatal(err)
+	}
+	first := scanner.Activity{TxID: "first"}
+	if err := queueConfirmation(&o, first); err != nil {
+		t.Fatal(err)
+	}
+	if err := data.SetSetting("system", mdb.SettingKeyStrictPayment, "false", mdb.SettingTypeBool); err != nil {
+		t.Fatal(err)
+	}
+	if err := queueConfirmation(&o, first); err != nil {
+		t.Fatal(err)
+	}
+	if err := queueConfirmation(&o, scanner.Activity{TxID: "second"}); err != nil {
+		t.Fatal(err)
+	}
+	var jobs []mdb.PaymentConfirmation
+	if err := dao.Mdb.Order("id").Find(&jobs).Error; err != nil || len(jobs) != 2 || jobs[0].SkipStrict || !jobs[1].SkipStrict {
+		t.Fatal(jobs, err)
+	}
+}

@@ -8,6 +8,7 @@ type PaymentConfirmation struct {
 	Position       string `gorm:"size:64;uniqueIndex:idx_candidate_tx;not null"`
 	Activity       string `gorm:"type:longtext;not null"`
 	Attempts       int    `gorm:"not null;default:0"`
+	SkipStrict     bool   `gorm:"not null;default:false"`
 	PreviousPair   string `gorm:"size:260"`
 	VerifiedResult string `gorm:"type:longtext"`
 	RetryAt        int64  `gorm:"index;not null"`

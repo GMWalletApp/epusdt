@@ -3,8 +3,6 @@ package task
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -92,201 +90,6 @@ func (p *paymentSubscriptions) ensure(network, address string) error {
 	return nil
 }
 
-// embeddedWorker adapts EPUSDT's live node selection to the same scanner
-// engine used by the standalone service. Only this worker owns the source.
-type embeddedWorker struct {
-	config      scanner.Network
-	nextRefresh time.Time
-	delay       time.Duration
-	name        string
-	store       *scanner.Store
-	src         *scanner.SourcePool
-	idsMu       sync.RWMutex
-	ids         map[scanner.Network]uint64
-}
-
-func (w *embeddedWorker) close() {
-	if w.src != nil {
-		w.src.Close()
-		w.src = nil
-	}
-}
-
-func (w *embeddedWorker) wakeups() <-chan struct{} {
-	if w.src == nil {
-		return nil
-	}
-	return w.src.Wakeups()
-}
-
-func runEmbeddedNetwork(ctx context.Context, name string, store *scanner.Store) {
-	store.WhileWatched(ctx, name, func(live context.Context) { runActivePaymentNetwork(live, name, store) })
-}
-func runActivePaymentNetwork(ctx context.Context, name string, store *scanner.Store) {
-	worker := embeddedWorker{name: name, store: store}
-	defer worker.close()
-	for ctx.Err() == nil {
-		delay, err := worker.step(ctx)
-		if err != nil {
-			log.Sugar.Warnf("[ChainScanner] %s: %v", name, err)
-		}
-		if delay <= 0 {
-			continue
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-worker.wakeups():
-		case <-time.After(delay):
-		}
-	}
-}
-
-func scannerNodeConfig(node mdb.RpcNode, candidates []mdb.RpcNode) (scanner.Network, bool) {
-	n := scanner.Network{Name: node.Network, Protocol: node.Type, URL: node.Url, APIKey: node.ApiKey}
-	if scanner.NeedsHistory(n.Name, n.Protocol) {
-		for _, other := range candidates {
-			if other.ID == node.ID || other.Network != node.Network {
-				continue
-			}
-			if other.Type == mdb.RpcNodeTypeHttp || other.Type == "rest" || (n.Name == "solana" && other.Type == "jsonrpc") {
-				n.HistoryURL = other.Url
-				n.HistoryAPIKey = other.ApiKey
-				break
-			}
-		}
-	}
-	return n, scanner.ValidateNetwork(n) == nil
-}
-func (w *embeddedWorker) refreshNodes(ctx context.Context, allowDisabled bool) (time.Duration, error) {
-	delay := 5 * time.Second
-	chain, err := data.GetChainByNetwork(w.name)
-	if err != nil {
-		return delay, err
-	}
-	if chain.ID == 0 || (!chain.Enabled && !allowDisabled) {
-		w.close()
-		return delay, nil
-	}
-	if chain.ScanIntervalSec > 0 {
-		delay = time.Duration(chain.ScanIntervalSec) * time.Second
-	}
-	nodes, err := data.GeneralScannerNodes(w.name, scanner.Protocols(w.name))
-	if err != nil {
-		return delay, err
-	}
-	var configs []scanner.Network
-	ids := map[scanner.Network]uint64{}
-	for _, node := range nodes {
-		if node.Network != w.name {
-			continue
-		}
-		candidate, ok := scannerNodeConfig(node, nodes)
-		if !ok {
-			continue
-		}
-		if len(configs) > 0 && strings.HasPrefix(configs[0].Protocol, "solidity-") && !strings.HasPrefix(candidate.Protocol, "solidity-") {
-			continue
-		}
-		candidate.Confirmations = int64(chain.MinConfirmations)
-		candidate.IntervalSeconds = int(delay / time.Second)
-		configs = append(configs, candidate)
-		ids[candidate] = node.ID
-	}
-	if len(configs) == 0 {
-		w.close()
-		return delay, nil
-	}
-	w.idsMu.Lock()
-	w.ids = ids
-	w.idsMu.Unlock()
-	if w.src == nil {
-		w.src = scanner.NewSourcePool(ctx, w.name)
-		w.src.Report = func(n scanner.Network, success bool) {
-			w.idsMu.RLock()
-			id, ok := w.ids[n]
-			w.idsMu.RUnlock()
-			if !ok {
-				return
-			}
-			if success {
-				data.RecordRpcNodeSuccess(id)
-			} else {
-				data.RecordRpcNodeFailure(id)
-			}
-		}
-	}
-	if err = w.src.SetNodes(configs); err != nil {
-		return delay, err
-	}
-	w.config = configs[0]
-	return delay, nil
-}
-
-// Take a fresh head for cold registration and the inclusive unsubscribe boundary.
-// A disabled payment chain may still owe a final confirmed range.
-func configureEmbedded(store *scanner.Store) {
-	networks := make(map[string]scanner.Network, len(scannerNetworks))
-	for _, n := range scannerNetworks {
-		networks[n] = scanner.Network{Name: n}
-	}
-	scanner.ConfigureNetworks(store, networks, func(ctx context.Context, name string) (int64, error) {
-		w := embeddedWorker{name: name, store: store}
-		defer w.close()
-		if _, err := w.refreshNodes(ctx, true); err != nil {
-			return 0, err
-		}
-		if w.src == nil {
-			return 0, scanner.ErrCursorNotReady
-		}
-		return w.src.Head(ctx)
-	})
-}
-
-func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
-	if !time.Now().Before(w.nextRefresh) {
-		delay, err := w.refreshNodes(ctx, w.store.Draining(w.name))
-		if err != nil {
-			return delay, err
-		}
-		w.delay = delay
-		w.nextRefresh = time.Now().Add(min(delay, 5*time.Second))
-	}
-	delay := w.delay
-	if w.src == nil {
-		return delay, nil
-	}
-	behind, err := w.store.Pump(ctx, w.config, w.src)
-	if err != nil {
-		if ctx.Err() != nil {
-			return delay, nil
-		}
-		data.RecordRpcFailure(w.name)
-		return delay, fmt.Errorf("%s scanner: %w", w.name, err)
-	}
-	data.RecordRpcSuccess(w.name)
-	if h, err := w.store.Height(ctx, w.name); err == nil && h >= 0 {
-		data.RecordRpcBlockHeight(w.name, h)
-	}
-	if behind {
-		return 0, nil
-	}
-	return delay, nil
-}
-
-func consumeScanner(ctx context.Context, feed scanner.Feed) {
-	var wg sync.WaitGroup
-	for _, network := range scannerNetworks {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			consumeQueue(ctx, feed, func() (*scanner.Delivery, error) {
-				return feed.PendingNetwork(ctx, paymentConsumer, network, 15*time.Second)
-			})
-		}()
-	}
-	wg.Wait()
-}
 func consumeQueue(ctx context.Context, feed scanner.Feed, next func() (*scanner.Delivery, error)) {
 	for ctx.Err() == nil {
 		d, err := next()
@@ -318,5 +121,9 @@ func processScannerActivity(ctx context.Context, e scanner.Activity) error {
 	if chain.ID == 0 || !chain.Enabled {
 		return nil
 	}
-	return service.ApplyChainActivity(ctx, e)
+	err = service.ApplyChainActivity(ctx, e)
+	if err == nil {
+		data.RecordRpcBlockHeight(e.Network, e.Height)
+	}
+	return err
 }

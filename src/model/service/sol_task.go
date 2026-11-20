@@ -1,21 +1,14 @@
 package service
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
-	"sort"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
-	"github.com/GMWalletApp/epusdt/model/request"
-	"github.com/GMWalletApp/epusdt/util/constant"
 	"github.com/GMWalletApp/epusdt/util/log"
 	"github.com/GMWalletApp/epusdt/util/math"
 	"github.com/gagliardetto/solana-go"
@@ -23,11 +16,6 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/tidwall/gjson"
 )
-
-// gProcessedSignatures 已处理签名缓存，避免重复调用 getTransaction
-var gProcessedSignatures sync.Map // sig -> unix timestamp
-
-var processSolanaOrder = OrderProcessing
 
 var (
 	solRPCRetryCount   = 5
@@ -43,252 +31,6 @@ type TransferInfo struct {
 	RawAmount   uint64  // Raw amount from the transaction (before adjusting for decimals)
 	Decimals    *int    // Optional decimals from the transaction, if available
 	BlockTime   int64   // Block time of the transfer unit is seconds since epoch
-}
-
-// SolCallBack 扫描指定钱包地址的 Solana 链上交易，匹配待支付订单并确认收款。
-func SolCallBack(address string, wg *sync.WaitGroup) {
-	defer wg.Done()
-	defer func() {
-		if err := recover(); err != nil {
-			log.Sugar.Errorf("[SOL][%s] panic recovered: %v", address, err)
-		}
-	}()
-
-	// Load enabled Solana tokens from chain_tokens. The contract_address
-	// column holds the mint for SPL tokens; a special entry with
-	// symbol=SOL and empty contract_address enables native SOL payments.
-	tokens, err := data.ListEnabledChainTokensByNetwork(mdb.NetworkSolana)
-	if err != nil {
-		log.Sugar.Errorf("[SOL][%s] load chain_tokens err=%v", address, err)
-		return
-	}
-	if len(tokens) == 0 {
-		log.Sugar.Debugf("[SOL][%s] no enabled chain_tokens, skipping", address)
-		return
-	}
-	mintTokens := make(map[string]*mdb.ChainToken, len(tokens))
-	var nativeSolToken *mdb.ChainToken
-	for i := range tokens {
-		sym := strings.ToUpper(strings.TrimSpace(tokens[i].Symbol))
-		mint := strings.TrimSpace(tokens[i].ContractAddress)
-		if sym == "SOL" && mint == "" {
-			nativeSolToken = &tokens[i]
-			continue
-		}
-		if mint == "" {
-			continue
-		}
-		mintTokens[mint] = &tokens[i]
-	}
-
-	// Clean up old entries from processed cache (older than 1 hour)
-	cleanupCutoff := time.Now().Add(-1 * time.Hour).Unix()
-	gProcessedSignatures.Range(func(key, value interface{}) bool {
-		if ts, ok := value.(int64); ok && ts < cleanupCutoff {
-			gProcessedSignatures.Delete(key)
-		}
-		return true
-	})
-
-	limit := 1000
-
-	// 查询钱包地址 + 每个已启用 SPL 代币 ATA 的签名
-	queryAddrs := []string{address}
-	for mint := range mintTokens {
-		ata, err := FindATAAddress(address, mint)
-		if err != nil {
-			log.Sugar.Errorf("[SOL][%s] failed to derive ATA for mint %s: %v", address, mint, err)
-			continue
-		}
-		queryAddrs = append(queryAddrs, ata)
-	}
-
-	// 拉取签名并去重
-	seen := make(map[string]bool)
-	var result []solSignatureResult
-	for _, queryAddr := range queryAddrs {
-		respBody, err := SolGetSignaturesForAddress(queryAddr, limit, "", "")
-		if err != nil {
-			log.Sugar.Errorf("[SOL][%s] SolGetSignaturesForAddress(%s) failed: %v", address, queryAddr, err)
-			continue
-		}
-
-		resultBody := gjson.GetBytes(respBody, "result")
-		if !resultBody.Exists() || !resultBody.IsArray() {
-			log.Sugar.Errorf("[SOL][%s] unexpected response format for %s: %s", address, queryAddr, string(respBody))
-			continue
-		}
-
-		var batch []solSignatureResult
-		err = json.Unmarshal([]byte(resultBody.Raw), &batch)
-		if err != nil {
-			log.Sugar.Errorf("[SOL][%s] failed to unmarshal signatures for %s: %v", address, queryAddr, err)
-			continue
-		}
-
-		for _, sig := range batch {
-			if !seen[sig.Signature] {
-				seen[sig.Signature] = true
-				result = append(result, sig)
-			}
-		}
-	}
-
-	if len(result) == 0 {
-		log.Sugar.Debugf("[SOL][%s] no transaction signatures found", address)
-		return
-	}
-
-	// 按 blockTime 降序排列
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].BlockTime == nil {
-			return false
-		}
-		if result[j].BlockTime == nil {
-			return true
-		}
-		return *result[i].BlockTime > *result[j].BlockTime
-	})
-
-	// 时间截止线：订单过期时间 + 5 分钟
-	cutoffTime := time.Now().Add(-config.GetOrderExpirationTimeDuration() - 5*time.Minute).Unix()
-
-	log.Sugar.Debugf("[SOL][%s] fetched %d unique signatures from %d addresses, cutoff=%d",
-		address, len(result), len(queryAddrs), cutoffTime)
-
-	// Process each transaction signature
-	for sigIdx, txSig := range result {
-		sig := txSig.Signature
-		retrySignature := false
-
-		// Skip failed transactions
-		if txSig.Err != nil {
-			continue
-		}
-
-		// 超过截止时间的旧签名不再处理
-		if txSig.BlockTime != nil && *txSig.BlockTime < cutoffTime {
-			log.Sugar.Debugf("[SOL][%s] [%d/%d] sig=%s blockTime=%d before cutoff=%d, stopping scan",
-				address, sigIdx+1, len(result), sig, *txSig.BlockTime, cutoffTime)
-			break
-		}
-
-		// 跳过已处理的签名
-		if _, ok := gProcessedSignatures.Load(sig); ok {
-			continue
-		}
-
-		log.Sugar.Debugf("[SOL][%s] [%d/%d] processing sig=%s slot=%d", address, sigIdx+1, len(result), sig, txSig.Slot)
-
-		txData, err := SolGetTransaction(sig)
-		if err != nil {
-			log.Sugar.Debugf("[SOL][%s] sig=%s fetch failed: %v", address, sig, err)
-			continue
-		}
-
-		instructions := gjson.GetBytes(txData, "result.transaction.message.instructions").Array()
-		log.Sugar.Debugf("[SOL][%s] sig=%s has %d instructions", address, sig, len(instructions))
-
-		for instrIdx, instruction := range instructions {
-			programID := instruction.Get("programId").String()
-			parsedType := instruction.Get("parsed.type").String()
-			log.Sugar.Debugf("[SOL][%s] sig=%s instr[%d] programId=%s parsedType=%s", address, sig, instrIdx, programID, parsedType)
-
-			transferInfo, err := ParseTransferInfoFromInstruction(instruction, txData)
-			if err != nil {
-				log.Sugar.Debugf("[SOL][%s] sig=%s instr[%d] parse error: %v", address, sig, instrIdx, err)
-				continue
-			}
-			if transferInfo == nil {
-				continue
-			}
-
-			log.Sugar.Debugf("[SOL][%s] sig=%s instr[%d] transfer: src=%s dst=%s mint=%s rawAmount=%d amount=%.6f blockTime=%d",
-				address, sig, instrIdx,
-				transferInfo.Source, transferInfo.Destination, transferInfo.Mint,
-				transferInfo.RawAmount, transferInfo.Amount, transferInfo.BlockTime)
-
-			if !isTransferToAddress(transferInfo, address) {
-				continue
-			}
-
-			token, amount := resolveSolTokenAndAmount(transferInfo, mintTokens, nativeSolToken)
-			if token == "" || amount <= 0 {
-				continue
-			}
-
-			log.Sugar.Infof("[SOL][%s] sig=%s instr[%d] incoming transfer confirmed: token=%s amount=%.2f -> querying transaction_lock network=solana address=%s token=%s amount=%.2f",
-				address, sig, instrIdx, token, amount, address, token, amount)
-
-			tradeID, err := data.GetTradeIdByWalletAddressAndAmountAndToken(mdb.NetworkSolana, address, token, amount)
-			if err != nil {
-				log.Sugar.Errorf("[SOL][%s] sig=%s query transaction_lock failed: %v", address, sig, err)
-				retrySignature = true
-				continue
-			}
-			if tradeID == "" {
-				log.Sugar.Infof("[SOL][%s] sig=%s no active transaction_lock matched: network=solana address=%s token=%s amount=%.2f (no order or expired)",
-					address, sig, address, token, amount)
-				continue
-			}
-			log.Sugar.Infof("[SOL][%s] transaction_lock matched: trade_id=%s sig=%s token=%s amount=%.2f",
-				address, tradeID, sig, token, amount)
-
-			order, err := data.GetOrderInfoByTradeId(tradeID)
-			if err != nil {
-				log.Sugar.Errorf("[SOL][%s] sig=%s load order failed for trade_id=%s: %v", address, sig, tradeID, err)
-				retrySignature = true
-				continue
-			}
-			log.Sugar.Infof("[SOL][%s] order loaded: trade_id=%s order_id=%s status=%d created_at_ms=%d",
-				address, tradeID, order.OrderId, order.Status, order.CreatedAt.TimestampMilli())
-
-			// blockTime 秒 → 毫秒，与订单创建时间对齐
-			blockTimestamp := transferInfo.BlockTime * 1000
-			createTime := order.CreatedAt.TimestampMilli()
-			log.Sugar.Infof("[SOL][%s] time check: sig=%s block_time_ms=%d order_created_ms=%d diff_ms=%d",
-				address, sig, blockTimestamp, createTime, blockTimestamp-createTime)
-			if blockTimestamp < createTime {
-				log.Sugar.Warnf("[SOL][%s] sig=%s skipped: block_time_ms=%d is %d ms before order created_ms=%d (transaction predates the order)",
-					address, sig, blockTimestamp, createTime-blockTimestamp, createTime)
-				continue
-			}
-
-			req := &request.OrderProcessingRequest{
-				ReceiveAddress:     address,
-				Token:              token,
-				Network:            mdb.NetworkSolana,
-				TradeId:            tradeID,
-				Amount:             amount,
-				BlockTransactionId: sig,
-			}
-			log.Sugar.Infof("[SOL][%s] calling OrderProcessing: trade_id=%s sig=%s token=%s amount=%.2f",
-				address, tradeID, sig, token, amount)
-			err = processSolanaOrder(req)
-			if err != nil {
-				if errors.Is(err, constant.OrderBlockAlreadyProcess) || errors.Is(err, constant.OrderStatusConflict) {
-					log.Sugar.Infof("[SOL][%s] sig=%s already resolved: trade_id=%s reason=%v", address, sig, tradeID, err)
-					continue
-				}
-				log.Sugar.Errorf("[SOL][%s] sig=%s OrderProcessing failed for trade_id=%s: %v", address, sig, tradeID, err)
-				retrySignature = true
-				continue
-			}
-
-			log.Sugar.Infof("[SOL][%s] order marked paid: trade_id=%s sig=%s token=%s amount=%.2f, sending telegram notification",
-				address, tradeID, sig, token, amount)
-			sendPaymentNotification(order)
-			log.Sugar.Infof("[SOL][%s] payment fully processed: trade_id=%s sig=%s", address, tradeID, sig)
-		}
-
-		if retrySignature {
-			log.Sugar.Debugf("[SOL][%s] sig=%s not marked processed because retryable processing failed", address, sig)
-			continue
-		}
-
-		// 标记已处理
-		gProcessedSignatures.Store(sig, time.Now().Unix())
-	}
 }
 
 // solSignatureResult getSignaturesForAddress 返回结构
@@ -417,38 +159,6 @@ func solRetryClientWithURLHeaders(rpcUrl string, method string, params []interfa
 	}
 
 	return respBody, nil
-}
-
-func SolGetSignaturesForAddress(address string, limit int, untilSig string, beforeSig string) ([]byte, error) {
-	opts := map[string]interface{}{
-		"commitment": "finalized",
-		"limit":      limit,
-	}
-	if untilSig != "" {
-		opts["until"] = untilSig
-	}
-	if beforeSig != "" {
-		opts["before"] = beforeSig
-	}
-
-	bodyData, err := SolRetryClient("getSignaturesForAddress",
-		[]interface{}{address, opts})
-	if err != nil {
-		return nil, err
-	}
-
-	var result map[string]interface{}
-	err = json.Unmarshal(bodyData, &result)
-	if err != nil {
-		return nil, err
-	}
-
-	_, ok := result["result"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unexpected response format: %v", result)
-	}
-
-	return bodyData, nil
 }
 
 func SolGetBlockHeight() (height int64, err error) {

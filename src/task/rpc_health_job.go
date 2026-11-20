@@ -8,12 +8,10 @@ import (
 	"net"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
-	"github.com/GMWalletApp/epusdt/util/log"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -22,63 +20,21 @@ import (
 
 const rpcProbeTimeout = 5 * time.Second
 
-// RpcHealthJob periodically probes enabled general/both rpc_nodes rows.
-// Manual verification nodes are left for on-demand admin checks so paid
-// endpoints are not consumed by the scheduler.
-type RpcHealthJob struct{ watching func(string) bool }
-
-var gRpcHealthJobLock sync.Mutex
-
-func (r RpcHealthJob) Run() {
-	gRpcHealthJobLock.Lock()
-	defer gRpcHealthJobLock.Unlock()
-
-	nodes, err := data.ListRpcNodesForHealth()
-	if err != nil {
-		log.Sugar.Errorf("[rpc-health] list nodes err=%v", err)
-		return
-	}
-	var wg sync.WaitGroup
-	for i := range nodes {
-		if !nodes[i].Enabled || r.watching != nil && !r.watching(nodes[i].Network) {
-			continue
-		}
-		wg.Add(1)
-		go func(n mdb.RpcNode) {
-			defer wg.Done()
-			status, latency, probeErr := probeReachability(n)
-			if status == mdb.RpcNodeStatusDown && n.Status != mdb.RpcNodeStatusDown {
-				log.Sugar.Errorf("[rpc-health] capability probe failed node=%s err=%v", data.RpcNodeLogLabel(n), probeErr)
+func scannerNodeConfig(node mdb.RpcNode, candidates []mdb.RpcNode) (scanner.Network, bool) {
+	n := scanner.Network{Name: node.Network, Protocol: node.Type, URL: node.Url, APIKey: node.ApiKey}
+	if scanner.NeedsHistory(n.Name, n.Protocol) {
+		for _, other := range candidates {
+			if other.ID == node.ID || other.Network != node.Network {
+				continue
 			}
-			if err := data.UpdateRpcNodeHealth(n.ID, status, latency); err != nil {
-				log.Sugar.Warnf("[rpc-health] update node %d err=%v", n.ID, err)
+			if other.Type == mdb.RpcNodeTypeHttp || other.Type == "rest" || (n.Name == "solana" && other.Type == "jsonrpc") {
+				n.HistoryURL = other.Url
+				n.HistoryAPIKey = other.ApiKey
+				break
 			}
-		}(nodes[i])
-	}
-	wg.Wait()
-}
-
-// The recurring health check tests reachability only. The scanner itself
-// reports read failures and rotates nodes. An explicit admin probe can run
-// the more expensive historical-log and subscription checks.
-func probeReachability(node mdb.RpcNode) (string, int, error) {
-	if !isEvmRpcNetwork(node.Network) || (node.Type != "http" && node.Type != "ws") {
-		return probeRpcNode(node)
-	}
-	start := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), rpcProbeTimeout)
-	defer cancel()
-	client, err := ethclient.DialContext(ctx, node.Url)
-	if err == nil {
-		defer client.Close()
-		if err = verifyProbeChain(ctx, client, node.Network); err == nil {
-			_, err = client.BlockNumber(ctx)
 		}
 	}
-	if err != nil {
-		return mdb.RpcNodeStatusDown, -1, err
-	}
-	return mdb.RpcNodeStatusOk, int(time.Since(start).Milliseconds()), nil
+	return n, scanner.ValidateNetwork(n) == nil
 }
 
 // ProbeRpcNode verifies the capability required by the configured node. EVM
