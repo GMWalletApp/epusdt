@@ -55,6 +55,11 @@ func NewNodeRegistry(ctx context.Context, s *Store, networks []Network) (*NodeRe
 	return nodes.NewNodeRegistry(ctx, s, networks)
 }
 
+// NewNodeRegistryWithBlockedHosts also excludes matching endpoint hosts and their subdomains.
+func NewNodeRegistryWithBlockedHosts(ctx context.Context, s *Store, networks []Network, hosts []string) (*NodeRegistry, error) {
+	return nodes.NewNodeRegistry(ctx, s, networks, hosts...)
+}
+
 // NewSource opens the configured node using the network’s selected protocol.
 func NewSource(ctx context.Context, n Network) (Source, error) { return chains.NewSource(ctx, n) }
 

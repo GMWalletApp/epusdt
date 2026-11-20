@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/assets/chainscanner.svg" width="96" height="96" alt=""></p>
+<p align="center"><img src="docs/assets/chainscanner.svg" width="96" height="96" alt="ChainScanner"></p>
 <h1 align="center">ChainScanner</h1>
 <p align="center"><strong>Sigue direcciones en la cadena y recibe sus transacciones por WebSocket, gRPC o HTTP.</strong></p>
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.vi.md">Tiếng Việt</a> · <strong>Español</strong> · <a href="README.ru.md">Русский</a></p>
@@ -6,6 +6,12 @@
 <p align="center"><a href="docs/guide/es.md#quick-start">Inicio rápido</a> &nbsp;·&nbsp; <a href="docs/guide/es.md#networks">Redes compatibles</a> &nbsp;·&nbsp; <a href="docs/api/es.md">Referencia de la API</a></p>
 
 ---
+
+## Casos de uso
+
+- **Cobros en cadena.** La [integración de EPUSDT](https://github.com/GMWalletApp/epusdt/pull/127) observa las direcciones de cobro y verifica la transacción con dos nodos antes de acreditar el pedido.
+- **Idea para Telegram.** Un bot puede guardar los eventos de una cartera personal y avisar de entradas y salidas con el hash.
+- **Idea para tesorería.** Contabilidad y alertas pueden observar las mismas carteras con consumidores y confirmaciones independientes.
 
 ## Suscribirse a una dirección
 
@@ -28,6 +34,8 @@ La respuesta indica en `from_height` el primer bloque que cubre la suscripción.
 Registra en cada red de pago un nodo fiable de un operador distinto. Puede recuperar bloques fallidos y tiene prioridad para uno de los dos puestos de la consulta estricta. Tras dos rondas fallidas, el pago pasa a revisión manual. [API](docs/api/es.md#fallback)
 
 ```sh
+BASE=http://127.0.0.1:9081
+ADMIN_TOKEN=$(jq -er '.admin_token' chainscanner.json)
 curl -fsS -X POST "$BASE/v1/admin/nodes/fallback" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H 'Content-Type: application/json' \
@@ -41,3 +49,5 @@ Si tu proyecto usa ChainScanner o se inspira en su diseño, te agradeceríamos q
 ```markdown
 Proyecto de referencia: [ChainScanner](https://github.com/GMWalletApp/ChainScanner)
 ```
+
+Gracias a imToken y Bitget Wallet por sus RPC públicos y a ChainList, OpenChainBench y CompareNodes por sus directorios. Gracias a quienes usan ChainScanner y confían en él.

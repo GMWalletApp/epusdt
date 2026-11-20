@@ -56,6 +56,7 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 | `protocol` · `api_key` · `history_url` · `history_api_key` | 按下表选择接口。需要历史节点的协议必须填写 `history_url`，其凭证与主节点独立。 |
 | `trace_calls` | 通过执行层 JSON-RPC 和支持 call tracer 的节点采集 EVM 内部调用证据。 |
 | `consumers` · `admin_token` | 消费者名称映射到各自的令牌，每个至少 24 字节。另设独立的管理员令牌即可启用节点管理。 |
+| `blacklist` | 全网络节点黑名单，每项填域名或 IP 地址。 [API](../api/zh-CN.md#blacklist) |
 
 <a id="networks"></a>
 

@@ -151,6 +151,9 @@ func (r *NodeRegistry) refreshCandidates(ctx context.Context, origin, network st
 		wg.Go(func() {
 			for i := range jobs {
 				e := candidates[i]
+				if r.blacklist.hosts().matches(e.URL) {
+					continue
+				}
 				start := time.Now()
 				timeout := 10 * time.Second
 				if origin == "openchainbench" || origin == "comparenodes" {
@@ -169,6 +172,9 @@ func (r *NodeRegistry) refreshCandidates(ctx context.Context, origin, network st
 		})
 	}
 	for i, e := range candidates {
+		if r.blacklist.hosts().matches(e.URL) {
+			continue
+		}
 		// Once admitted, the regular health worker owns checks and cooldowns.
 		if _, known := existing[e]; known && origin == "comparenodes" {
 			results[i].endpoint = e

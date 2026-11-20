@@ -35,6 +35,7 @@ func (r *NodeRegistry) Handler(consumers map[string]string, token string) (http.
 	}
 	key := sha256.Sum256([]byte(token))
 	admin := http.NewServeMux()
+	r.registerBlacklistRoutes(admin)
 	admin.HandleFunc("GET /v1/admin/nodes", func(w http.ResponseWriter, req *http.Request) {
 		nodes, err := r.List(req.Context(), req.URL.Query().Get("network"))
 		nodeReply(w, 200, nodes, err)
@@ -104,6 +105,10 @@ func nodeID(req *http.Request) (int64, error) {
 func nodeReply(w http.ResponseWriter, code int, value any, err error) {
 	if err != nil {
 		switch {
+		case errors.Is(err, errBlacklistHost):
+			http.Error(w, err.Error(), 400)
+		case errors.Is(err, errConfiguredRule):
+			http.Error(w, err.Error(), 409)
 		case errors.Is(err, errInvalidNode):
 			http.Error(w, "invalid node", 400)
 		case errors.Is(err, errDuplicateNode):

@@ -21,7 +21,7 @@ func providerKey(n chains.Network) string {
 		if port == "443" || port == "80" {
 			port = ""
 		}
-		return n.Name + "|" + strings.ToLower(u.Hostname()) + "|" + port
+		return n.Name + "|" + strings.TrimSuffix(strings.ToLower(u.Hostname()), ".") + "|" + port
 	}
 	return n.Name + "|" + raw
 }

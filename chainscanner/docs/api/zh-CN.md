@@ -28,6 +28,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | --- | --- | --- |
 | 消费者 | [`PUT /v1/subscriptions`](#replace-watches) | `200 / 202` |
 | 消费者 | [`GET /v1/events/next`](#next) | `200 / 204` |
+| 消费者 | [`GET /v1/events/stream`](#streaming) · WebSocket | `101` |
 | 消费者 | [`POST /v1/events/{id}/ack`](#ack) | `204` |
 | 消费者 | [`GET /v1/heights/{network}`](#height) | `200` |
 | 消费者 | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
@@ -38,6 +39,9 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | 管理员 | [`POST /v1/admin/nodes/{id}/test`](#test-one) | `200` |
 | 管理员 | [`POST /v1/admin/nodes/test`](#test-all) | `200` |
 | 管理员 | [`DELETE /v1/admin/nodes/{id}`](#delete) | `204` |
+| 管理员 | [`GET /v1/admin/blacklist`](#blacklist) | `200` |
+| 管理员 | [`PUT /v1/admin/blacklist/{host}`](#blacklist) | `204` |
+| 管理员 | [`DELETE /v1/admin/blacklist/{host}`](#blacklist) | `204` |
 
 <a id="transactions"></a>
 
@@ -52,9 +56,21 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 TON 先用 v3 索引定位交易，再由两个主机和公钥均不同的直连 ADNL LiteServer 分别验证交易包含证明。返回的核验结果包含交易 BOC、交易哈希、账户、逻辑时间、时间戳，以及分片和主链区块根哈希。无法组成证明节点对时，也可由两个独立的 v3 索引核对完整记录。全局配置 URL 不能充当直连证明节点。 需要持久化尝试次数的客户端可使用 `?rounds=1`，第二轮通过 `X-ChainScanner-Exclude` 回传首轮响应的 `X-ChainScanner-Pair`，排除已用节点。默认接口自行完成两轮。
 
 ```sh
-consumer "$BASE/v1/transactions/plasma/$TX_HASH"
-consumer "$BASE/v1/transactions/plasma/$TX_HASH/strict"
+consumer "$BASE/v1/transactions/base/$TX_HASH"
+consumer "$BASE/v1/transactions/base/$TX_HASH/strict"
 ```
+
+<a id="trust"></a>
+
+### 什么时候需要二次确认
+
+公共节点会轮换。订阅事件和普通查询可能收到滞后、错误甚至伪造的数据，目前没有可核实的历史发生率。涉及入账或发货时，建议用交易哈希调用 `/strict` 二次确认，再核对交易是否成功、收款地址、资产、金额和确认深度。两个节点结果一致可提高可信度，不同域名仍可能属于同一运营商。
+
+建议选择一家你信任、且与普通节点分属不同运营商的服务商，把它配置为兜底节点，用于补扫失败区块和严格查询。低频业务可先用免费额度，再按补扫量、查询量和供应商各方法的计费方式核算。 [API](#fallback)
+
+默认严格接口两轮耗尽时，响应带有 `X-ChainScanner-Manual-Review: required`。支付系统应停止对本笔交易自动重试，保存网络与哈希，交由人工复核。`X-ChainScanner-Strict-Rounds` 表示本次已尝试的轮数。
+
+[节点黑名单](#blacklist)
 
 <a id="subscriptions"></a>
 
@@ -339,7 +355,7 @@ admin "$BASE/v1/admin/nodes?network=base"
 | --- | --- | --- |
 | `id, network` | `int64, string` | 稳定的数值 ID 和具体网络。 |
 | `protocol, url` | `string, string` | 选定的接口及节点 URL。 |
-| `origin` | `string` | 来源可为 `builtin`、`config`、`custom`、`chainlist`、`openchainbench`、`fallback`。 |
+| `origin` | `string` | 来源可为 `builtin`、`config`、`custom`、`chainlist`、`openchainbench`、`comparenodes`、`fallback`。 |
 | `status` | `string` | 可为 `untested`、`ok`、`timeout`、`unavailable`，探测后检查此字段。 |
 | `height, height_unit` | `int64? , string` | 上游高度或 null。单位可为 `block`、`slot`、`checkpoint`、`ledger_version`、`beacon_slot`。 |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | 探测开始的 Unix 毫秒时间戳和耗时毫秒数。首次探测前均为 null。 |
@@ -396,6 +412,20 @@ admin -X POST "$BASE/v1/admin/nodes/test?network=base"
 ```sh
 admin -X DELETE "$BASE/v1/admin/nodes/$NODE_ID"
 ```
+
+<a id="blacklist"></a>
+
+### 节点黑名单
+
+使用管理员令牌。域名规则覆盖该域名及其全部子域名，跨端口、跨网络生效；IP 规则精确匹配该地址。节点发现探测和节点选择都会检查登记的主节点与配套历史节点 URL。规则按 URL 主机匹配，无法识别 DNS 别名、反向代理或 TON 全局配置背后的实际运营商。
+
+```sh
+admin -X PUT "$BASE/v1/admin/blacklist/rpc.example.org"
+admin "$BASE/v1/admin/blacklist"
+admin -X DELETE "$BASE/v1/admin/blacklist/rpc.example.org"
+```
+
+列表按主机名排序，格式为 `[{"host":"rpc.example.org","source":"admin"}]`。添加和删除可重复调用，均返回 204。规则用于新的节点选择，运行中的扫描器会刷新节点池。文件型 SQLite 会保留 API 规则。也可在服务配置顶层写入 `"blacklist": ["rpc.example.org"]` 固定规则；此类规则来源为 `config`，API 删除返回 409，需修改配置文件并重启。
 
 <a id="errors"></a>
 

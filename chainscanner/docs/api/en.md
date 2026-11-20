@@ -28,6 +28,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | --- | --- | --- |
 | Consumer | [`PUT /v1/subscriptions`](#replace-watches) | `200 / 202` |
 | Consumer | [`GET /v1/events/next`](#next) | `200 / 204` |
+| Consumer | [`GET /v1/events/stream`](#streaming) · WebSocket | `101` |
 | Consumer | [`POST /v1/events/{id}/ack`](#ack) | `204` |
 | Consumer | [`GET /v1/heights/{network}`](#height) | `200` |
 | Consumer | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
@@ -38,6 +39,9 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Administrator | [`POST /v1/admin/nodes/{id}/test`](#test-one) | `200` |
 | Administrator | [`POST /v1/admin/nodes/test`](#test-all) | `200` |
 | Administrator | [`DELETE /v1/admin/nodes/{id}`](#delete) | `204` |
+| Administrator | [`GET /v1/admin/blacklist`](#blacklist) | `200` |
+| Administrator | [`PUT /v1/admin/blacklist/{host}`](#blacklist) | `204` |
+| Administrator | [`DELETE /v1/admin/blacklist/{host}`](#blacklist) | `204` |
 
 <a id="transactions"></a>
 
@@ -52,9 +56,21 @@ Strict mode prefers one eligible fallback, then a distinct provider. Ordinary lo
 TON uses a v3 index as a location hint and queries two direct ADNL LiteServers with distinct hosts and public keys. Each verifies the transaction inclusion proof. The verified result includes the transaction BOC, transaction hash, account, LT, timestamp, and shard and masterchain block roots. When a proof pair cannot be formed, two distinct v3 indexes may instead agree on a complete index record. A global-config URL cannot cast a LiteServer vote. Durable clients may request one round with `?rounds=1`, then pass the opaque `X-ChainScanner-Pair` response header as `X-ChainScanner-Exclude` on their final attempt. The default endpoint performs both rounds internally.
 
 ```sh
-consumer "$BASE/v1/transactions/plasma/$TX_HASH"
-consumer "$BASE/v1/transactions/plasma/$TX_HASH/strict"
+consumer "$BASE/v1/transactions/base/$TX_HASH"
+consumer "$BASE/v1/transactions/base/$TX_HASH/strict"
 ```
+
+<a id="trust"></a>
+
+### Deciding when to trust a transaction
+
+Public providers rotate. An event or a single-node lookup can contain stale, incorrect or fabricated data. ChainScanner has no measured historical incident rate. Before releasing funds or goods, query the transaction hash with `/strict`, then check execution success, recipient, asset, amount and confirmation depth. Two matching responses improve confidence. Different hostnames can share an operator.
+
+Register a fallback from an operator you trust, independent of your general nodes. A free tier can cover light use. Size the quota for both failed-range repairs and strict lookups, including provider-specific method costs. [API](#fallback)
+
+If the default strict request exhausts both rounds, the response includes `X-ChainScanner-Manual-Review: required`. Stop automatic retries for that payment and retain its network and hash for review. `X-ChainScanner-Strict-Rounds` gives the number of rounds attempted.
+
+[Node blacklist](#blacklist)
 
 <a id="subscriptions"></a>
 
@@ -339,7 +355,7 @@ admin "$BASE/v1/admin/nodes?network=base"
 | --- | --- | --- |
 | `id, network` | `int64, string` | Stable numeric ID and concrete network. |
 | `protocol, url` | `string, string` | Selected transport and endpoint URL. |
-| `origin` | `string` | One of `builtin`, `config`, `custom`, `chainlist`, `openchainbench`, `fallback`. |
+| `origin` | `string` | One of `builtin`, `config`, `custom`, `chainlist`, `openchainbench`, `comparenodes`, `fallback`. |
 | `status` | `string` | One of `untested`, `ok`, `timeout`, `unavailable`. Inspect this field after probing. |
 | `height, height_unit` | `int64? , string` | Observed upstream height, or null. Unit is `block`, `slot`, `checkpoint`, `ledger_version` or `beacon_slot`. |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | Unix milliseconds of probe start and elapsed milliseconds. Both are null before the first test. |
@@ -396,6 +412,20 @@ Remove a node by positive `id`, including a built-in or configured node. Returns
 ```sh
 admin -X DELETE "$BASE/v1/admin/nodes/$NODE_ID"
 ```
+
+<a id="blacklist"></a>
+
+### Node blacklist
+
+Use an administrator token. A domain rule matches the domain and all its subdomains across ports and networks. An IP literal matches that address. Rules inspect both the registered endpoint URL and its history URL before selection or discovery probes. They do not resolve DNS aliases or identify hidden upstreams behind proxies or TON global configurations.
+
+```sh
+admin -X PUT "$BASE/v1/admin/blacklist/rpc.example.org"
+admin "$BASE/v1/admin/blacklist"
+admin -X DELETE "$BASE/v1/admin/blacklist/rpc.example.org"
+```
+
+List returns a sorted JSON array of `{host, source}`. PUT and DELETE are idempotent and return 204. Rules take effect for new selections, and active scanners refresh their pools. File-backed SQLite preserves API rules across restarts. Set `"blacklist": ["rpc.example.org"]` at the top level of the server configuration to pin a rule. Deleting a configuration rule through the API returns 409. Edit the file and restart to remove it.
 
 <a id="errors"></a>
 

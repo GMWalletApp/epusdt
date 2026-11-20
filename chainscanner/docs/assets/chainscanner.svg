@@ -1,9 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="112" height="112" viewBox="0 0 112 112" role="img" aria-label="ChainScanner">
-  <defs><linearGradient id="scan" x2=".9" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#75f5d6"/><stop offset="1" stop-color="#54a8fb"/></linearGradient></defs>
-  <rect x="3" y="3" width="106" height="106" rx="28" fill="#101f30" stroke="#586c81" stroke-width="2"/>
-  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M26 37v-9a2 2 0 0 1 2-2h9m38 0h9a2 2 0 0 1 2 2v9M26 75v9a2 2 0 0 0 2 2h9m38 0h9a2 2 0 0 0 2-2v-9" stroke="#859bb2" stroke-width="3"/>
-    <path d="m32 47 24-14 24 14-24 14z" fill="url(#scan)" stroke="url(#scan)" stroke-width="3"/>
-    <path d="m32 57 24 14 24-14m-48 9 24 14 24-14" stroke="url(#scan)" stroke-width="4"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-labelledby="title">
+  <title id="title">ChainScanner</title>
+  <rect width="128" height="128" rx="22" fill="#100840"/>
+  <path d="M42 21h45l17 27H84l-6-10H53L37 64l16 26h25l6-10h20l-17 27H42L16 64Z" fill="#FFF7E8"/>
+  <path d="m66 47 17 17-17 17-17-17Z" fill="#91FA00"/>
 </svg>

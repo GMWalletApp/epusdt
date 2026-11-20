@@ -56,6 +56,7 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 | `protocol` · `api_key` · `history_url` · `history_api_key` | Choose an interface from the table below. Set `history_url` for paired transports. Its credentials are independent of the primary URL. |
 | `trace_calls` | Enable internal EVM call evidence with execution JSON-RPC and a provider supporting the call tracer. |
 | `consumers` · `admin_token` | Map consumer names to distinct tokens of at least 24 bytes. An optional, separate admin token enables node management. |
+| `blacklist` | Node blacklist for all networks. Each entry is a domain or IP literal. [API](../api/en.md#blacklist) |
 
 <a id="networks"></a>
 

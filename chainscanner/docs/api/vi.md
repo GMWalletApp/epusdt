@@ -28,6 +28,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | --- | --- | --- |
 | Dịch vụ | [`PUT /v1/subscriptions`](#replace-watches) | `200 / 202` |
 | Dịch vụ | [`GET /v1/events/next`](#next) | `200 / 204` |
+| Dịch vụ | [`GET /v1/events/stream`](#streaming) · WebSocket | `101` |
 | Dịch vụ | [`POST /v1/events/{id}/ack`](#ack) | `204` |
 | Dịch vụ | [`GET /v1/heights/{network}`](#height) | `200` |
 | Dịch vụ | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
@@ -38,6 +39,9 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Quản trị viên | [`POST /v1/admin/nodes/{id}/test`](#test-one) | `200` |
 | Quản trị viên | [`POST /v1/admin/nodes/test`](#test-all) | `200` |
 | Quản trị viên | [`DELETE /v1/admin/nodes/{id}`](#delete) | `204` |
+| Quản trị viên | [`GET /v1/admin/blacklist`](#blacklist) | `200` |
+| Quản trị viên | [`PUT /v1/admin/blacklist/{host}`](#blacklist) | `204` |
+| Quản trị viên | [`DELETE /v1/admin/blacklist/{host}`](#blacklist) | `204` |
 
 <a id="transactions"></a>
 
@@ -52,9 +56,23 @@ Chế độ nghiêm ngặt ưu tiên một nút dự phòng và yêu cầu một
 Trên TON, chỉ mục v3 cung cấp vị trí giao dịch. Hai LiteServer ADNL trực tiếp có máy chủ và khóa khác nhau kiểm tra bằng chứng giao dịch nằm trong khối. Kết quả gồm BOC, mã băm, tài khoản, LT, thời gian và hai mã băm gốc của khối shard và masterchain. Nếu không đủ hai LiteServer, hai chỉ mục v3 khác nhau có thể đối chiếu bản ghi đầy đủ.
 
 ```sh
-consumer "$BASE/v1/transactions/plasma/$TX_HASH"
-consumer "$BASE/v1/transactions/plasma/$TX_HASH/strict"
+consumer "$BASE/v1/transactions/base/$TX_HASH"
+consumer "$BASE/v1/transactions/base/$TX_HASH/strict"
 ```
+
+<a id="trust"></a>
+
+### Khi nào cần xác minh giao dịch
+
+Các nút công cộng luân phiên phục vụ. Sự kiện hoặc kết quả từ một nút có thể lỗi thời, sai hoặc giả mạo. Chưa có số liệu lịch sử đã kiểm chứng. Trước khi ghi có hoặc giao hàng, gọi `/strict` rồi kiểm tra trạng thái thành công, người nhận, tài sản, số tiền và độ sâu xác nhận. Hai tên miền có thể thuộc cùng nhà vận hành.
+
+Chọn nút dự phòng từ nhà cung cấp đáng tin và độc lập với các nút thường. Hạn mức miễn phí có thể đủ khi lưu lượng thấp. Tính cả lượt quét bù và truy vấn nghiêm ngặt. [API](#fallback)
+
+Khi hết hai vòng, API mặc định trả về `X-ChainScanner-Manual-Review: required`. Dừng thử lại tự động và lưu mạng cùng mã giao dịch để kiểm tra thủ công. `X-ChainScanner-Strict-Rounds` cho biết số vòng đã thử.
+
+`?rounds=1` · `X-ChainScanner-Pair` → `X-ChainScanner-Exclude`
+
+[Danh sách đen nút](#blacklist)
 
 <a id="subscriptions"></a>
 
@@ -339,7 +357,7 @@ admin "$BASE/v1/admin/nodes?network=base"
 | --- | --- | --- |
 | `id, network` | `int64, string` | ID số ổn định và mạng cụ thể. |
 | `protocol, url` | `string, string` | Giao thức và URL nút. |
-| `origin` | `string` | Nguồn: `builtin`, `config`, `custom`, `chainlist`, `openchainbench`, `fallback`. |
+| `origin` | `string` | Nguồn: `builtin`, `config`, `custom`, `chainlist`, `openchainbench`, `comparenodes`, `fallback`. |
 | `status` | `string` | Một trong `untested`, `ok`, `timeout`, `unavailable`. Kiểm tra trường này sau khi thăm dò. |
 | `height, height_unit` | `int64? , string` | Độ cao của nút hoặc null. Đơn vị là `block`, `slot`, `checkpoint`, `ledger_version` hoặc `beacon_slot`. |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | Thời điểm bắt đầu theo mili giây Unix và thời lượng theo mili giây. Cả hai là null nếu chưa kiểm tra. |
@@ -396,6 +414,20 @@ Xóa nút theo `id` nguyên dương, kể cả nút tích hợp hoặc đã cấ
 ```sh
 admin -X DELETE "$BASE/v1/admin/nodes/$NODE_ID"
 ```
+
+<a id="blacklist"></a>
+
+### Danh sách đen nút
+
+Dùng token quản trị. Quy tắc tên miền bao gồm các tên miền con trên mọi mạng và cổng. IP được so khớp chính xác. Hệ thống kiểm tra URL chính và URL lịch sử khi chọn nút hoặc thăm dò nút mới. Quy tắc không xác định nhà vận hành sau bí danh DNS, proxy hay cấu hình TON toàn cục.
+
+```sh
+admin -X PUT "$BASE/v1/admin/blacklist/rpc.example.org"
+admin "$BASE/v1/admin/blacklist"
+admin -X DELETE "$BASE/v1/admin/blacklist/rpc.example.org"
+```
+
+GET trả về mảng `{host, source}` đã sắp xếp. PUT và DELETE có thể gọi lặp lại và trả về 204. Lần chọn nút mới áp dụng quy tắc và bộ quét cập nhật nhóm nút. SQLite dạng tệp giữ các quy tắc qua lần khởi động lại. Đặt `"blacklist": ["rpc.example.org"]` ở cấp gốc của cấu hình để cố định quy tắc. Xóa quy tắc cấu hình qua API sẽ trả về 409. Sửa tệp rồi khởi động lại để gỡ.
 
 <a id="errors"></a>
 

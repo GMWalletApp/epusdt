@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	scanner "github.com/GMWalletApp/ChainScanner"
 	"log"
 	"net"
 	"net/http"
@@ -15,13 +14,16 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	scanner "github.com/GMWalletApp/ChainScanner"
 )
 
 type config struct {
 	Listen, Database string
 	Networks         []scanner.Network
 	Consumers        map[string]string
-	AdminToken       string `json:"admin_token"`
+	Blacklist        []string `json:"blacklist"`
+	AdminToken       string   `json:"admin_token"`
 }
 
 func run() error {
@@ -60,7 +62,7 @@ func run() error {
 		return err
 	}
 	defer s.Close()
-	registry, err := scanner.NewNodeRegistry(context.Background(), s, c.Networks)
+	registry, err := scanner.NewNodeRegistryWithBlockedHosts(context.Background(), s, c.Networks, c.Blacklist)
 	if err != nil {
 		return err
 	}
@@ -77,8 +79,7 @@ func run() error {
 	var wg sync.WaitGroup
 	wg.Go(func() { registry.RunChainList(ctx) })
 	for _, n := range c.Networks {
-		wg.Add(1)
-		go func() { defer wg.Done(); registry.Run(ctx, n) }()
+		wg.Go(func() { registry.Run(ctx, n) })
 	}
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)

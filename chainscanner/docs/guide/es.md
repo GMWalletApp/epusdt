@@ -56,6 +56,7 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 | `protocol` · `api_key` · `history_url` · `history_api_key` | Elige una interfaz de la tabla. Los transportes emparejados requieren `history_url`. Cada URL tiene sus propias credenciales. |
 | `trace_calls` | Activa la captura de llamadas internas EVM con JSON-RPC de ejecución y un nodo que admita call tracer. |
 | `consumers` · `admin_token` | Asocia cada consumidor con un token distinto de al menos 24 bytes. Un token de administración independiente habilita la gestión de nodos. |
+| `blacklist` | Dominios o IP bloqueados en todas las redes. [API](../api/es.md#blacklist) |
 
 <a id="networks"></a>
 

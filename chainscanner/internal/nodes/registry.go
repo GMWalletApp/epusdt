@@ -40,6 +40,7 @@ type NodeOptions struct {
 }
 
 type NodeRegistry struct {
+	blacklist    hostBlacklist
 	lookup       transactionLookup
 	db           *sql.DB
 	store        *engine.Store
@@ -51,7 +52,11 @@ type NodeRegistry struct {
 	readFailures sync.Map // nodeVersion -> readFailure for the active watch period
 }
 
-func NewNodeRegistry(ctx context.Context, s *engine.Store, networks []chains.Network) (*NodeRegistry, error) {
+func NewNodeRegistry(ctx context.Context, s *engine.Store, networks []chains.Network, blockedDomains ...string) (*NodeRegistry, error) {
+	blocked, err := parseBlockedHosts(blockedDomains)
+	if err != nil {
+		return nil, err
+	}
 	r := &NodeRegistry{store: s, db: engine.Database(s), builtins: map[NodeEndpoint]NodeEndpoint{}, configured: map[NodeEndpoint]chains.Network{}, slots: make(chan struct{}, 8)}
 	enabled := map[string]chains.Network{}
 	for _, n := range networks {
@@ -74,6 +79,12 @@ func NewNodeRegistry(ctx context.Context, s *engine.Store, networks []chains.Net
 	origin TEXT NOT NULL, removed INTEGER NOT NULL DEFAULT 0, height INTEGER, checked_at INTEGER,
 	latency INTEGER, generation INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'untested', UNIQUE(network,protocol,url))`)
 	if err != nil {
+		return nil, err
+	}
+	if err := r.blacklist.load(ctx, tx, blocked); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS rpc_nodes_active_network ON rpc_nodes(network, id) WHERE removed=0"); err != nil {
 		return nil, err
 	}
 	existing, err := loadSeedRows(ctx, tx)
@@ -151,7 +162,13 @@ func (r *NodeRegistry) scan(row interface{ Scan(...any) error }) (Node, error) {
 }
 
 func (r *NodeRegistry) List(ctx context.Context, network string) ([]Node, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT `+nodeFields+` FROM rpc_nodes WHERE removed=0 AND (?='' OR network=?) ORDER BY id`, network, network)
+	query := "SELECT " + nodeFields + " FROM rpc_nodes WHERE removed=0"
+	var args []any
+	if network != "" {
+		query += " AND network=?"
+		args = append(args, network)
+	}
+	rows, err := r.db.QueryContext(ctx, query+" ORDER BY id", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -169,6 +186,12 @@ func (r *NodeRegistry) List(ctx context.Context, network string) ([]Node, error)
 	return out, rows.Err()
 }
 func (r *NodeRegistry) visible(n Node) bool {
+	if blocked := r.blacklist.hosts(); len(blocked) > 0 {
+		route := r.network(n, chains.Network{})
+		if blocked.matches(route.URL) || blocked.matches(route.HistoryURL) {
+			return false
+		}
+	}
 	if n.Network != "bitcoin" && !chains.Supported(n.Network) {
 		return false
 	}
@@ -204,6 +227,9 @@ func (r *NodeRegistry) add(ctx context.Context, options NodeOptions, fallback bo
 		origin = "fallback"
 	}
 	e.URL = strings.TrimSpace(e.URL)
+	if blocked := r.blacklist.hosts(); blocked.matches(e.URL) || blocked.matches(options.HistoryURL) {
+		return Node{}, errInvalidNode
+	}
 	u, err := url.Parse(e.URL)
 	if err != nil || u.User != nil || u.Fragment != "" || len(e.URL) > 4096 {
 		return Node{}, errInvalidNode

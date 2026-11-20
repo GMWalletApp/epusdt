@@ -28,6 +28,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | --- | --- | --- |
 | Потребитель | [`PUT /v1/subscriptions`](#replace-watches) | `200 / 202` |
 | Потребитель | [`GET /v1/events/next`](#next) | `200 / 204` |
+| Потребитель | [`GET /v1/events/stream`](#streaming) · WebSocket | `101` |
 | Потребитель | [`POST /v1/events/{id}/ack`](#ack) | `204` |
 | Потребитель | [`GET /v1/heights/{network}`](#height) | `200` |
 | Потребитель | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
@@ -38,6 +39,9 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Администратор | [`POST /v1/admin/nodes/{id}/test`](#test-one) | `200` |
 | Администратор | [`POST /v1/admin/nodes/test`](#test-all) | `200` |
 | Администратор | [`DELETE /v1/admin/nodes/{id}`](#delete) | `204` |
+| Администратор | [`GET /v1/admin/blacklist`](#blacklist) | `200` |
+| Администратор | [`PUT /v1/admin/blacklist/{host}`](#blacklist) | `204` |
+| Администратор | [`DELETE /v1/admin/blacklist/{host}`](#blacklist) | `204` |
 
 <a id="transactions"></a>
 
@@ -52,9 +56,23 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 В TON индекс v3 указывает местоположение транзакции. Два прямых ADNL LiteServer с разными хостами и ключами проверяют доказательство включения. Ответ содержит BOC, хеш, аккаунт, LT, время и корни блоков шарда и мастерчейна. Если пару LiteServer собрать не удалось, два разных индекса v3 могут сверить полную запись.
 
 ```sh
-consumer "$BASE/v1/transactions/plasma/$TX_HASH"
-consumer "$BASE/v1/transactions/plasma/$TX_HASH/strict"
+consumer "$BASE/v1/transactions/base/$TX_HASH"
+consumer "$BASE/v1/transactions/base/$TX_HASH/strict"
 ```
+
+<a id="trust"></a>
+
+### Когда нужна повторная проверка
+
+Публичные узлы меняются. В событии или ответе одного узла могут быть устаревшие, ошибочные или поддельные данные. Проверенной статистики таких случаев нет. Перед зачислением или выдачей товара вызовите `/strict` и проверьте успешность операции, получателя, актив, сумму и глубину подтверждения. Разные домены могут принадлежать одному оператору.
+
+Подключите резервный узел доверенного независимого оператора. При малой нагрузке может хватить бесплатной квоты. Учитывайте вместе повторное чтение блоков и строгие запросы. [API](#fallback)
+
+После двух неудачных раундов стандартный запрос возвращает `X-ChainScanner-Manual-Review: required`. Остановите автоматические повторы и сохраните сеть и хеш для ручной проверки. Число раундов указано в `X-ChainScanner-Strict-Rounds`.
+
+`?rounds=1` · `X-ChainScanner-Pair` → `X-ChainScanner-Exclude`
+
+[Чёрный список узлов](#blacklist)
 
 <a id="subscriptions"></a>
 
@@ -339,7 +357,7 @@ admin "$BASE/v1/admin/nodes?network=base"
 | --- | --- | --- |
 | `id, network` | `int64, string` | Стабильный числовой ID и конкретная сеть. |
 | `protocol, url` | `string, string` | Выбранный транспорт и URL узла. |
-| `origin` | `string` | Источник: `builtin`, `config`, `custom` или `chainlist`, `openchainbench`, `fallback`. |
+| `origin` | `string` | Источник: `builtin`, `config`, `custom` или `chainlist`, `openchainbench`, `comparenodes`, `fallback`. |
 | `status` | `string` | Одно из значений `untested`, `ok`, `timeout`, `unavailable`. Проверьте это поле после запроса. |
 | `height, height_unit` | `int64? , string` | Высота узла или null. Единица: `block`, `slot`, `checkpoint`, `ledger_version` или `beacon_slot`. |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | Время начала в миллисекундах Unix и длительность в миллисекундах. До первой проверки оба поля равны null. |
@@ -396,6 +414,20 @@ admin -X POST "$BASE/v1/admin/nodes/test?network=base"
 ```sh
 admin -X DELETE "$BASE/v1/admin/nodes/$NODE_ID"
 ```
+
+<a id="blacklist"></a>
+
+### Чёрный список узлов
+
+Нужен токен администратора. Домен включает все поддомены для любых портов и сетей, IP сравнивается точно. При выборе и проверке узлов учитываются основной и исторический URL. Правила не распознают оператора за DNS-псевдонимом, прокси или глобальной конфигурацией TON.
+
+```sh
+admin -X PUT "$BASE/v1/admin/blacklist/rpc.example.org"
+admin "$BASE/v1/admin/blacklist"
+admin -X DELETE "$BASE/v1/admin/blacklist/rpc.example.org"
+```
+
+GET возвращает отсортированный массив `{host, source}`. PUT и DELETE идемпотентны и возвращают 204. Правила применяются при новом выборе узлов, активный сканер обновляет пул. Файловая SQLite сохраняет изменения. Закрепите правило через `"blacklist": ["rpc.example.org"]` в корне конфигурации. При удалении такого правила API возвращает 409. Измените файл и перезапустите службу.
 
 <a id="errors"></a>
 

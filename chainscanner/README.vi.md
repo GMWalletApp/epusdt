@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/assets/chainscanner.svg" width="96" height="96" alt=""></p>
+<p align="center"><img src="docs/assets/chainscanner.svg" width="96" height="96" alt="ChainScanner"></p>
 <h1 align="center">ChainScanner</h1>
 <p align="center"><strong>Theo dõi địa chỉ trên chuỗi và nhận giao dịch qua WebSocket, gRPC hoặc HTTP.</strong></p>
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <strong>Tiếng Việt</strong> · <a href="README.es.md">Español</a> · <a href="README.ru.md">Русский</a></p>
@@ -6,6 +6,12 @@
 <p align="center"><a href="docs/guide/vi.md#quick-start">Khởi động nhanh</a> &nbsp;·&nbsp; <a href="docs/guide/vi.md#networks">Mạng hỗ trợ</a> &nbsp;·&nbsp; <a href="docs/api/vi.md">Tài liệu API</a></p>
 
 ---
+
+## Tình huống sử dụng
+
+- **Cổng thanh toán.** [Tích hợp EPUSDT](https://github.com/GMWalletApp/epusdt/pull/127) theo dõi địa chỉ nhận tiền và xác minh giao dịch qua hai nút trước khi ghi có.
+- **Ý tưởng bot Telegram.** Bot có thể lưu sự kiện ví cá nhân rồi thông báo tiền vào hoặc ra kèm mã giao dịch.
+- **Ý tưởng đối soát.** Kế toán và dịch vụ cảnh báo theo dõi cùng nhóm ví và xác nhận xử lý độc lập.
 
 ## Đăng ký một địa chỉ
 
@@ -28,6 +34,8 @@ Trường `from_height` trong phản hồi cho biết khối đầu tiên đư�
 Với mỗi mạng nhận thanh toán, hãy đăng ký một nút tin cậy của nhà vận hành khác. Nút này có thể đọc lại khối bị lỗi và được ưu tiên cho một trong hai vị trí tra cứu nghiêm ngặt. Sau hai lượt thất bại, đơn chuyển sang kiểm tra thủ công. [API](docs/api/vi.md#fallback)
 
 ```sh
+BASE=http://127.0.0.1:9081
+ADMIN_TOKEN=$(jq -er '.admin_token' chainscanner.json)
 curl -fsS -X POST "$BASE/v1/admin/nodes/fallback" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H 'Content-Type: application/json' \
@@ -41,3 +49,5 @@ Nếu dự án của bạn dùng ChainScanner hoặc tham khảo thiết kế c�
 ```markdown
 Nguồn tham khảo: [ChainScanner](https://github.com/GMWalletApp/ChainScanner)
 ```
+
+Cảm ơn imToken và Bitget Wallet đã cung cấp RPC công cộng, cùng ChainList, OpenChainBench và CompareNodes đã duy trì danh mục nút. Cảm ơn mọi người đã sử dụng và tin tưởng ChainScanner.

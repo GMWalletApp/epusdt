@@ -28,6 +28,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | --- | --- | --- |
 | Consumidor | [`PUT /v1/subscriptions`](#replace-watches) | `200 / 202` |
 | Consumidor | [`GET /v1/events/next`](#next) | `200 / 204` |
+| Consumidor | [`GET /v1/events/stream`](#streaming) · WebSocket | `101` |
 | Consumidor | [`POST /v1/events/{id}/ack`](#ack) | `204` |
 | Consumidor | [`GET /v1/heights/{network}`](#height) | `200` |
 | Consumidor | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
@@ -38,6 +39,9 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Administrador | [`POST /v1/admin/nodes/{id}/test`](#test-one) | `200` |
 | Administrador | [`POST /v1/admin/nodes/test`](#test-all) | `200` |
 | Administrador | [`DELETE /v1/admin/nodes/{id}`](#delete) | `204` |
+| Administrador | [`GET /v1/admin/blacklist`](#blacklist) | `200` |
+| Administrador | [`PUT /v1/admin/blacklist/{host}`](#blacklist) | `204` |
+| Administrador | [`DELETE /v1/admin/blacklist/{host}`](#blacklist) | `204` |
 
 <a id="transactions"></a>
 
@@ -52,9 +56,23 @@ El modo estricto da prioridad a un nodo de respaldo y requiere otro nodo distint
 En TON, un índice v3 localiza la transacción. Dos LiteServers ADNL directos con hosts y claves diferentes verifican la inclusión. Se devuelven el BOC, el hash, la cuenta, LT, la fecha y las raíces de ambos bloques. Si no hay un par de LiteServers, dos índices v3 distintos pueden cotejar el registro completo.
 
 ```sh
-consumer "$BASE/v1/transactions/plasma/$TX_HASH"
-consumer "$BASE/v1/transactions/plasma/$TX_HASH/strict"
+consumer "$BASE/v1/transactions/base/$TX_HASH"
+consumer "$BASE/v1/transactions/base/$TX_HASH/strict"
 ```
+
+<a id="trust"></a>
+
+### Cuándo verificar una transacción
+
+Los proveedores públicos rotan. Un evento o una consulta normal puede contener datos obsoletos, erróneos o falsos. No hay una tasa histórica verificada. Antes de acreditar o entregar un pedido, usa `/strict` y comprueba el éxito, el destinatario, el activo, el importe y las confirmaciones. Dos dominios pueden compartir operador.
+
+Elige un respaldo de confianza con un operador distinto. Para poco tráfico puede bastar la cuota gratuita. Calcula el consumo conjunto de reparaciones y consultas estrictas. [API](#fallback)
+
+Si se agotan ambas rondas, la ruta predeterminada devuelve `X-ChainScanner-Manual-Review: required`. Detén los reintentos automáticos y guarda red y hash para revisión. `X-ChainScanner-Strict-Rounds` indica las rondas intentadas.
+
+`?rounds=1` · `X-ChainScanner-Pair` → `X-ChainScanner-Exclude`
+
+[Lista negra de nodos](#blacklist)
 
 <a id="subscriptions"></a>
 
@@ -339,7 +357,7 @@ admin "$BASE/v1/admin/nodes?network=base"
 | --- | --- | --- |
 | `id, network` | `int64, string` | ID numérico estable y red concreta. |
 | `protocol, url` | `string, string` | Transporte seleccionado y URL del nodo. |
-| `origin` | `string` | Origen: `builtin`, `config`, `custom` o `chainlist`, `openchainbench`, `fallback`. |
+| `origin` | `string` | Origen: `builtin`, `config`, `custom` o `chainlist`, `openchainbench`, `comparenodes`, `fallback`. |
 | `status` | `string` | Uno de `untested`, `ok`, `timeout`, `unavailable`. Compruébalo después de la prueba. |
 | `height, height_unit` | `int64? , string` | Altura del nodo o null. La unidad es `block`, `slot`, `checkpoint`, `ledger_version` o `beacon_slot`. |
 | `checked_at_ms, latency_ms` | `int64?, int64?` | Tiempo de inicio en milisegundos Unix y duración en milisegundos. Ambos son null antes de la primera prueba. |
@@ -396,6 +414,20 @@ Elimina un nodo por `id` positivo, incluidos los integrados o configurados. Devu
 ```sh
 admin -X DELETE "$BASE/v1/admin/nodes/$NODE_ID"
 ```
+
+<a id="blacklist"></a>
+
+### Lista negra de nodos
+
+Usa el token de administración. Un dominio incluye sus subdominios en todas las redes y puertos. Una IP se compara de forma exacta. Se revisan las URL principal e histórica al seleccionar nodos y sondear candidatos. La regla no descubre operadores tras alias DNS, proxies o configuraciones globales TON.
+
+```sh
+admin -X PUT "$BASE/v1/admin/blacklist/rpc.example.org"
+admin "$BASE/v1/admin/blacklist"
+admin -X DELETE "$BASE/v1/admin/blacklist/rpc.example.org"
+```
+
+GET devuelve una lista ordenada de `{host, source}`. PUT y DELETE son idempotentes y devuelven 204. Las nuevas selecciones aplican la regla y el escáner actualiza su grupo. SQLite en archivo conserva las reglas. Fija reglas con `"blacklist": ["rpc.example.org"]` en la raíz de la configuración. DELETE devuelve 409 para reglas de configuración. Para retirarlas, edita el archivo y reinicia.
 
 <a id="errors"></a>
 
