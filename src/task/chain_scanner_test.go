@@ -112,7 +112,7 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 		id     string
 		status int
 	}{{"out", mdb.StatusWaitPay}, {"in", mdb.StatusPaySuccess}} {
-		d, err := client.Pending(ctx, paymentConsumer)
+		d, err := client.PendingNetwork(ctx, paymentConsumer, net, 0)
 		if err != nil || d == nil || d.Activity.TxID != tc.id {
 			t.Fatal(tc, d, err)
 		}
@@ -129,7 +129,7 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if d, err := client.Pending(ctx, paymentConsumer); err != nil || d != nil {
+	if d, err := client.PendingNetwork(ctx, paymentConsumer, net, 0); err != nil || d != nil {
 		t.Fatal(d, err)
 	}
 }

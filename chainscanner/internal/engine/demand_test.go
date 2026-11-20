@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/GMWalletApp/ChainScanner/internal/chains"
 	"github.com/GMWalletApp/ChainScanner/internal/feed"
@@ -19,43 +18,40 @@ func (l *lateSource) Read(ctx context.Context, h, head int64) (int64, []chains.A
 	<-l.release
 	return h, []chains.Activity{{Height: h, TxID: "stale", Addresses: []string{wallet}}}, nil
 }
-func TestIdleCancelsGenerationAndRejectsLateRead(t *testing.T) {
+func TestLastWatchFinishesInFlightRead(t *testing.T) {
 	ctx := context.Background()
 	s, e := Open(":memory:")
 	if e != nil {
 		t.Fatal(e)
 	}
 	defer s.Close()
-	w := []feed.Watch{{Network: "base", Address: wallet}}
-	if e = s.Subscribe(ctx, "a", w); e != nil {
+	s.resolve = func(context.Context, string) (int64, error) { return 20, nil }
+	if e = s.SeedCursor(ctx, "base", 19); e != nil {
 		t.Fatal(e)
 	}
-	old, _ := s.period("base")
+	if _, e = s.Subscribe(ctx, "a", []feed.Watch{{Network: "base", Address: wallet}}); e != nil {
+		t.Fatal(e)
+	}
 	src := &lateSource{make(chan struct{}), make(chan struct{})}
-	done := make(chan error)
-	go func() { _, e := s.Step(ctx, chains.Network{Name: "base", Lookback: 1}, src); done <- e }()
+	done := make(chan error, 1)
+	go func() { _, e := s.Step(ctx, chains.Network{Name: "base"}, src); done <- e }()
 	<-src.entered
-	if e = s.Subscribe(ctx, "a", nil); e != nil {
-		t.Fatal(e)
-	}
-	select {
-	case <-old.Done():
-	case <-time.After(time.Second):
-		t.Fatal("active node context survived unsubscribe")
-	}
-	s.resolve = func(context.Context, string) (int64, error) { return 19, nil }
-	if _, e = s.SubscribeFrom(ctx, "b", w); e != nil {
-		t.Fatal(e)
+	receipt, e := s.Subscribe(ctx, "a", nil)
+	if e != nil || len(receipt.Terminations) != 1 || receipt.Terminations[0].ToHeight != 20 || !s.Draining("base") {
+		t.Fatal(receipt, e)
 	}
 	close(src.release)
 	if e = <-done; e != nil && !errors.Is(e, context.Canceled) {
 		t.Fatal(e)
 	}
-	if d, e := s.Pending(ctx, "b"); d != nil || e != nil {
-		t.Fatal("delivered stale generation", d, e)
+	if s.Watching("base") {
+		t.Fatal("still running after inclusive terminal block")
+	}
+	d, e := s.PendingNetwork(ctx, "a", "base", 0)
+	if d == nil || e != nil || d.Activity.Height != 20 {
+		t.Fatal(d, e)
 	}
 }
-
 func TestStatelessRestartRequiresRegistration(t *testing.T) {
 	ctx := context.Background()
 	open := func() *Store {
@@ -66,13 +62,16 @@ func TestStatelessRestartRequiresRegistration(t *testing.T) {
 		return s
 	}
 	enqueue := func(s *Store) *feed.Delivery {
-		if e := s.Subscribe(ctx, "a", []feed.Watch{{Network: "ethereum", Address: wallet}}); e != nil {
+		if e := s.SeedCursor(ctx, "ethereum", 98); e != nil {
+			t.Fatal(e)
+		}
+		if _, e := s.Subscribe(ctx, "a", []feed.Watch{{Network: "ethereum", Address: wallet}}); e != nil {
 			t.Fatal(e)
 		}
 		if _, e := s.Step(ctx, chains.Network{Name: "ethereum", Lookback: 1}, &chain{height: 99}); e != nil {
 			t.Fatal(e)
 		}
-		d, e := s.Pending(ctx, "a")
+		d, e := s.PendingNetwork(ctx, "a", "ethereum", 0)
 		if e != nil || d == nil {
 			t.Fatal(d, e)
 		}
@@ -86,14 +85,14 @@ func TestStatelessRestartRequiresRegistration(t *testing.T) {
 	if next.Watching("ethereum") {
 		t.Fatal("restored an old subscription")
 	}
-	if d, e := next.Pending(ctx, "a"); e != nil || d != nil {
+	if d, e := next.PendingNetwork(ctx, "a", "ethereum", 0); e != nil || d != nil {
 		t.Fatal(d, e)
 	}
 	current := enqueue(next)
 	if e := next.Ack(ctx, "a", old.ID); e != nil {
 		t.Fatal(e)
 	}
-	if d, e := next.Pending(ctx, "a"); e != nil || d == nil || d.ID != current.ID {
+	if d, e := next.PendingNetwork(ctx, "a", "ethereum", 0); e != nil || d == nil || d.ID != current.ID {
 		t.Fatal("stale ACK removed a new delivery", d, e)
 	}
 }

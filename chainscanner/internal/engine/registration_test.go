@@ -16,6 +16,8 @@ import (
 
 // Reserve a single range as the runner would, then commit its deliveries.
 func completeNext(s *Store, ctx context.Context, network string, prev, end int64, events []chains.Activity) error {
+	s.demandMu.Lock()
+	defer s.demandMu.Unlock()
 	work, _, err := s.plan(ctx, network, prev, end, 16)
 	if err != nil {
 		return err
@@ -33,7 +35,7 @@ func TestRegistrationBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := feed.Watch{Network: "arbitrum", Address: wallet}
-	rows, err := s.SubscribeFrom(ctx, "merchant", []feed.Watch{w})
+	rows, err := s.Subscribe(ctx, "merchant", []feed.Watch{w})
 	if !errors.Is(err, feed.ErrCursorNotReady) {
 		t.Fatal(rows, err)
 	}
@@ -46,12 +48,12 @@ func TestRegistrationBoundaries(t *testing.T) {
 	}
 	srv := httptest.NewServer(srvHandler)
 	c := feed.Client{URL: srv.URL, Token: "012345678901234567890123"}
-	rows, err = c.SubscribeFrom(ctx, "", []feed.Watch{w, w})
-	if err != nil || len(rows) != 1 || rows[0].FromHeight != 100 {
+	rows, err = c.Subscribe(ctx, "", []feed.Watch{w, w})
+	if err != nil || len(rows.Registrations) != 1 || rows.Registrations[0].FromHeight != 100 {
 		t.Fatal(rows, err)
 	}
 	ready := make(chan *feed.Delivery, 1)
-	go func() { d, _ := c.PendingWait(ctx, "", 3*time.Second); ready <- d }()
+	go func() { d, _ := c.PendingNetwork(ctx, "", "arbitrum", 3*time.Second); ready <- d }()
 	if err = completeNext(s, ctx, w.Network, 99, 100, []chains.Activity{{Height: 100, TxID: "payment", Addresses: []string{wallet}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -70,27 +72,28 @@ func TestRegistrationBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	rows, err = s.SubscribeFrom(ctx, "merchant", []feed.Watch{w})
-	if err != nil || rows[0].FromHeight != 100 {
+	rows, err = s.Subscribe(ctx, "merchant", []feed.Watch{w})
+	if err != nil || rows.Registrations[0].FromHeight != 100 {
 		t.Fatal(rows, err)
 	}
-	_, err = s.SubscribeFrom(ctx, "merchant", []feed.Watch{{Network: "sui", Address: "0x1"}})
+	_, err = s.Subscribe(ctx, "merchant", []feed.Watch{{Network: "sui", Address: "0x1"}})
 	if !errors.Is(err, feed.ErrCursorNotReady) {
 		t.Fatal(err)
 	}
 	if err = completeNext(s, ctx, w.Network, 100, 101, nil); err != nil {
 		t.Fatal(err)
 	}
-	rows, err = s.SubscribeFrom(ctx, "merchant", []feed.Watch{w})
-	if err != nil || rows[0].FromHeight != 100 {
+	rows, err = s.Subscribe(ctx, "merchant", []feed.Watch{w})
+	if err != nil || rows.Registrations[0].FromHeight != 100 {
 		t.Fatal("failed replacement removed watch", rows, err)
 	}
-	if err = s.Subscribe(ctx, "merchant", nil); err != nil {
+	s.resolve = func(context.Context, string) (int64, error) { return 101, nil }
+	if _, err = s.Subscribe(ctx, "merchant", nil); err != nil {
 		t.Fatal(err)
 	}
 	s.resolve = func(context.Context, string) (int64, error) { return 299, nil }
-	rows, err = s.SubscribeFrom(ctx, "merchant", []feed.Watch{w})
-	if err != nil || rows[0].FromHeight != 300 {
+	rows, err = s.Subscribe(ctx, "merchant", []feed.Watch{w})
+	if err != nil || rows.Registrations[0].FromHeight != 300 {
 		t.Fatal(rows, err)
 	}
 }
@@ -111,14 +114,14 @@ func TestConcurrentRegisterAndCommit(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			c := fmt.Sprint(i)
-			reg, err := s.SubscribeFrom(ctx, c, []feed.Watch{{Network: "optimism", Address: wallet}})
+			reg, err := s.Subscribe(ctx, c, []feed.Watch{{Network: "optimism", Address: wallet}})
 			registered.Done()
 			if err != nil {
 				t.Error(err)
 				return
 			}
-			d, err := s.PendingWait(ctx, c, 3*time.Second)
-			if err != nil || d == nil || d.Activity.Height != reg[0].FromHeight {
+			d, err := s.PendingNetwork(ctx, c, "optimism", 3*time.Second)
+			if err != nil || d == nil || d.Activity.Height != reg.Registrations[0].FromHeight {
 				t.Error(c, reg, d, err)
 			}
 		}()
@@ -146,7 +149,10 @@ func BenchmarkCommitIndexedWatches(b *testing.B) {
 	for i := range watches {
 		watches[i] = feed.Watch{Network: "ethereum", Address: fmt.Sprintf("0x%040x", i+1)}
 	}
-	if err = s.Subscribe(ctx, "merchant", watches); err != nil {
+	if err = s.SeedCursor(ctx, "ethereum", 0); err != nil {
+		b.Fatal(err)
+	}
+	if _, err = s.Subscribe(ctx, "merchant", watches); err != nil {
 		b.Fatal(err)
 	}
 	if err = s.SeedCursor(ctx, "ethereum", 0); err != nil {
@@ -188,7 +194,7 @@ func TestUnacknowledgedNetworkDoesNotBlockOthers(t *testing.T) {
 		}
 		watches = append(watches, feed.Watch{Network: n, Address: wallet})
 	}
-	if _, err = client.SubscribeFrom(ctx, "", watches); err != nil {
+	if _, err = client.Subscribe(ctx, "", watches); err != nil {
 		t.Fatal(err)
 	}
 	for _, n := range nets {
@@ -203,7 +209,7 @@ func TestUnacknowledgedNetworkDoesNotBlockOthers(t *testing.T) {
 	if err = client.Ack(ctx, "", d.ID); err != nil {
 		t.Fatal(err)
 	}
-	d, err = client.Pending(ctx, "")
+	d, err = client.PendingNetwork(ctx, "", "optimism", 0)
 	if err != nil || d == nil || d.Activity.TxID != "optimism" {
 		t.Fatal(d, err)
 	}

@@ -30,13 +30,13 @@ BASE=http://127.0.0.1:9081
 TOKEN=$(jq -r '.consumers.payments' chainscanner.json)
 ADDRESS=0x1111111111111111111111111111111111111111
 jq -nc --arg a "$ADDRESS" '[{network:"base",address:$a}]' |
-  curl -sS -X PUT "$BASE/v2/subscriptions" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data-binary @-
+  curl -sS -X PUT "$BASE/v1/subscriptions" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data-binary @-
 ```
 
 Poll the queue. An empty response (HTTP 204) means no matching delivery arrived during the wait. When a delivery arrives, persist your business result, then acknowledge its `id` using the API reference.
 
 ```sh
-curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v2/events/next?network=base&wait=15"
+curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base&wait=15"
 ```
 
 [API reference](../api/en.md)
@@ -101,7 +101,7 @@ flowchart LR
     S --> Q["Consumer queues"]
 ```
 
-The first watch starts the network worker. The last removal stops its reads and clears its progress and gaps. Queued deliveries survive unsubscribe. In memory mode, re-register after restart and reconcile the interruption from consumer records.
+The first subscription starts its chain. Removing the final address fixes the last covered block. The worker waits for confirmations, repairs earlier gaps and queues all matching events through that block before clearing the chain cursor and gaps. Queued events remain available until acknowledged. A configured database file preserves unfinished work across restarts. In memory mode, consumers must reconcile interruptions.
 
 If block 101 is missing, activity in 102 and 103 can already reach consumers. The height API stays at 100 until 101 completes. A new subscription starts after the highest assigned height, so earlier gaps retain their original subscriber boundaries.
 
@@ -116,13 +116,11 @@ Every three consecutive failures of the same operation trigger a cooldown of 1, 
 The standalone server refreshes ChainList at startup and every 15 minutes, including while workers are idle. It probes public EVM HTTPS/WSS nodes, checks chain ID and recent headers, and preserves operator-owned entries. A failed catalog download leaves the previous inventory intact. The UniSat Bitcoin entry supports height probes only.
 
 <details>
-<summary>Transport details and migration</summary>
+<summary>Transport details</summary>
 
 For TLS gRPC use `grpcs://host:port` or `https://host:port`; plaintext uses `grpc://host:port`. Ethereum Beacon SSE uses the provider’s `/eth/v1/events` route, IPC accepts a local Unix socket, and GraphQL takes the full endpoint URL. A WebSocket execution node must also serve normal RPC reads.
 
 EVM matching covers transaction endpoints, created contracts, log emitters and address-shaped indexed topics. Optional traces can reveal internal calls with no logs. Arbitrum Nova, HyperCore trading and Avalanche X/P chains have separate ledgers. A matching transaction can be outgoing or unsuccessful. Check the evidence before crediting a payment.
-
-If a previous deployment relied on the old implicit file, set `"database":"chainscanner.sqlite"` with that file’s original path before upgrading. Legacy v1 subscriptions may only acquire a start-height receipt on their first v2 registration.
 
 </details>
 

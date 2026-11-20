@@ -7,9 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -19,15 +17,17 @@ import (
 )
 
 type Store struct {
-	demandMu   sync.Mutex
-	periods    map[string]*demandPeriod
-	configured map[string]chains.Network
-	resolve    func(context.Context, string) (int64, error)
-	waitMu     sync.Mutex
-	waiters    map[queueKey]chan struct{}
-	db         *sql.DB
-	workers    sync.Map
-	indexes    sync.Map // network -> immutable address index, loaded inside the SQLite transaction
+	demandMu     sync.Mutex
+	replacements sync.Map // consumer -> mutex; independent consumers may resolve boundaries concurrently
+	drains       map[string]drainState
+	periods      map[string]*demandPeriod
+	configured   map[string]chains.Network
+	resolve      func(context.Context, string) (int64, error)
+	waitMu       sync.Mutex
+	waiters      map[queueKey]chan struct{}
+	db           *sql.DB
+	workers      sync.Map
+	indexes      sync.Map // network -> immutable address index, loaded inside the SQLite transaction
 }
 
 func Open(path string) (*Store, error) {
@@ -39,8 +39,10 @@ func Open(path string) (*Store, error) {
 	_, err = db.Exec(`PRAGMA locking_mode=EXCLUSIVE;
  PRAGMA journal_mode=WAL;
  PRAGMA busy_timeout=5000;
- CREATE TABLE IF NOT EXISTS watches(consumer TEXT NOT NULL, network TEXT NOT NULL, address TEXT NOT NULL, PRIMARY KEY(consumer,network,address));
+ CREATE TABLE IF NOT EXISTS watches(consumer TEXT NOT NULL, network TEXT NOT NULL, address TEXT NOT NULL, from_height INTEGER NOT NULL, PRIMARY KEY(consumer,network,address));
  CREATE INDEX IF NOT EXISTS by_address ON watches(network,address);
+ CREATE TABLE IF NOT EXISTS closing_watches(consumer TEXT NOT NULL,network TEXT NOT NULL,address TEXT NOT NULL,from_height INTEGER NOT NULL,to_height INTEGER NOT NULL,PRIMARY KEY(network,consumer,address,from_height));
+ CREATE TABLE IF NOT EXISTS subscription_receipts(consumer TEXT PRIMARY KEY, terminations BLOB NOT NULL);
  CREATE TABLE IF NOT EXISTS cursors(network TEXT PRIMARY KEY,height INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS scan_gaps(network TEXT NOT NULL,first INTEGER NOT NULL,last INTEGER NOT NULL,attempted INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(network,first));
  CREATE INDEX IF NOT EXISTS gap_retry ON scan_gaps(network,attempted,first);
@@ -50,27 +52,8 @@ func Open(path string) (*Store, error) {
  DELETE FROM scan_gaps WHERE network=OLD.network;
  DELETE FROM scan_edges WHERE network=OLD.network;
  END;
- CREATE TABLE IF NOT EXISTS deliveries(id INTEGER PRIMARY KEY AUTOINCREMENT, consumer TEXT NOT NULL, payload BLOB NOT NULL);
- CREATE INDEX IF NOT EXISTS by_consumer ON deliveries(consumer,id);`)
-	if err != nil {
-		db.Close()
-		return nil, err
-	}
-	var columns int
-	if err = db.QueryRow("SELECT count(*) FROM pragma_table_info('watches') WHERE name='from_height'").Scan(&columns); err == nil && columns == 0 {
-		_, err = db.Exec("ALTER TABLE watches ADD COLUMN from_height INTEGER")
-	}
-	if err != nil {
-		db.Close()
-		return nil, err
-	}
-	// Keep outstanding v1 deliveries and their IDs across upgrades.
-	if err = db.QueryRow("SELECT count(*) FROM pragma_table_info('deliveries') WHERE name='network'").Scan(&columns); err == nil && columns == 0 {
-		_, err = db.Exec("ALTER TABLE deliveries ADD COLUMN network TEXT")
-	}
-	if err == nil {
-		_, err = db.Exec("UPDATE deliveries SET network=json_extract(CAST(payload AS TEXT),'$.network') WHERE network IS NULL; CREATE INDEX IF NOT EXISTS by_network_delivery ON deliveries(consumer,network,id)")
-	}
+ CREATE TABLE IF NOT EXISTS deliveries(id INTEGER PRIMARY KEY AUTOINCREMENT, consumer TEXT NOT NULL, network TEXT NOT NULL, payload BLOB NOT NULL);
+ CREATE INDEX IF NOT EXISTS by_network_delivery ON deliveries(consumer,network,id);`)
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -88,23 +71,27 @@ func Open(path string) (*Store, error) {
 			return nil, err
 		}
 	}
-	_, err = db.Exec("DELETE FROM cursors WHERE NOT EXISTS (SELECT 1 FROM watches WHERE watches.network=cursors.network)")
+	_, err = db.Exec("DELETE FROM cursors WHERE NOT EXISTS (SELECT 1 FROM watches WHERE watches.network=cursors.network) AND NOT EXISTS (SELECT 1 FROM closing_watches WHERE closing_watches.network=cursors.network)")
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
-	st := &Store{db: db, waiters: map[queueKey]chan struct{}{}, periods: map[string]*demandPeriod{}}
-	rows, err := db.Query("SELECT DISTINCT network FROM watches")
+	st := &Store{db: db, drains: map[string]drainState{}, waiters: map[queueKey]chan struct{}{}, periods: map[string]*demandPeriod{}}
+	rows, err := db.Query(`WITH networks(network) AS (
+ SELECT network FROM watches UNION SELECT network FROM closing_watches
+ ) SELECT network, EXISTS(SELECT 1 FROM watches w WHERE w.network=n.network),
+ COALESCE((SELECT max(to_height) FROM closing_watches c WHERE c.network=n.network),-1) FROM networks n`)
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
 	for rows.Next() {
 		var name string
-		if err = rows.Scan(&name); err != nil {
+		var state drainState
+		if err = rows.Scan(&name, &state.open, &state.end); err != nil {
 			break
 		}
-		st.setDemandLocked(name, true)
+		st.applyState(name, state)
 	}
 	if err == nil {
 		err = rows.Err()
@@ -124,173 +111,10 @@ func (s *Store) Close() error {
 	}
 	return s.db.Close()
 }
-func (s *Store) Subscribe(ctx context.Context, consumer string, watches []feed.Watch) error {
-	_, err := s.register(ctx, consumer, watches, false)
-	return err
-}
-
-// SubscribeFrom returns inclusive, durable per-address boundaries. A complete
-// replacement succeeds only if every requested chain has initialized.
-func (s *Store) SubscribeFrom(ctx context.Context, consumer string, watches []feed.Watch) ([]feed.Registration, error) {
-	return s.register(ctx, consumer, watches, true)
-}
-func (s *Store) register(ctx context.Context, consumer string, watches []feed.Watch, requireHeight bool) ([]feed.Registration, error) {
-	if strings.TrimSpace(consumer) == "" {
-		return nil, errors.New("empty consumer")
-	}
-	wanted := make(map[feed.Watch]bool, len(watches))
-	ordered := make([]feed.Watch, 0, len(watches))
-	for _, w := range watches {
-		a, err := chains.Canonical(w.Network, w.Address)
-		if err != nil {
-			return nil, err
-		}
-		w.Address = a
-		if !wanted[w] {
-			wanted[w] = true
-			ordered = append(ordered, w)
-		}
-	}
-	// Resolve cold networks outside the transaction. An unrelated slow RPC
-	// must not block existing consumers from acknowledging deliveries.
-	boundaries := map[string]boundary{}
-	checked := map[string]bool{}
-	for _, w := range ordered {
-		if checked[w.Network] {
-			continue
-		}
-		checked[w.Network] = true
-		if requireHeight && s.configured != nil {
-			if _, ok := s.configured[w.Network]; !ok {
-				return nil, fmt.Errorf("%s: %w", w.Network, ErrNetworkNotConfigured)
-			}
-		}
-		if !requireHeight || s.resolve == nil {
-			continue
-		}
-		_, epoch := s.period(w.Network)
-		_, ok, err := s.cursor(ctx, w.Network)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			h, err := s.resolve(ctx, w.Network)
-			if err != nil || h < -1 {
-				return nil, fmt.Errorf("%s: %w", w.Network, feed.ErrCursorNotReady)
-			}
-			boundaries[w.Network] = boundary{epoch, h}
-		}
-	}
-	s.demandMu.Lock()
-	defer s.demandMu.Unlock()
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, "SELECT network,address,from_height FROM watches WHERE consumer=?", consumer)
-	if err != nil {
-		return nil, err
-	}
-	old := make(map[feed.Watch]sql.NullInt64)
-	for rows.Next() {
-		var w feed.Watch
-		var start sql.NullInt64
-		if err = rows.Scan(&w.Network, &w.Address, &start); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		old[w] = start
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return nil, err
-	}
-	touched := map[string]bool{}
-	for name, b := range boundaries {
-		if s.periodLocked(name).changed != b.period {
-			var exists bool
-			if err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM cursors WHERE network=?)", name).Scan(&exists); err != nil {
-				return nil, err
-			}
-			if !exists {
-				return nil, feed.ErrCursorNotReady
-			}
-		} else if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO cursors(network,height) VALUES(?,?)", name, b.height); err != nil {
-			return nil, err
-		}
-	}
-	for w := range old {
-		if !wanted[w] {
-			if _, err = tx.ExecContext(ctx, "DELETE FROM watches WHERE consumer=? AND network=? AND address=?", consumer, w.Network, w.Address); err != nil {
-				return nil, err
-			}
-			touched[w.Network] = true
-		}
-	}
-	receipts := make([]feed.Registration, 0, len(ordered))
-	next := map[string]sql.NullInt64{}
-	for _, w := range ordered {
-		start, exists := old[w]
-		if !start.Valid {
-			var cached bool
-			start, cached = next[w.Network]
-			if !cached {
-				err = tx.QueryRowContext(ctx, "SELECT height+1 FROM cursors WHERE network=?", w.Network).Scan(&start)
-				if err != nil && !errors.Is(err, sql.ErrNoRows) {
-					return nil, err
-				}
-				next[w.Network] = start
-			}
-		}
-		if !start.Valid && requireHeight {
-			return nil, fmt.Errorf("%s: %w", w.Network, feed.ErrCursorNotReady)
-		}
-		if !exists || (!old[w].Valid && start.Valid) {
-			if _, err = tx.ExecContext(ctx, "INSERT INTO watches(consumer,network,address,from_height) VALUES(?,?,?,?) ON CONFLICT(consumer,network,address) DO UPDATE SET from_height=excluded.from_height", consumer, w.Network, w.Address, start); err != nil {
-				return nil, err
-			}
-			touched[w.Network] = true
-		}
-		if start.Valid {
-			receipts = append(receipts, feed.Registration{Watch: w, FromHeight: start.Int64})
-		}
-	}
-	for n := range touched {
-		var active bool
-		if err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM watches WHERE network=?)", n).Scan(&active); err != nil {
-			return nil, err
-		}
-		touched[n] = active
-		if !active {
-			if _, err = tx.ExecContext(ctx, "DELETE FROM cursors WHERE network=?", n); err != nil {
-				return nil, err
-			}
-		}
-		s.indexes.Delete(n)
-	}
-	if err = tx.Commit(); err != nil {
-		return nil, err
-	}
-	for n, active := range touched {
-		s.setDemandLocked(n, active)
-	}
-	return receipts, nil
-}
-func (s *Store) Pending(ctx context.Context, consumer string) (*feed.Delivery, error) {
-	return s.pending(ctx, consumer, "")
-}
 func (s *Store) pending(ctx context.Context, consumer, network string) (*feed.Delivery, error) {
 	var d feed.Delivery
 	var b []byte
-	sqlText := "SELECT id,payload FROM deliveries WHERE consumer=?"
-	args := []any{consumer}
-	if network != "" {
-		sqlText += " AND network=?"
-		args = append(args, network)
-	}
-	err := s.db.QueryRowContext(ctx, sqlText+" ORDER BY id LIMIT 1", args...).Scan(&d.ID, &b)
+	err := s.db.QueryRowContext(ctx, "SELECT id,payload FROM deliveries WHERE consumer=? AND network=? ORDER BY id LIMIT 1", consumer, network).Scan(&d.ID, &b)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -301,12 +125,6 @@ func (s *Store) pending(ctx context.Context, consumer, network string) (*feed.De
 		return nil, err
 	}
 	return &d, nil
-}
-
-// PendingWait parks an idle subscriber outside SQLite and rechecks the durable
-// queue on notification. Registering before checking closes the lost-wakeup race.
-func (s *Store) PendingWait(ctx context.Context, consumer string, wait time.Duration) (*feed.Delivery, error) {
-	return s.PendingNetwork(ctx, consumer, "", wait)
 }
 
 type queueKey struct{ consumer, network string }
@@ -351,6 +169,8 @@ func (s *Store) cursor(ctx context.Context, network string) (int64, bool, error)
 	}
 	return height, err == nil, err
 }
+
+// Caller holds demandMu, so a watch update cannot cross this commit.
 func (s *Store) complete(ctx context.Context, network string, span chains.Span, link chains.BlockLink, events []chains.Activity) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -360,21 +180,48 @@ func (s *Store) complete(ctx context.Context, network string, span chains.Span, 
 	if err = finishGap(ctx, tx, network, span, link); err != nil {
 		return err
 	}
-	// Match against the subscription set at commit time. Registration and block
-	// delivery are serialized by SQLite. Each consumer gets one event per tx.
+	notify := map[string]bool{}
+	if len(events) > 0 {
+		if err = s.enqueue(ctx, tx, network, events, notify); err != nil {
+			return err
+		}
+	}
+	var state drainState
+	_, draining := s.drains[network]
+	if draining {
+		state, err = settle(ctx, tx, network)
+		if err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	if draining {
+		s.applyState(network, state)
+	}
+	s.waitMu.Lock()
+	for c := range notify {
+		key := queueKey{c, network}
+		if ch := s.waiters[key]; ch != nil {
+			close(ch)
+			delete(s.waiters, key)
+		}
+	}
+	s.waitMu.Unlock()
+	return nil
+}
+
+func (s *Store) enqueue(ctx context.Context, tx *sql.Tx, network string, events []chains.Activity, notify map[string]bool) error {
 	watchers, err := s.addressIndex(ctx, tx, network)
 	if err != nil {
 		return err
-	}
-	if len(watchers) == 0 || len(events) == 0 {
-		return tx.Commit()
 	}
 	insert, err := tx.PrepareContext(ctx, "INSERT INTO deliveries(consumer,network,payload) VALUES(?,?,?)")
 	if err != nil {
 		return err
 	}
 	defer insert.Close()
-	notify := map[string]bool{}
 	for _, e := range events {
 		targets := map[string][]string{}
 		seen := map[string]bool{}
@@ -384,7 +231,7 @@ func (s *Store) complete(ctx context.Context, network string, span chains.Span, 
 			}
 			seen[a] = true
 			for _, c := range watchers[a] {
-				if e.Height >= c.from {
+				if e.Height >= c.from && (!c.to.Valid || e.Height <= c.to.Int64) {
 					targets[c.consumer] = append(targets[c.consumer], a)
 				}
 			}
@@ -402,19 +249,6 @@ func (s *Store) complete(ctx context.Context, network string, span chains.Span, 
 			}
 		}
 	}
-	if err = tx.Commit(); err != nil {
-		return err
-	}
-	s.waitMu.Lock()
-	for c := range notify {
-		for _, key := range []queueKey{{c, ""}, {c, network}} {
-			if ch := s.waiters[key]; ch != nil {
-				close(ch)
-				delete(s.waiters, key)
-			}
-		}
-	}
-	s.waitMu.Unlock()
 	return nil
 }
 
@@ -423,6 +257,7 @@ func (s *Store) complete(ctx context.Context, network string, span chains.Span, 
 type watcher struct {
 	consumer string
 	from     int64
+	to       sql.NullInt64
 }
 
 func (s *Store) addressIndex(ctx context.Context, tx *sql.Tx, network string) (map[string][]watcher, error) {
@@ -430,14 +265,14 @@ func (s *Store) addressIndex(ctx context.Context, tx *sql.Tx, network string) (m
 		return v.(map[string][]watcher), nil
 	}
 	watchers := map[string][]watcher{}
-	rows, err := tx.QueryContext(ctx, "SELECT address,consumer,COALESCE(from_height,0) FROM watches WHERE network=?", network)
+	rows, err := tx.QueryContext(ctx, "SELECT address,consumer,from_height,NULL FROM watches WHERE network=?1 UNION ALL SELECT address,consumer,from_height,to_height FROM closing_watches WHERE network=?1", network)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var a string
 		var c watcher
-		if err = rows.Scan(&a, &c.consumer, &c.from); err != nil {
+		if err = rows.Scan(&a, &c.consumer, &c.from, &c.to); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -462,10 +297,6 @@ func (s *Store) SeedCursor(ctx context.Context, network string, height int64) er
 	if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO cursors(network,height) VALUES(?,?)", network, height); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, "UPDATE watches SET from_height=(SELECT height+1 FROM cursors WHERE network=?) WHERE network=? AND from_height IS NULL", network, network); err != nil {
-		return err
-	}
-	s.indexes.Delete(network)
 	return tx.Commit()
 }
 

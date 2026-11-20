@@ -30,13 +30,13 @@ BASE=http://127.0.0.1:9081
 TOKEN=$(jq -r '.consumers.payments' chainscanner.json)
 ADDRESS=0x1111111111111111111111111111111111111111
 jq -nc --arg a "$ADDRESS" '[{network:"base",address:$a}]' |
-  curl -sS -X PUT "$BASE/v2/subscriptions" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data-binary @-
+  curl -sS -X PUT "$BASE/v1/subscriptions" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data-binary @-
 ```
 
 Đọc hàng đợi. HTTP 204 với nội dung trống nghĩa là chưa có sự kiện khớp trong thời gian chờ. Khi nhận được sự kiện, hãy lưu kết quả xử lý trước rồi xác nhận `id` theo tài liệu API.
 
 ```sh
-curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v2/events/next?network=base&wait=15"
+curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base&wait=15"
 ```
 
 [Tài liệu API](../api/vi.md)
@@ -101,7 +101,7 @@ flowchart LR
     S --> Q["Hàng đợi của dịch vụ"]
 ```
 
-Đăng ký đầu tiên khởi động bộ quét của mạng. Khi bỏ địa chỉ cuối cùng, việc đọc dừng lại và tiến độ cùng các khoảng thiếu được xóa. Sự kiện đã xếp hàng vẫn còn. Ở chế độ bộ nhớ, đăng ký lại sau khi khởi động và đối soát quãng gián đoạn từ dữ liệu của dịch vụ.
+Địa chỉ đầu tiên khởi động bộ quét của mạng. Khi hủy địa chỉ cuối, bộ quét ghi nhận khối kết thúc, chờ đủ xác nhận, quét bù các khối thiếu và đưa sự kiện đến hết khối đó vào hàng đợi rồi mới dừng và xóa con trỏ cùng các khoảng thiếu. Sự kiện vẫn còn cho đến khi được xác nhận. Cơ sở dữ liệu trên đĩa lưu tiến độ qua lần khởi động lại. Với chế độ bộ nhớ, dịch vụ cần đối soát thời gian gián đoạn.
 
 Nếu thiếu khối 101, dịch vụ vẫn có thể nhận hoạt động từ 102 và 103. API độ cao giữ ở 100 cho đến khi hoàn tất 101. Đăng ký mới bắt đầu sau độ cao cao nhất đã phân công, nên các khoảng thiếu cũ vẫn giữ ranh giới đăng ký ban đầu.
 
@@ -112,13 +112,11 @@ Cứ ba lần lỗi liên tiếp của cùng thao tác, nút tạm nghỉ lần 
 Máy chủ độc lập cập nhật ChainList lúc khởi động và mỗi 15 phút, kể cả khi bộ quét đang nghỉ. Nó kiểm tra nút EVM HTTPS/WSS công khai, chain ID và header gần đây, đồng thời giữ các mục của người vận hành. Nếu tải danh mục lỗi, danh sách trước vẫn có hiệu lực. Mục Bitcoin UniSat chỉ dùng để kiểm tra độ cao.
 
 <details>
-<summary>Chi tiết giao thức và nâng cấp</summary>
+<summary>Giao thức của nút</summary>
 
 Với gRPC qua TLS, dùng `grpcs://host:port` hoặc `https://host:port`; kết nối không mã hóa dùng `grpc://host:port`. Ethereum Beacon SSE dùng tuyến `/eth/v1/events`, IPC nhận Unix socket cục bộ, còn GraphQL cần URL đầy đủ. Nút thực thi WebSocket cũng phải hỗ trợ các lệnh đọc RPC thông thường.
 
 EVM đối chiếu hai đầu giao dịch, hợp đồng được tạo, nguồn phát log và topic được lập chỉ mục có dạng địa chỉ. Trace tùy chọn ghi nhận cả lời gọi nội bộ không có log. Arbitrum Nova, giao dịch HyperCore và Avalanche X/P dùng sổ cái riêng. Một giao dịch khớp có thể là giao dịch đi hoặc đã thất bại; hãy kiểm tra trước khi ghi có.
-
-Nếu bản cũ dùng tệp mặc định, hãy đặt `database` thành đường dẫn ban đầu của tệp (ví dụ `chainscanner.sqlite`) trước khi nâng cấp. Đăng ký v1 cũ có thể chỉ nhận được mốc độ cao khi đăng ký v2 lần đầu.
 
 </details>
 

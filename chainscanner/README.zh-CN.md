@@ -12,7 +12,7 @@
 启动本地服务后，使用快速开始里设置的 `$TOKEN`，将示例地址换成你的 Base 地址。这条请求会替换该消费者的完整订阅列表。
 
 ```sh
-curl -fsS -X PUT http://127.0.0.1:9081/v2/subscriptions \
+curl -fsS -X PUT http://127.0.0.1:9081/v1/subscriptions \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '[{

@@ -18,7 +18,7 @@ import (
 
 type streams struct {
 	api.UnimplementedActivityFeedServer
-	store      subscriptionStore
+	store      Feed
 	configured func(string) bool
 	tokens     map[[32]byte]string
 }
@@ -55,15 +55,18 @@ func (s *streams) register(ctx context.Context, consumer string, set *api.WatchS
 		}
 		watches = append(watches, Watch{Network: w.Network, Address: w.Address})
 	}
-	rows, err := s.store.SubscribeFrom(ctx, consumer, watches)
+	rows, err := s.store.Subscribe(ctx, consumer, watches)
 	if errors.Is(err, ErrCursorNotReady) {
 		return nil, status.Error(codes.FailedPrecondition, "network cursor has not initialized")
 	}
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, "subscription unavailable")
 	}
-	for _, r := range rows {
+	for _, r := range rows.Registrations {
 		ready.Registrations = append(ready.Registrations, &api.Registration{Network: r.Network, Address: r.Address, FromHeight: r.FromHeight})
+	}
+	for _, r := range rows.Terminations {
+		ready.Terminations = append(ready.Terminations, &api.Termination{Network: r.Network, Address: r.Address, FromHeight: r.FromHeight, ToHeight: r.ToHeight, Completed: r.Completed})
 	}
 	return ready, nil
 }

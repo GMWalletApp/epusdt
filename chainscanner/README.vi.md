@@ -12,7 +12,7 @@
 Sau khi chạy máy chủ cục bộ, dùng `$TOKEN` ở phần khởi động nhanh và thay địa chỉ mẫu bằng địa chỉ Base của bạn. Yêu cầu này thay toàn bộ danh sách theo dõi của ứng dụng.
 
 ```sh
-curl -fsS -X PUT http://127.0.0.1:9081/v2/subscriptions \
+curl -fsS -X PUT http://127.0.0.1:9081/v1/subscriptions \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '[{

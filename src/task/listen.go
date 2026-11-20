@@ -25,30 +25,23 @@ func Start() {
 		if err != nil {
 			panic(err)
 		}
+		configureEmbedded(store)
 		feed = store
 	}
 	subscriptions := &paymentSubscriptions{feed: feed}
 	service.EnsurePaymentWatch = subscriptions.ensure
 	go func() {
-		// Install the initial watch set before starting chain workers.
-		for {
-			if err := subscriptions.refresh(ctx); err == nil {
-				break
-			} else {
-				log.Sugar.Errorf("[ChainScanner] subscribe: %v", err)
-			}
-			time.Sleep(5 * time.Second)
-		}
 		if store != nil {
 			for _, network := range scannerNetworks {
 				go runEmbeddedNetwork(ctx, network, store)
 			}
 		}
 		go consumeScanner(ctx, feed)
-		for range time.Tick(5 * time.Second) {
+		for {
 			if err := subscriptions.refresh(ctx); err != nil {
 				log.Sugar.Errorf("[ChainScanner] subscribe: %v", err)
 			}
+			time.Sleep(5 * time.Second)
 		}
 	}()
 	if store != nil {

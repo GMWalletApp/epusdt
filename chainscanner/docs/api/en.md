@@ -26,10 +26,8 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 | Role | HTTP | Success |
 | --- | --- | --- |
-| Consumer | [`PUT /v2/subscriptions`](#subscribe-v2) | `200` |
-| Consumer | [`PUT /v1/subscriptions`](#subscribe-v1) | `204` |
-| Consumer | [`GET /v2/events/next`](#next-v2) | `200 / 204` |
-| Consumer | [`GET /v1/events/next`](#next-v1) | `200 / 204` |
+| Consumer | [`PUT /v1/subscriptions`](#replace-watches) | `200 / 202` |
+| Consumer | [`GET /v1/events/next`](#next) | `200 / 204` |
 | Consumer | [`POST /v1/events/{id}/ack`](#ack) | `204` |
 | Consumer | [`GET /v1/heights/{network}`](#height) | `200` |
 | Administrator | [`GET /v1/admin/nodes`](#list) | `200` |
@@ -44,48 +42,38 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 Send the consumer’s **complete** watch list as a JSON array (up to 8 MiB). Each item requires `network` and `address` strings. Use the exact network identifier and an address valid for that ledger. Omitting a previous watch removes it. An empty array removes all watches while preserving already queued deliveries.
 
-<a id="subscribe-v2"></a>
-
-### `PUT /v2/subscriptions`
-
-Returns **200** and one row per distinct watch in input order. `from_height` is the inclusive first eligible height. Retrying an unchanged watch preserves its boundary. On an active network, a new watch starts after the highest height already assigned. Cold registration queries the head. An invalid address or unconfigured network returns **400**. If the initial boundary cannot be established, **409** preserves the previous list; retry the same full list when an RPC is available.
-
-```sh
-consumer -X PUT "$BASE/v2/subscriptions" --data '[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]'
-```
-
-```json
-[
-  {
-    "network": "base",
-    "address": "0x1111111111111111111111111111111111111111",
-    "from_height": 12345678
-  }
-]
-```
-
-<a id="subscribe-v1"></a>
+<a id="replace-watches"></a>
 
 ### `PUT /v1/subscriptions`
 
-Accepts the same array and returns **204** with no registration receipt. This version can register interest before a worker is ready. Use v2 when a caller must know the starting height before displaying a payment address.
+Each registration has an inclusive `from_height`. A new watch on a running chain starts after the highest assigned block. Removing a watch fixes its inclusive `to_height` at the observed head, or the highest already assigned block if higher. Invalid watches return **400**. If a required head is unavailable, **409** leaves the entire previous set in effect.
 
 ```sh
 consumer -X PUT "$BASE/v1/subscriptions" --data '[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]'
+```
+
+```json
+{"registrations":[{"network":"base","address":"0x1111111111111111111111111111111111111111","from_height":101}],"terminations":[]}
+```
+
+A **202** receipt means at least one removed address still has outstanding blocks. Repeat the same full list to check progress without changing the boundary. **200** means every termination in this receipt is complete. Completion includes confirmation, gap repair and queuing matching events. Consumers can still read and acknowledge them afterwards.
+
+```json
+{"registrations":[],"terminations":[{"network":"base","address":"0x1111111111111111111111111111111111111111","from_height":101,"to_height":110,"completed":false}]}
 ```
 
 <a id="deliveries"></a>
 
 ## Read and acknowledge deliveries
 
-<a id="next-v2"></a>
+<a id="next"></a>
 
-### `GET /v2/events/next`
+### `GET /v1/events/next`
 
 Required query `network` selects one supported chain. Optional integer `wait` enables long polling for 1–20 seconds. Omit it for an immediate response. Returns **200** with the next pending delivery or **204** when none is ready. Unknown or missing network, or an invalid wait, returns **400**.
 
 ```sh
-consumer "$BASE/v2/events/next?network=base&wait=15"
+consumer "$BASE/v1/events/next?network=base&wait=15"
 ```
 
 The example shows the delivery envelope with abbreviated transaction evidence. A transaction matching multiple watched addresses produces one delivery per consumer. The address match can come from incoming, outgoing or failed transactions. Payment consumers must check direction, success, asset and amount before crediting.
@@ -120,16 +108,6 @@ The example shows the delivery envelope with abbreviated transaction evidence. A
 | `activity.confirmations, activity.time_ms` | `int64, int64` | Observed confirmation count and chain timestamp in Unix milliseconds. |
 | `activity.addresses` | `string[]` | Subscribed addresses matched for this consumer. |
 | `activity.data` | `JSON` | Chain-specific JSON evidence. EVM evidence can include `transaction`, `logs`, `receipt` and `trace`. |
-
-<a id="next-v1"></a>
-
-### `GET /v1/events/next`
-
-Reads the consumer’s global queue across networks. The optional `wait` has the same limits and the same **200/204** behavior as v2. Use one reader per token for this queue, or one reader per token and network with v2.
-
-```sh
-consumer "$BASE/v1/events/next?wait=5"
-```
 
 <a id="ack"></a>
 
@@ -169,7 +147,7 @@ Open a WebSocket or bidirectional gRPC stream to receive matching activity as it
 [activity.proto](../../api/activity/v1/activity.proto)
 
 ```sh
-websocat -H="Authorization: Bearer $TOKEN" ws://127.0.0.1:9081/v2/events/stream
+websocat -H="Authorization: Bearer $TOKEN" ws://127.0.0.1:9081/v1/events/stream
 ```
 
 ```sh
@@ -177,6 +155,8 @@ grpcurl -plaintext -import-path . -proto api/activity/v1/activity.proto -H "auth
 ```
 
 **Open → ready.** Send one opening frame with a configured network. Include the complete desired watch set in `replace` only when changing the subscriptions for this consumer across **all networks**. An explicit empty set clears them all. Omit `replace` on reconnect to retain existing watches. The server returns `ready`. When replacing, the receipt lists each canonical address and inclusive start height. When resuming, the receipt is empty.
+
+Stream replacements report the same bounds in `ready.terminations`. In ProtoJSON, `toHeight` is a decimal string and an omitted `completed` means false.
 
 ```json
 {"open":{"network":"base","replace":{"watches":[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]}}}
@@ -258,7 +238,7 @@ db.execute("""CREATE TABLE IF NOT EXISTS inbox (
 delay = 1
 while True:
     try:
-        delivery = request("/v2/events/next?network=base&wait=20")
+        delivery = request("/v1/events/next?network=base&wait=20")
         if delivery is not None:
             activity = delivery["activity"]
             with db:

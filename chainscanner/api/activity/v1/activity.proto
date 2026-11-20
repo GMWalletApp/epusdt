@@ -18,7 +18,8 @@ message ClientFrame {
   oneof command { Open open = 1; int64 ack = 2; }
 }
 message Registration { string network = 1; string address = 2; int64 from_height = 3; }
-message Ready { repeated Registration registrations = 1; }
+message Termination { string network = 1; string address = 2; int64 from_height = 3; int64 to_height = 4; bool completed = 5; }
+message Ready { repeated Registration registrations = 1; repeated Termination terminations = 2; }
 message Delivery {
   int64 id = 1;
   string network = 2;

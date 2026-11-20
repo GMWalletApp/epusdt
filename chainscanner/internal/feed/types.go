@@ -1,9 +1,9 @@
 package feed
 
 import (
-	"github.com/GMWalletApp/ChainScanner/internal/chains"
-
 	"errors"
+
+	"github.com/GMWalletApp/ChainScanner/internal/chains"
 )
 
 type Watch struct {
@@ -16,9 +16,21 @@ type Delivery struct {
 	Activity chains.Activity `json:"activity"`
 }
 
-var ErrCursorNotReady = errors.New("network cursor has not initialized")
+var ErrCursorNotReady = errors.New("subscription boundary is unavailable")
 
 type Registration struct {
 	Watch
 	FromHeight int64 `json:"from_height"`
+}
+
+// Both endpoints are inclusive. A termination fixes coverage immediately;
+// pending confirmed reads can still enqueue deliveries through ToHeight.
+type Termination struct {
+	Registration
+	ToHeight  int64 `json:"to_height"`
+	Completed bool  `json:"completed"`
+}
+type SubscriptionReceipt struct {
+	Registrations []Registration `json:"registrations"`
+	Terminations  []Termination  `json:"terminations"`
 }

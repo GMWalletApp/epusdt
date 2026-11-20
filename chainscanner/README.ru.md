@@ -12,7 +12,7 @@
 Запустите локальный сервер, задайте `$TOKEN` из раздела быстрого старта и подставьте свой адрес в сети Base. Запрос заменяет весь список адресов этого потребителя.
 
 ```sh
-curl -fsS -X PUT http://127.0.0.1:9081/v2/subscriptions \
+curl -fsS -X PUT http://127.0.0.1:9081/v1/subscriptions \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '[{

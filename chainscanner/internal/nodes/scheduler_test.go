@@ -69,10 +69,10 @@ func TestMixedProtocolsDispatchAndCommitWithoutBarrier(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	if err = store.Subscribe(ctx, "pay", []feed.Watch{{Network: "tron", Address: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb"}}); err != nil {
+	if err = store.SeedCursor(ctx, "tron", 99); err != nil {
 		t.Fatal(err)
 	}
-	if err = store.SeedCursor(ctx, "tron", 99); err != nil {
+	if _, err = store.Subscribe(ctx, "pay", []feed.Watch{{Network: "tron", Address: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb"}}); err != nil {
 		t.Fatal(err)
 	}
 	failed := make(chan struct{}, 1)
@@ -120,7 +120,7 @@ func TestMixedProtocolsDispatchAndCommitWithoutBarrier(t *testing.T) {
 	if ahead.node != "jsonrpc" || ahead.from != 103 {
 		t.Fatalf("fast node waited: %+v", ahead)
 	}
-	first, e := store.Pending(ctx, "pay")
+	first, e := store.PendingNetwork(ctx, "pay", "tron", 0)
 	if e != nil || first == nil || first.Activity.Height != 102 {
 		t.Fatalf("102 not delivered across two holes: %+v %v", first, e)
 	}
@@ -151,7 +151,7 @@ func TestMixedProtocolsDispatchAndCommitWithoutBarrier(t *testing.T) {
 	}
 	seen := map[int64]bool{}
 	for range 16 {
-		d, e := store.Pending(ctx, "pay")
+		d, e := store.PendingNetwork(ctx, "pay", "tron", 0)
 		if e != nil || d == nil || d.Activity.Height < 100 || d.Activity.Height > 115 || seen[d.Activity.Height] {
 			t.Fatalf("unexpected delivery %+v %v", d, e)
 		}
@@ -160,7 +160,7 @@ func TestMixedProtocolsDispatchAndCommitWithoutBarrier(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	if d, e := store.Pending(ctx, "pay"); e != nil || d != nil {
+	if d, e := store.PendingNetwork(ctx, "pay", "tron", 0); e != nil || d != nil {
 		t.Fatal("unexpected extra delivery", d, e)
 	}
 

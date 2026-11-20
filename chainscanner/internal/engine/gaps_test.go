@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -37,8 +36,11 @@ func TestRestartOnlyReadsMissingAndNewBlocks(t *testing.T) {
 	defer func() { s.Close() }()
 	w := []feed.Watch{{Network: "base", Address: wallet}}
 	cfg := chains.Network{Name: "base"}
+	if err = s.SeedCursor(ctx, "base", 100); err != nil {
+		t.Fatal(err)
+	}
 	for _, consumer := range []string{"pay", "notification"} {
-		if err = s.Subscribe(ctx, consumer, w); err != nil {
+		if _, err = s.Subscribe(ctx, consumer, w); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -52,13 +54,13 @@ func TestRestartOnlyReadsMissingAndNewBlocks(t *testing.T) {
 	if h, _ := s.Height(ctx, "base"); h != 100 {
 		t.Fatal(h)
 	}
-	d, err := s.Pending(ctx, "pay")
+	d, err := s.PendingNetwork(ctx, "pay", "base", 0)
 	if err != nil || d == nil || d.Activity.Height != 102 {
 		t.Fatal(d, err)
 	}
 	oldID := d.ID
-	reg, err := s.SubscribeFrom(ctx, "late", w)
-	if err != nil || len(reg) != 1 || reg[0].FromHeight != 104 {
+	reg, err := s.Subscribe(ctx, "late", w)
+	if err != nil || len(reg.Registrations) != 1 || reg.Registrations[0].FromHeight != 104 {
 		t.Fatal(reg, err)
 	}
 	if err = s.Close(); err != nil {
@@ -83,7 +85,7 @@ func TestRestartOnlyReadsMissingAndNewBlocks(t *testing.T) {
 	for _, consumer := range []string{"pay", "notification", "late"} {
 		var heights []int64
 		for {
-			d, err = s.Pending(ctx, consumer)
+			d, err = s.PendingNetwork(ctx, consumer, "base", 0)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -115,10 +117,10 @@ func TestGapOutboxRollbackAndNeighborConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if err = s.Subscribe(ctx, "pay", []feed.Watch{{Network: "base", Address: wallet}}); err != nil {
+	if err = s.SeedCursor(ctx, "base", 100); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.SeedCursor(ctx, "base", 100); err != nil {
+	if _, err = s.Subscribe(ctx, "pay", []feed.Watch{{Network: "base", Address: wallet}}); err != nil {
 		t.Fatal(err)
 	}
 	jobs, _, err := s.plan(ctx, "base", 100, 103, 16)
@@ -160,7 +162,8 @@ func TestGapOutboxRollbackAndNeighborConflict(t *testing.T) {
 	if err = s.db.QueryRow("SELECT (SELECT COUNT(*) FROM scan_edges),(SELECT COUNT(*) FROM deliveries)").Scan(&edges, &deliveries); err != nil || edges != 1 || deliveries != 3 {
 		t.Fatal(edges, deliveries, err)
 	}
-	if err = s.Subscribe(ctx, "pay", nil); err != nil {
+	s.resolve = func(context.Context, string) (int64, error) { return 103, nil }
+	if _, err = s.Subscribe(ctx, "pay", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.db.QueryRow("SELECT COUNT(*) FROM scan_edges").Scan(&edges); err != nil || edges != 0 {
@@ -192,40 +195,5 @@ func TestAptosPartialPageAndGapSplit(t *testing.T) {
 	want := []chains.Span{{First: 121, Last: 160}, {First: 201, Last: 201}, {First: 161, Last: 200}}
 	if err != nil || !slices.Equal(jobs, want) {
 		t.Fatal(jobs, err)
-	}
-}
-
-func TestUpgradeStartsAboveLegacyCursor(t *testing.T) {
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "legacy.sqlite")
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = db.Exec(`CREATE TABLE cursors(network TEXT PRIMARY KEY,height INTEGER NOT NULL);
-        CREATE TABLE watches(consumer TEXT NOT NULL,network TEXT NOT NULL,address TEXT NOT NULL,from_height INTEGER,PRIMARY KEY(consumer,network,address));
-        INSERT INTO cursors VALUES('base',100);
-        INSERT INTO watches VALUES('pay','base',?,95)`, wallet)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	cfg := chains.Network{Name: "base"}
-	src := &gapSource{chain: chain{height: 102}, missing: 101}
-	if _, err = s.Step(ctx, cfg, src); err == nil {
-		t.Fatal("expected hole")
-	}
-	if !slices.Equal(src.calls, []int64{101, 102}) {
-		t.Fatal(src.calls)
-	}
-	if d, err := s.Pending(ctx, "pay"); err != nil || d == nil || d.Activity.Height != 102 {
-		t.Fatal(d, err)
 	}
 }

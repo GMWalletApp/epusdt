@@ -12,7 +12,7 @@
 With a local server running, use the consumer token from the quick start as `$TOKEN`. Replace the example with your Base address. This request sets the consumer’s entire watch list.
 
 ```sh
-curl -fsS -X PUT http://127.0.0.1:9081/v2/subscriptions \
+curl -fsS -X PUT http://127.0.0.1:9081/v1/subscriptions \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '[{

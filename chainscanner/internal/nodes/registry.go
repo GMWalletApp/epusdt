@@ -102,11 +102,7 @@ func NewNodeRegistry(ctx context.Context, s *engine.Store, networks []chains.Net
 		}
 		pool := newRegistryPool(ctx, r, n)
 		defer pool.Close()
-		tip, err := pool.Head(ctx)
-		if err != nil {
-			return 0, err
-		}
-		return engine.ActivationCursor(tip, n), nil
+		return pool.Head(ctx)
 	})
 	return r, nil
 }

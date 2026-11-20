@@ -41,8 +41,11 @@ func TestSharedReadDurableFanout(t *testing.T) {
 		t.Fatal(e)
 	}
 	w := []feed.Watch{{Network: "ethereum", Address: wallet}}
+	if err := s.SeedCursor(context.Background(), "ethereum", 8); err != nil {
+		t.Fatal(err)
+	}
 	for _, c := range []string{"pay", "other"} {
-		if e = s.Subscribe(ctx, c, w); e != nil {
+		if _, e = s.Subscribe(ctx, c, w); e != nil {
 			t.Fatal(e)
 		}
 	}
@@ -60,21 +63,21 @@ func TestSharedReadDurableFanout(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer s.Close()
-	d, e := s.Pending(ctx, "pay")
+	d, e := s.PendingNetwork(ctx, "pay", "ethereum", 0)
 	if e != nil || d == nil || d.Activity.Height != 9 || len(d.Activity.Addresses) != 1 {
 		t.Fatal(d, e)
 	}
 	if e = s.Ack(ctx, "other", d.ID); e != nil {
 		t.Fatal(e)
 	}
-	again, _ := s.Pending(ctx, "pay")
+	again, _ := s.PendingNetwork(ctx, "pay", "ethereum", 0)
 	if again == nil || again.ID != d.ID {
 		t.Fatal("cross-consumer ack")
 	}
 	if e = s.Ack(ctx, "pay", d.ID); e != nil {
 		t.Fatal(e)
 	}
-	if d, _ = s.Pending(ctx, "other"); d == nil {
+	if d, _ = s.PendingNetwork(ctx, "other", "ethereum", 0); d == nil {
 		t.Fatal("lost offline delivery")
 	}
 	if _, e = s.Step(ctx, n, src); e != nil || src.reads != 1 {
@@ -89,7 +92,7 @@ func TestSharedReadDurableFanout(t *testing.T) {
 	if _, e = s.Step(ctx, n, src); e != nil {
 		t.Fatal(e)
 	}
-	d, _ = s.Pending(ctx, "pay")
+	d, _ = s.PendingNetwork(ctx, "pay", "ethereum", 0)
 	if d == nil || d.Activity.Height != 10 {
 		t.Fatal(d)
 	}
@@ -137,26 +140,29 @@ func TestAuthenticatedSubscription(t *testing.T) {
 	defer srv.Close()
 	ctx := context.Background()
 	c := feed.Client{URL: srv.URL, Token: token}
-	if e = (feed.Client{URL: srv.URL, Token: "bad"}).Subscribe(ctx, "pay", nil); e == nil {
+	if _, e = (feed.Client{URL: srv.URL, Token: "bad"}).Subscribe(ctx, "pay", nil); e == nil {
 		t.Fatal("invalid token accepted")
 	}
-	if e = c.Subscribe(ctx, "ignored", []feed.Watch{{Network: "ethereum", Address: wallet}}); e != nil {
+	if err := s.SeedCursor(context.Background(), "ethereum", 24); err != nil {
+		t.Fatal(err)
+	}
+	if _, e = c.Subscribe(ctx, "ignored", []feed.Watch{{Network: "ethereum", Address: wallet}}); e != nil {
 		t.Fatal(e)
 	}
-	if e = c.Subscribe(ctx, "ignored", []feed.Watch{{Network: "ethereum", Address: "bad"}}); e == nil {
+	if _, e = c.Subscribe(ctx, "ignored", []feed.Watch{{Network: "ethereum", Address: "bad"}}); e == nil {
 		t.Fatal("invalid watch accepted")
 	}
 	if _, e = s.Step(ctx, chains.Network{Name: "ethereum", Lookback: 1}, &chain{height: 25}); e != nil {
 		t.Fatal(e)
 	}
-	d, e := c.Pending(ctx, "ignored")
+	d, e := c.PendingNetwork(ctx, "ignored", "ethereum", 0)
 	if e != nil || d == nil {
 		t.Fatal(d, e)
 	}
 	if e = c.Ack(ctx, "ignored", d.ID); e != nil {
 		t.Fatal(e)
 	}
-	d, e = c.Pending(ctx, "ignored")
+	d, e = c.PendingNetwork(ctx, "ignored", "ethereum", 0)
 	if d != nil || e != nil {
 		t.Fatal(d, e)
 	}
@@ -199,7 +205,10 @@ func TestConcurrentStepsReadBlockOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if err = s.Subscribe(context.Background(), "test", []feed.Watch{{Network: "ethereum", Address: wallet}}); err != nil {
+	if err := s.SeedCursor(context.Background(), "ethereum", 99); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Subscribe(context.Background(), "test", []feed.Watch{{Network: "ethereum", Address: wallet}}); err != nil {
 		t.Fatal(err)
 	}
 	src := &chain{height: 100}
@@ -245,7 +254,10 @@ func TestTRONIncompleteReceiptsRetainCursor(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if err = s.Subscribe(ctx, "merchant", []feed.Watch{{Network: "tron", Address: "41" + strings.Repeat("1", 40)}}); err != nil {
+	if err := s.SeedCursor(context.Background(), "tron", 99); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Subscribe(ctx, "merchant", []feed.Watch{{Network: "tron", Address: "41" + strings.Repeat("1", 40)}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.Step(ctx, n, src); err == nil {

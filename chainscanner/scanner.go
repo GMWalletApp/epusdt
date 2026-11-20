@@ -21,12 +21,14 @@ type (
 	Evidence = chains.Evidence
 	TONData  = chains.TONData
 
-	Store        = engine.Store
-	Watch        = feed.Watch
-	Registration = feed.Registration
-	Delivery     = feed.Delivery
-	Feed         = feed.Feed
-	Client       = feed.Client
+	Store               = engine.Store
+	Watch               = feed.Watch
+	Registration        = feed.Registration
+	Termination         = feed.Termination
+	SubscriptionReceipt = feed.SubscriptionReceipt
+	Delivery            = feed.Delivery
+	Feed                = feed.Feed
+	Client              = feed.Client
 
 	SourcePool   = nodes.SourcePool
 	NodeRegistry = nodes.NodeRegistry
@@ -38,7 +40,6 @@ type (
 var (
 	ErrNetworkNotConfigured = engine.ErrNetworkNotConfigured
 	ErrCursorNotReady       = feed.ErrCursorNotReady
-	ErrAPINotFound          = feed.ErrAPINotFound
 )
 
 // Open opens the scanner's persistent SQLite store.
@@ -100,4 +101,10 @@ func SuiTransaction(ctx context.Context, n Network, digest string) (Activity, er
 // TONReadSlice runs a TON contract getter and returns its result as a slice.
 func TONReadSlice(ctx context.Context, n Network, master *ton.BlockIDExt, contract *address.Address, method string, arg *cell.Cell) (*cell.Slice, error) {
 	return chains.TONReadSlice(ctx, n, master, contract, method, arg)
+}
+
+// ConfigureNetworks supplies an embedded store with raw chain heads for subscription boundaries.
+// Call before serving requests. The standalone node registry configures this automatically.
+func ConfigureNetworks(store *Store, networks map[string]Network, head func(context.Context, string) (int64, error)) {
+	engine.ConfigureNetworks(store, networks, head)
 }

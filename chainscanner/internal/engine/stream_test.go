@@ -32,6 +32,7 @@ func TestConsumerStreamsShareDurableQueue(t *testing.T) {
 	if err = s.SeedCursor(ctx, "base", 10); err != nil {
 		t.Fatal(err)
 	}
+	s.resolve = func(context.Context, string) (int64, error) { return 14, nil }
 	h, err := ConsumerHandler(s, map[string]string{"merchant": token})
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +45,7 @@ func TestConsumerStreamsShareDurableQueue(t *testing.T) {
 	srv.Config.ReadTimeout = 150 * time.Millisecond
 	srv.Start()
 	defer srv.Close()
-	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/v2/events/stream"
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/v1/events/stream"
 	if c, response, err := websocket.DefaultDialer.DialContext(ctx, wsURL, nil); err == nil || response.StatusCode != 401 {
 		if c != nil {
 			c.Close()
@@ -152,5 +153,17 @@ func TestConsumerStreamsShareDurableQueue(t *testing.T) {
 	f, err = stream.Recv()
 	if err != nil || f.GetDelivery().GetTxId() != "third" {
 		t.Fatal("idle stream", f, err)
+	}
+	closing, err := client.Subscribe(auth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = closing.Send(&api.ClientFrame{Command: &api.ClientFrame_Open{Open: &api.Open{Network: "base", Replace: &api.WatchSet{}}}}); err != nil {
+		t.Fatal(err)
+	}
+	ready, err := closing.Recv()
+	ends := ready.GetReady().GetTerminations()
+	if err != nil || len(ends) != 1 || ends[0].FromHeight != 11 || ends[0].ToHeight != 14 || ends[0].Completed {
+		t.Fatal(ready, err)
 	}
 }

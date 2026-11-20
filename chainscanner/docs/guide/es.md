@@ -30,13 +30,13 @@ BASE=http://127.0.0.1:9081
 TOKEN=$(jq -r '.consumers.payments' chainscanner.json)
 ADDRESS=0x1111111111111111111111111111111111111111
 jq -nc --arg a "$ADDRESS" '[{network:"base",address:$a}]' |
-  curl -sS -X PUT "$BASE/v2/subscriptions" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data-binary @-
+  curl -sS -X PUT "$BASE/v1/subscriptions" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data-binary @-
 ```
 
 Consulta la cola. Una respuesta vacía (HTTP 204) indica que no llegó ninguna entrega durante la espera. Cuando llegue una, guarda el resultado del procesamiento y después confirma su `id` como se explica en la referencia de la API.
 
 ```sh
-curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v2/events/next?network=base&wait=15"
+curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base&wait=15"
 ```
 
 [Referencia de la API](../api/es.md)
@@ -101,7 +101,7 @@ flowchart LR
     S --> Q["Colas de consumidores"]
 ```
 
-La primera suscripción inicia el lector de la red. Al quitar la última, se detienen las lecturas y se borran el progreso y los huecos. Las entregas ya en cola se conservan. En modo memoria, vuelve a registrarte tras reiniciar y reconcilia el intervalo con tus registros.
+La primera dirección inicia el lector de la red. Al retirar la última se fija el bloque final inclusivo. El lector espera las confirmaciones, cubre los huecos y pone los eventos en cola antes de detenerse y borrar el cursor y los huecos. Los eventos quedan disponibles hasta su acuse. Un archivo de base de datos conserva el trabajo tras un reinicio. En memoria, el consumidor debe conciliar la interrupción.
 
 Si falta el bloque 101, los consumidores ya pueden recibir actividad de 102 y 103. La API de altura permanece en 100 hasta completar 101. Una suscripción nueva comienza después de la mayor altura asignada y respeta los límites de las suscripciones anteriores.
 
@@ -112,13 +112,11 @@ Cada tres fallos consecutivos de la misma operación, el nodo entra en pausa dur
 El servidor independiente actualiza ChainList al arrancar y cada 15 minutos, incluso sin suscripciones. Comprueba nodos EVM públicos HTTPS/WSS, su chain ID y cabeceras recientes. Conserva las entradas del operador y, si falla la descarga, el catálogo anterior. La entrada Bitcoin de UniSat solo permite consultar altura.
 
 <details>
-<summary>Detalles de transporte y migración</summary>
+<summary>Protocolos de los nodos</summary>
 
 Para gRPC con TLS usa `grpcs://host:port` o `https://host:port`; para texto plano usa `grpc://host:port`. Ethereum Beacon SSE utiliza la ruta `/eth/v1/events`, IPC acepta un socket Unix local y GraphQL necesita la URL completa. Un nodo de ejecución WebSocket también debe admitir lecturas RPC normales.
 
 La coincidencia EVM incluye los extremos de la transacción, contratos creados, emisores de logs y temas indexados con forma de dirección. Las trazas opcionales cubren llamadas internas sin logs. Arbitrum Nova, la actividad de HyperCore y las cadenas X/P de Avalanche tienen registros independientes. Comprueba los datos antes de abonar un pago: la transacción puede ser saliente o fallida.
-
-Si la instalación anterior usaba el archivo implícito, indica su ruta original en `database` (por ejemplo `chainscanner.sqlite`) antes de actualizar. Las suscripciones v1 antiguas pueden recibir su primera altura inicial al registrarse por primera vez con v2.
 
 </details>
 

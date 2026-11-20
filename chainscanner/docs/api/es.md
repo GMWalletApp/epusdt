@@ -26,10 +26,8 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 | Rol | HTTP | Éxito |
 | --- | --- | --- |
-| Consumidor | [`PUT /v2/subscriptions`](#subscribe-v2) | `200` |
-| Consumidor | [`PUT /v1/subscriptions`](#subscribe-v1) | `204` |
-| Consumidor | [`GET /v2/events/next`](#next-v2) | `200 / 204` |
-| Consumidor | [`GET /v1/events/next`](#next-v1) | `200 / 204` |
+| Consumidor | [`PUT /v1/subscriptions`](#replace-watches) | `200 / 202` |
+| Consumidor | [`GET /v1/events/next`](#next) | `200 / 204` |
 | Consumidor | [`POST /v1/events/{id}/ack`](#ack) | `204` |
 | Consumidor | [`GET /v1/heights/{network}`](#height) | `200` |
 | Administrador | [`GET /v1/admin/nodes`](#list) | `200` |
@@ -44,48 +42,38 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 Envía la lista **completa** del consumidor como un array JSON de hasta 8 MiB. Cada elemento requiere las cadenas `network` y `address`: el identificador exacto de la red y una dirección válida en ella. Omitir una suscripción anterior la elimina. El array vacío elimina todas y conserva las entregas ya en cola.
 
-<a id="subscribe-v2"></a>
-
-### `PUT /v2/subscriptions`
-
-Devuelve **200** y una fila por suscripción distinta en orden de entrada. `from_height` es la primera altura incluida. Repetir la misma suscripción conserva su límite. En una red activa, una dirección nueva empieza después de la mayor altura asignada. Un registro en frío consulta la punta. Una dirección inválida o una red sin configurar devuelve **400**. Si no se puede obtener la altura inicial, **409** conserva la lista anterior; reenvía la lista completa cuando haya RPC.
-
-```sh
-consumer -X PUT "$BASE/v2/subscriptions" --data '[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]'
-```
-
-```json
-[
-  {
-    "network": "base",
-    "address": "0x1111111111111111111111111111111111111111",
-    "from_height": 12345678
-  }
-]
-```
-
-<a id="subscribe-v1"></a>
+<a id="replace-watches"></a>
 
 ### `PUT /v1/subscriptions`
 
-Acepta el mismo array y devuelve **204** sin recibo. Permite registrar interés antes de que el lector esté listo. Usa v2 si necesitas conocer la altura inicial antes de mostrar una dirección de pago.
+Cada registro tiene una altura inicial inclusiva, `from_height`. En una red activa, una dirección nueva empieza después del último bloque asignado. Al retirar una dirección, `to_height` incluye el mayor entre la altura observada y el último bloque asignado. Los datos inválidos devuelven **400**. Si falta una altura necesaria, **409** conserva la lista anterior completa.
 
 ```sh
 consumer -X PUT "$BASE/v1/subscriptions" --data '[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]'
+```
+
+```json
+{"registrations":[{"network":"base","address":"0x1111111111111111111111111111111111111111","from_height":101}],"terminations":[]}
+```
+
+Un **202** indica que quedan bloques pendientes para alguna baja. Repite la misma lista completa para consultar el progreso sin cambiar el límite. Con **200**, todas las bajas del recibo han terminado. Los bloques tienen las confirmaciones exigidas, los huecos están cubiertos y los eventos en cola siguen disponibles para su lectura y acuse.
+
+```json
+{"registrations":[],"terminations":[{"network":"base","address":"0x1111111111111111111111111111111111111111","from_height":101,"to_height":110,"completed":false}]}
 ```
 
 <a id="deliveries"></a>
 
 ## Leer y confirmar entregas
 
-<a id="next-v2"></a>
+<a id="next"></a>
 
-### `GET /v2/events/next`
+### `GET /v1/events/next`
 
 La consulta requiere `network` con una red admitida. El entero opcional `wait` activa una espera de 1 a 20 segundos; omítelo para obtener respuesta inmediata. Devuelve **200** con la siguiente entrega pendiente o **204** si no hay ninguna. Una red ausente o desconocida o un tiempo de espera inválido devuelve **400**.
 
 ```sh
-consumer "$BASE/v2/events/next?network=base&wait=15"
+consumer "$BASE/v1/events/next?network=base&wait=15"
 ```
 
 El ejemplo muestra una entrega con datos de transacción abreviados. Una transacción que coincide con varias direcciones genera una entrega por consumidor. También pueden coincidir operaciones salientes o fallidas. Antes de abonar un pago, comprueba dirección, resultado, activo e importe.
@@ -120,16 +108,6 @@ El ejemplo muestra una entrega con datos de transacción abreviados. Una transac
 | `activity.confirmations, activity.time_ms` | `int64, int64` | Número observado de confirmaciones y tiempo de la cadena en milisegundos Unix. |
 | `activity.addresses` | `string[]` | Direcciones suscritas que coincidieron para este consumidor. |
 | `activity.data` | `JSON` | Datos JSON propios de la red. En EVM pueden incluir `transaction`, `logs`, `receipt` y `trace`. |
-
-<a id="next-v1"></a>
-
-### `GET /v1/events/next`
-
-Lee la cola global del consumidor para todas las redes. `wait` y las respuestas **200/204** funcionan igual que en v2. Usa un lector por token para esta cola o un lector por token y red con v2.
-
-```sh
-consumer "$BASE/v1/events/next?wait=5"
-```
 
 <a id="ack"></a>
 
@@ -169,7 +147,7 @@ Abre un WebSocket o un flujo gRPC bidireccional para recibir la actividad de las
 [activity.proto](../../api/activity/v1/activity.proto)
 
 ```sh
-websocat -H="Authorization: Bearer $TOKEN" ws://127.0.0.1:9081/v2/events/stream
+websocat -H="Authorization: Bearer $TOKEN" ws://127.0.0.1:9081/v1/events/stream
 ```
 
 ```sh
@@ -177,6 +155,8 @@ grpcurl -plaintext -import-path . -proto api/activity/v1/activity.proto -H "auth
 ```
 
 **Apertura → recepción.** Envía primero la red configurada. Incluye en `replace` la lista completa solo para sustituir las suscripciones del consumidor en **todas las redes**. Una lista vacía las borra. Omite `replace` al reconectar para conservarlas. El servidor responde con `ready`. Al reemplazar, devuelve cada dirección normalizada y la altura inicial inclusiva. Al reanudar, el recibo está vacío.
+
+Al reemplazar la lista por streaming, los límites aparecen en `ready.terminations`. En ProtoJSON, `toHeight` es una cadena decimal y la ausencia de `completed` significa falso.
 
 ```json
 {"open":{"network":"base","replace":{"watches":[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]}}}
@@ -258,7 +238,7 @@ db.execute("""CREATE TABLE IF NOT EXISTS inbox (
 delay = 1
 while True:
     try:
-        delivery = request("/v2/events/next?network=base&wait=20")
+        delivery = request("/v1/events/next?network=base&wait=20")
         if delivery is not None:
             activity = delivery["activity"]
             with db:

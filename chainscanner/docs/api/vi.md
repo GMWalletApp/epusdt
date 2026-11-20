@@ -26,10 +26,8 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 | Vai trò | HTTP | Thành công |
 | --- | --- | --- |
-| Dịch vụ | [`PUT /v2/subscriptions`](#subscribe-v2) | `200` |
-| Dịch vụ | [`PUT /v1/subscriptions`](#subscribe-v1) | `204` |
-| Dịch vụ | [`GET /v2/events/next`](#next-v2) | `200 / 204` |
-| Dịch vụ | [`GET /v1/events/next`](#next-v1) | `200 / 204` |
+| Dịch vụ | [`PUT /v1/subscriptions`](#replace-watches) | `200 / 202` |
+| Dịch vụ | [`GET /v1/events/next`](#next) | `200 / 204` |
 | Dịch vụ | [`POST /v1/events/{id}/ack`](#ack) | `204` |
 | Dịch vụ | [`GET /v1/heights/{network}`](#height) | `200` |
 | Quản trị viên | [`GET /v1/admin/nodes`](#list) | `200` |
@@ -44,48 +42,38 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 Gửi **toàn bộ** danh sách theo dõi của dịch vụ dưới dạng mảng JSON (tối đa 8 MiB). Mỗi phần tử có chuỗi `network` và `address` cho đúng mạng và địa chỉ hợp lệ. Địa chỉ cũ bị bỏ khỏi danh sách sẽ được hủy đăng ký. Mảng rỗng hủy toàn bộ nhưng giữ các sự kiện đã xếp hàng.
 
-<a id="subscribe-v2"></a>
-
-### `PUT /v2/subscriptions`
-
-Trả **200**, mỗi địa chỉ và mạng riêng biệt có một dòng theo thứ tự nhập. `from_height` là độ cao đầu tiên được tính. Gửi lại đăng ký cũ giữ nguyên mốc. Trên mạng đang quét, đăng ký mới bắt đầu sau độ cao cao nhất đã phân công. Đăng ký khi chưa chạy sẽ truy vấn đầu chuỗi. Địa chỉ sai hoặc mạng chưa cấu hình trả **400**. Nếu chưa xác định được mốc đầu, **409** giữ nguyên danh sách cũ; hãy gửi lại toàn bộ khi RPC sẵn sàng.
-
-```sh
-consumer -X PUT "$BASE/v2/subscriptions" --data '[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]'
-```
-
-```json
-[
-  {
-    "network": "base",
-    "address": "0x1111111111111111111111111111111111111111",
-    "from_height": 12345678
-  }
-]
-```
-
-<a id="subscribe-v1"></a>
+<a id="replace-watches"></a>
 
 ### `PUT /v1/subscriptions`
 
-Nhận cùng mảng và trả **204** mà không kèm mốc đăng ký. Có thể đăng ký trước khi bộ quét sẵn sàng. Dùng v2 nếu cần biết độ cao bắt đầu trước khi hiển thị địa chỉ nhận tiền.
+Mỗi đăng ký có mốc đầu `from_height`, bao gồm cả khối đó. Trên mạng đang chạy, địa chỉ mới bắt đầu sau khối cao nhất đã giao. Khi hủy, `to_height` bao gồm khối cao hơn giữa đầu chuỗi vừa đọc và khối cao nhất đã giao. Dữ liệu không hợp lệ trả **400**. Nếu không đọc được độ cao cần thiết, **409** giữ nguyên toàn bộ danh sách trước đó.
 
 ```sh
 consumer -X PUT "$BASE/v1/subscriptions" --data '[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]'
+```
+
+```json
+{"registrations":[{"network":"base","address":"0x1111111111111111111111111111111111111111","from_height":101}],"terminations":[]}
+```
+
+Mã **202** cho biết ít nhất một địa chỉ đang chờ xử lý các khối cuối. Gửi lại đúng danh sách đầy đủ để kiểm tra tiến độ với cùng mốc cuối. Mã **200** cho biết tất cả lượt hủy trong phản hồi đã hoàn tất: các khối đã đủ xác nhận, khoảng trống đã được quét bù và sự kiện đã vào hàng đợi. Dịch vụ vẫn có thể nhận và xác nhận sự kiện sau đó.
+
+```json
+{"registrations":[],"terminations":[{"network":"base","address":"0x1111111111111111111111111111111111111111","from_height":101,"to_height":110,"completed":false}]}
 ```
 
 <a id="deliveries"></a>
 
 ## Đọc và xác nhận sự kiện
 
-<a id="next-v2"></a>
+<a id="next"></a>
 
-### `GET /v2/events/next`
+### `GET /v1/events/next`
 
 Tham số truy vấn bắt buộc `network` chọn một mạng được hỗ trợ. `wait` là số nguyên tùy chọn 1–20 giây để chờ dài; bỏ qua để trả ngay. Có sự kiện trả **200**, chưa có trả **204**. Thiếu mạng, mạng không hợp lệ hoặc thời gian chờ sai trả **400**.
 
 ```sh
-consumer "$BASE/v2/events/next?network=base&wait=15"
+consumer "$BASE/v1/events/next?network=base&wait=15"
 ```
 
 Ví dụ minh họa cấu trúc sự kiện với dữ liệu giao dịch rút gọn. Một giao dịch khớp nhiều địa chỉ chỉ tạo một lần giao cho mỗi dịch vụ. Giao dịch đến, đi hoặc thất bại đều có thể khớp. Cần kiểm tra chiều chuyển, kết quả, tài sản và số tiền trước khi ghi có.
@@ -120,16 +108,6 @@ Ví dụ minh họa cấu trúc sự kiện với dữ liệu giao dịch rút g
 | `activity.confirmations, activity.time_ms` | `int64, int64` | Số xác nhận quan sát được và thời gian trên chuỗi tính bằng mili giây Unix. |
 | `activity.addresses` | `string[]` | Các địa chỉ đăng ký của dịch vụ đã khớp. |
 | `activity.data` | `JSON` | Dữ liệu JSON riêng của mạng. EVM có thể chứa `transaction`, `logs`, `receipt` và `trace`. |
-
-<a id="next-v1"></a>
-
-### `GET /v1/events/next`
-
-Đọc hàng đợi chung của dịch vụ trên mọi mạng. `wait` và phản hồi **200/204** như v2. Dùng một bộ đọc cho mỗi token với v1, hoặc một bộ đọc cho từng cặp token và mạng với v2.
-
-```sh
-consumer "$BASE/v1/events/next?wait=5"
-```
 
 <a id="ack"></a>
 
@@ -169,7 +147,7 @@ consumer "$BASE/v1/heights/base"
 [activity.proto](../../api/activity/v1/activity.proto)
 
 ```sh
-websocat -H="Authorization: Bearer $TOKEN" ws://127.0.0.1:9081/v2/events/stream
+websocat -H="Authorization: Bearer $TOKEN" ws://127.0.0.1:9081/v1/events/stream
 ```
 
 ```sh
@@ -177,6 +155,8 @@ grpcurl -plaintext -import-path . -proto api/activity/v1/activity.proto -H "auth
 ```
 
 **Mở luồng → nhận biên nhận.** Khung đầu tiên phải ghi tên một mạng đã cấu hình. Chỉ gửi `replace` khi muốn thay toàn bộ danh sách địa chỉ của dịch vụ trên **tất cả các mạng**. Danh sách rỗng sẽ xóa toàn bộ đăng ký. Khi kết nối lại, bỏ `replace` để giữ danh sách hiện tại. Máy chủ trả về `ready`. Khi thay danh sách, phản hồi chứa địa chỉ chuẩn hóa và độ cao bắt đầu, tính cả độ cao đó. Khi nối lại, biên nhận rỗng.
+
+Khi thay danh sách qua luồng, giới hạn nằm trong `ready.terminations`. Trong ProtoJSON, `toHeight` là chuỗi thập phân và nếu thiếu `completed` thì giá trị là false.
 
 ```json
 {"open":{"network":"base","replace":{"watches":[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]}}}
@@ -258,7 +238,7 @@ db.execute("""CREATE TABLE IF NOT EXISTS inbox (
 delay = 1
 while True:
     try:
-        delivery = request("/v2/events/next?network=base&wait=20")
+        delivery = request("/v1/events/next?network=base&wait=20")
         if delivery is not None:
             activity = delivery["activity"]
             with db:

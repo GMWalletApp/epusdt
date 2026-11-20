@@ -26,10 +26,8 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 | 角色 | HTTP | 成功状态 |
 | --- | --- | --- |
-| 消费者 | [`PUT /v2/subscriptions`](#subscribe-v2) | `200` |
-| 消费者 | [`PUT /v1/subscriptions`](#subscribe-v1) | `204` |
-| 消费者 | [`GET /v2/events/next`](#next-v2) | `200 / 204` |
-| 消费者 | [`GET /v1/events/next`](#next-v1) | `200 / 204` |
+| 消费者 | [`PUT /v1/subscriptions`](#replace-watches) | `200 / 202` |
+| 消费者 | [`GET /v1/events/next`](#next) | `200 / 204` |
 | 消费者 | [`POST /v1/events/{id}/ack`](#ack) | `204` |
 | 消费者 | [`GET /v1/heights/{network}`](#height) | `200` |
 | 管理员 | [`GET /v1/admin/nodes`](#list) | `200` |
@@ -44,48 +42,38 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 请求体为该消费者的**完整订阅列表**，JSON 数组上限 8 MiB。每项含字符串 `network` 和 `address`，分别为具体网络 ID 及该网络上的合法地址。旧订阅未出现在新列表中即被移除。发送空数组可全部退订，已排队事件仍可读取。
 
-<a id="subscribe-v2"></a>
-
-### `PUT /v2/subscriptions`
-
-返回 **200**，按输入顺序为每个去重后的订阅返回一项。`from_height` 是含首块的起始高度。重发相同订阅会保留原起点。链已在扫描时，新订阅从已分配的最高高度之后开始；冷启动注册会查询链头。无效地址或未配置的链返回 **400**。首次边界无法确定时返回 **409**，原列表保留；节点恢复后可重发完整列表。
-
-```sh
-consumer -X PUT "$BASE/v2/subscriptions" --data '[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]'
-```
-
-```json
-[
-  {
-    "network": "base",
-    "address": "0x1111111111111111111111111111111111111111",
-    "from_height": 12345678
-  }
-]
-```
-
-<a id="subscribe-v1"></a>
+<a id="replace-watches"></a>
 
 ### `PUT /v1/subscriptions`
 
-请求体与 v2 相同。成功返回 **204**，不附起始高度。v1 可在扫描线程就绪前登记订阅。若展示收款地址前必须取得监听起点，使用 v2。
+每个地址的 `from_height` 都含首块。在运行中的链上，新订阅从已分配最高块的下一块开始。移除地址时读取链头，并用它与已分配最高块中较高者作为 `to_height`，该块仍在监听范围内。地址或网络无效返回 **400**。无法取得所需链头时返回 **409**，原订阅整组保留。
 
 ```sh
 consumer -X PUT "$BASE/v1/subscriptions" --data '[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]'
+```
+
+```json
+{"registrations":[{"network":"base","address":"0x1111111111111111111111111111111111111111","from_height":101}],"terminations":[]}
+```
+
+返回 **202** 表示至少一个退订地址仍有区块待处理。重复提交同一份完整列表可查询进度，终止块保持固定。返回 **200** 表示本次回执中的退订均已完成，区块已达到确认数、缺块已补齐、匹配事件已入队。消费者之后仍可领取并确认这些事件。
+
+```json
+{"registrations":[],"terminations":[{"network":"base","address":"0x1111111111111111111111111111111111111111","from_height":101,"to_height":110,"completed":false}]}
 ```
 
 <a id="deliveries"></a>
 
 ## 读取与确认投递
 
-<a id="next-v2"></a>
+<a id="next"></a>
 
-### `GET /v2/events/next`
+### `GET /v1/events/next`
 
 必填查询参数 `network` 指定一条受支持的链。可选整数 `wait` 开启 1–20 秒长轮询；省略即立即返回。有待处理投递时返回 **200**，没有则返回 **204**。缺少或不支持的网络、非法等待时间均返回 **400**。
 
 ```sh
-consumer "$BASE/v2/events/next?network=base&wait=15"
+consumer "$BASE/v1/events/next?network=base&wait=15"
 ```
 
 下例展示投递信封，交易证据已简化。同一笔交易同时匹配多个监听地址时，每个消费者只收到一份。转入、转出和失败交易都可能命中地址；支付端应核对方向、执行结果、资产与金额后再入账。
@@ -120,16 +108,6 @@ consumer "$BASE/v2/events/next?network=base&wait=15"
 | `activity.confirmations, activity.time_ms` | `int64, int64` | 观察到的确认数、链上时间戳（Unix 毫秒）。 |
 | `activity.addresses` | `string[]` | 该消费者本次匹配到的监听地址。 |
 | `activity.data` | `JSON` | 链专属 JSON 证据。EVM 数据可包含 `transaction`、`logs`、`receipt`、`trace`。 |
-
-<a id="next-v1"></a>
-
-### `GET /v1/events/next`
-
-读取消费者跨链共享的队列。`wait` 范围和 **200/204** 语义与 v2 相同。使用此接口时每个令牌运行一个读取器；使用 v2 时可为每个令牌的每条链各运行一个。
-
-```sh
-consumer "$BASE/v1/events/next?wait=5"
-```
 
 <a id="ack"></a>
 
@@ -169,7 +147,7 @@ consumer "$BASE/v1/heights/base"
 [activity.proto](../../api/activity/v1/activity.proto)
 
 ```sh
-websocat -H="Authorization: Bearer $TOKEN" ws://127.0.0.1:9081/v2/events/stream
+websocat -H="Authorization: Bearer $TOKEN" ws://127.0.0.1:9081/v1/events/stream
 ```
 
 ```sh
@@ -177,6 +155,8 @@ grpcurl -plaintext -import-path . -proto api/activity/v1/activity.proto -H "auth
 ```
 
 **打开流 → 收到回执。** 第一帧的 `network` 必须是已配置的具体网络。只有要替换该消费者在**所有链**的完整订阅时才带 `replace`，显式传空集合会清空全部订阅。重连时省略 `replace` 即可沿用现有订阅。服务端返回 `ready`，替换成功时包含规范化地址和起始高度（含首块）；沿用现有订阅时回执为空。
+
+通过长连接替换订阅时，`ready.terminations` 返回相同的退订边界。ProtoJSON 中的 `toHeight` 是十进制字符串，省略 `completed` 表示尚未完成。
 
 ```json
 {"open":{"network":"base","replace":{"watches":[{"network":"base","address":"0x1111111111111111111111111111111111111111"}]}}}
@@ -258,7 +238,7 @@ db.execute("""CREATE TABLE IF NOT EXISTS inbox (
 delay = 1
 while True:
     try:
-        delivery = request("/v2/events/next?network=base&wait=20")
+        delivery = request("/v1/events/next?network=base&wait=20")
         if delivery is not None:
             activity = delivery["activity"]
             with db:

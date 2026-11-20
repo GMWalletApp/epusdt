@@ -107,6 +107,9 @@ func (s *Store) step(ctx context.Context, n chains.Network, source chains.Source
 	if rolling {
 		retryDelay = interval
 	}
+	if drain, ok := s.drains[n.Name]; ok && !drain.open {
+		head = min(head, drain.end)
+	}
 	work, high, err := s.planAvailable(ctx, n.Name, prev, head, limit, owned, retryDelay)
 	s.demandMu.Unlock()
 	if err != nil || (!rolling && len(work) == 0) {

@@ -30,13 +30,13 @@ BASE=http://127.0.0.1:9081
 TOKEN=$(jq -r '.consumers.payments' chainscanner.json)
 ADDRESS=0x1111111111111111111111111111111111111111
 jq -nc --arg a "$ADDRESS" '[{network:"base",address:$a}]' |
-  curl -sS -X PUT "$BASE/v2/subscriptions" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data-binary @-
+  curl -sS -X PUT "$BASE/v1/subscriptions" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data-binary @-
 ```
 
 读取队列。等待期间没有匹配事件时返回 HTTP 204，响应体为空。收到投递后，先持久化业务结果，再按接口参考确认该投递的 `id`。
 
 ```sh
-curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v2/events/next?network=base&wait=15"
+curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base&wait=15"
 ```
 
 [接口参考](../api/zh-CN.md)
@@ -101,7 +101,7 @@ flowchart LR
     S --> Q["消费者队列"]
 ```
 
-首个地址订阅启动对应链，最后一个地址退订会停止扫块并清除该链进度和缺块记录。已经排队的事件仍可读取。使用内存模式时，重启后需重新注册，并根据业务记录对账停机期间的交易。
+首个地址启动对应链。最后一个地址退订时固定终止块，扫描器等待确认并补齐此前缺块，将截至终止块（含）的匹配事件入队后，才停止该链并清除游标和缺块记录。未确认的事件仍可领取。配置数据库文件可在重启后继续补扫；内存模式下，中断期间由消费者对账。
 
 即使缺少 101 块，102 和 103 的活动也能立即投递。高度接口在 101 补齐前仍返回 100。新地址从已分配的最高高度之后开始监听，旧缺口继续沿用原来的订阅边界。
 
@@ -116,13 +116,11 @@ flowchart LR
 独立服务启动时及之后每 15 分钟刷新 ChainList，即使没有地址订阅也会进行节点发现。它探测公开 EVM HTTPS/WSS 节点，校验 chain ID 和近期块头，保留手动配置的节点。目录下载失败时沿用上次清单。UniSat 的 Bitcoin 条目仅支持高度探测。
 
 <details>
-<summary>协议细节与升级</summary>
+<summary>节点协议细节</summary>
 
 TLS gRPC 可用 `grpcs://host:port` 或 `https://host:port`；明文使用 `grpc://host:port`。Ethereum Beacon SSE 使用节点的 `/eth/v1/events` 路由，IPC 使用本地 Unix 套接字，GraphQL 需填写完整接口 URL。WebSocket 执行节点也要支持常规 RPC 读取。
 
 EVM 匹配包括交易双方、创建的合约、日志发出方和形似地址的索引主题；开启追踪后还可获取无日志的内部调用。Arbitrum Nova、HyperCore 交易和 Avalanche X/P 链属于其他账本。匹配的交易可能转出或执行失败，入账前应核对证据。
-
-旧部署如果依赖此前默认的数据库文件，升级前需在 `database` 中显式填写原文件路径（例如 `chainscanner.sqlite`），确保继续读取旧队列。旧版 v1 订阅可能要到首次 v2 注册时才取得起始高度回执。
 
 </details>
 

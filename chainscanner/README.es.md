@@ -12,7 +12,7 @@
 Con el servidor local en marcha, usa el `$TOKEN` del inicio rápido y cambia la dirección del ejemplo por tu dirección de Base. Esta petición sustituye la lista completa de direcciones del consumidor.
 
 ```sh
-curl -fsS -X PUT http://127.0.0.1:9081/v2/subscriptions \
+curl -fsS -X PUT http://127.0.0.1:9081/v1/subscriptions \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '[{

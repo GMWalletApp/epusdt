@@ -13,8 +13,6 @@ import (
 	"github.com/GMWalletApp/ChainScanner/internal/chains"
 )
 
-var ErrAPINotFound = errors.New("scanner endpoint not found")
-
 type Client struct{ URL, Token string }
 
 var transport = &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
@@ -38,30 +36,16 @@ func (c Client) request(ctx context.Context, method, path string, data any, out 
 	if res.StatusCode == 204 {
 		return nil
 	}
-	if res.StatusCode == 404 {
-		return ErrAPINotFound
-	}
 	if res.StatusCode == 409 {
 		return ErrCursorNotReady
 	}
-	if res.StatusCode != 200 {
+	if res.StatusCode != 200 && res.StatusCode != 202 {
 		return fmt.Errorf("scanner HTTP %d", res.StatusCode)
 	}
 	if out != nil {
 		return json.NewDecoder(res.Body).Decode(out)
 	}
 	return nil
-}
-func (c Client) Subscribe(ctx context.Context, _ string, w []Watch) error {
-	if w == nil {
-		w = []Watch{}
-	}
-	return c.request(ctx, "PUT", "/v1/subscriptions", w, nil)
-}
-func (c Client) Pending(ctx context.Context, _ string) (*Delivery, error) {
-	var d *Delivery
-	err := c.request(ctx, "GET", "/v1/events/next", nil, &d)
-	return d, err
 }
 func (c Client) Ack(ctx context.Context, _ string, id int64) error {
 	return c.request(ctx, "POST", fmt.Sprintf("/v1/events/%d/ack", id), nil, nil)
@@ -73,26 +57,23 @@ func (c Client) Height(ctx context.Context, network string) (int64, error) {
 	return height, err
 }
 
-func (c Client) SubscribeFrom(ctx context.Context, _ string, w []Watch) ([]Registration, error) {
+func (c Client) Subscribe(ctx context.Context, _ string, w []Watch) (SubscriptionReceipt, error) {
 	if w == nil {
 		w = []Watch{}
 	}
-	var rows []Registration
-	err := c.request(ctx, "PUT", "/v2/subscriptions", w, &rows)
-	return rows, err
-}
-
-func (c Client) PendingWait(ctx context.Context, _ string, wait time.Duration) (*Delivery, error) {
-	var d *Delivery
-	err := c.request(ctx, "GET", fmt.Sprintf("/v1/events/next?wait=%d", max(1, min(20, int(wait/time.Second)))), nil, &d)
-	return d, err
+	var result SubscriptionReceipt
+	err := c.request(ctx, "PUT", "/v1/subscriptions", w, &result)
+	if err == nil && (result.Registrations == nil || result.Terminations == nil) {
+		return result, errors.New("invalid subscription receipt")
+	}
+	return result, err
 }
 
 func (c Client) PendingNetwork(ctx context.Context, _ string, network string, wait time.Duration) (*Delivery, error) {
 	if !chains.Supported(network) {
 		return nil, errors.New("unknown network")
 	}
-	path := "/v2/events/next?network=" + network
+	path := "/v1/events/next?network=" + network
 	if wait > 0 {
 		path += fmt.Sprintf("&wait=%d", max(1, min(20, int(wait/time.Second))))
 	}

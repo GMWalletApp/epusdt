@@ -154,10 +154,10 @@ func TestSolanaStepReusesFinalizedSlotList(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer store.Close()
-	if e = store.Subscribe(ctx, "test", []feed.Watch{{Network: "solana", Address: "11111111111111111111111111111111"}}); e != nil {
+	if e = store.SeedCursor(ctx, "solana", 0); e != nil {
 		t.Fatal(e)
 	}
-	if e = store.SeedCursor(ctx, "solana", 0); e != nil {
+	if _, e = store.Subscribe(ctx, "test", []feed.Watch{{Network: "solana", Address: "11111111111111111111111111111111"}}); e != nil {
 		t.Fatal(e)
 	}
 	pool := NewSourcePool(ctx, "solana")

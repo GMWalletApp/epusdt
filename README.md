@@ -224,7 +224,7 @@ Good Morning Technology, LLC 为依据美国法律设立的主体，并将在适
 
 ## ChainScanner 地址订阅
 
-单实例默认使用随仓库附带的 ChainScanner，按后台启用的网络、普通 RPC 节点和确认数运行。扫描进度及待投递事件保存在运行时 SQLite 文件旁的 `.chainscanner` 数据库中。每个节点必须指定具体网络，例如 Ethereum、BSC 或 Base，连接时校验 EVM chain ID。每条链只有在至少有一个地址订阅时才开始读取；最后一个订阅取消后会关闭该链连接并清除扫描游标。相同地址在不同链上分别注册。全块模式需要节点支持整块交易与日志查询，RPC 用量与链上流量有关。
+单实例默认使用随仓库附带的 ChainScanner，按后台启用的网络、普通 RPC 节点和确认数运行。扫描进度及待投递事件保存在运行时 SQLite 文件旁的 `.chainscanner` 数据库中。每个节点必须指定具体网络，例如 Ethereum、BSC 或 Base，连接时校验 EVM chain ID。每条链只有在至少有一个地址订阅时才开始读取；最后一个地址退订会固定终止块，待该块及之前的缺块全部确认并处理后，关闭该链连接并清除游标。相同地址在不同链上分别注册。全块模式需要节点支持整块交易与日志查询，RPC 用量与链上流量有关。
 
 多个支付实例或其他业务共享监听时，独立运行一个 ChainScanner，给不同业务配置独立令牌，再为 EPUSDT 进程设置环境变量 `CHAINSCANNER_URL` 和 `CHAINSCANNER_TOKEN`。此模式由独立服务持有 RPC 和游标。EPUSDT 注册启用的钱包，在展示新收款地址前确认订阅，并在持久化支付结果后确认事件。TON Jetton 入账使用后台配置的 LiteServer 或 TON Center v2 节点，在交易所属的历史主链区块校验 Jetton 钱包归属。独立服务默认使用内存，重启后 EPUSDT 会重新提交钱包订阅；中断期间的交易及尚未确认投递的事件需由消费方对账。需要跨重启自动恢复时，在独立服务配置中指定 `database` 文件。
 
@@ -232,6 +232,6 @@ Good Morning Technology, LLC 为依据美国法律设立的主体，并将在适
 
 新增网络包括 Sui、Arbitrum One、HyperEVM、Monad、Arc 主网、Avalanche C-Chain、OP Mainnet 和 Base 主网。各链预置原生资产和 Circle USDC；Arc 原生币就是 USDC，支付端分别按原生转账的 18 位和 ERC-20 的 6 位解析。Sui 按完整 Move coin type 区分资产。同名跨链资产通过实际到账的链和合约或 coin type 匹配订单。
 
-EVM 优先使用支持普通 RPC 读取的 WSS 节点，收到新区块头即按持久化游标补齐；没有可用 WSS 时使用 HTTPS。Sui 使用复用的 gRPC 连接监听检查点。Base 默认支持 ETH 和 Circle 原生 USDC。Base、Arbitrum One 和 OP Mainnet 的确认数以 L2 区块计算。支付端按网络独立消费，一条链的支付处理重试不会阻塞其他链。独立服务的 `PUT /v2/subscriptions` 返回每个地址含首块在内的 `from_height`，接口示例见 ChainScanner README。
+EVM 优先使用支持普通 RPC 读取的 WSS 节点，收到新区块头即按持久化游标补齐；没有可用 WSS 时使用 HTTPS。Sui 使用复用的 gRPC 连接监听检查点。Base 默认支持 ETH 和 Circle 原生 USDC。Base、Arbitrum One 和 OP Mainnet 的确认数以 L2 区块计算。支付端按网络独立消费，一条链的支付处理重试不会阻塞其他链。独立服务的 `PUT /v1/subscriptions` 返回订阅起点 `from_height` 和退订终点 `to_height`（两端均含）。退订返回 202 时，可重发同一份完整订阅列表查询完成状态，已入队事件仍可领取，接口示例见 ChainScanner README。
 
 后台的 RPC 节点表单会按网络列出可用接口。为 Solana 的 WebSocket 或 Yellowstone gRPC、Aptos 的 gRPC 或 GraphQL、TRON 的 JSON-RPC、Ethereum 的 Beacon SSE 添加节点时，再添加同一网络的普通 HTTP 历史节点。支付端自动配对，分别使用各自的 API Key。优先使用健康、权重较高的节点，同权重时按协议优先级选择。独立部署的接口名、URL 格式和完整矩阵见 [ChainScanner 节点协议](chainscanner/README.md#node-protocols)。

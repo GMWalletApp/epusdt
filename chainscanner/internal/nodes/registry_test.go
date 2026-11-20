@@ -183,7 +183,7 @@ func TestNodePoolKeepsCursorOnProviderChange(t *testing.T) {
 			}
 		}
 	}
-	if err = store.Subscribe(ctx, "pay", []feed.Watch{{Network: "base", Address: wallet}}); err != nil {
+	if _, err = store.Subscribe(ctx, "pay", []feed.Watch{{Network: "base", Address: wallet}}); err != nil {
 		t.Fatal(err)
 	}
 	p := newRegistryPool(ctx, r, settings)
@@ -256,7 +256,7 @@ func TestConcreteEVMNetworkDemand(t *testing.T) {
 	}
 	defer func() { stop(); <-done; <-done }()
 	for _, name := range []string{"", "evm", "optimism"} {
-		if _, e = s.SubscribeFrom(ctx, "a", []feed.Watch{{Network: name, Address: wallet}}); e == nil {
+		if _, e = s.Subscribe(ctx, "a", []feed.Watch{{Network: name, Address: wallet}}); e == nil {
 			t.Fatal("accepted missing/unconfigured chain", name)
 		}
 	}
@@ -264,34 +264,34 @@ func TestConcreteEVMNetworkDemand(t *testing.T) {
 		t.Fatal("called idle node")
 	}
 	baseWatch := []feed.Watch{{Network: "base", Address: wallet}}
-	reg, e := s.SubscribeFrom(ctx, "a", baseWatch)
-	if e != nil || len(reg) != 1 || reg[0].FromHeight != 51 {
+	reg, e := s.Subscribe(ctx, "a", baseWatch)
+	if e != nil || len(reg.Registrations) != 1 || reg.Registrations[0].FromHeight != 51 {
 		t.Fatal(reg, e)
 	}
-	if _, e = s.SubscribeFrom(ctx, "b", baseWatch); e != nil {
+	if _, e = s.Subscribe(ctx, "b", baseWatch); e != nil {
 		t.Fatal(e)
 	}
-	if e = s.Subscribe(ctx, "a", nil); e != nil || !s.Watching("base") {
+	if _, e = s.Subscribe(ctx, "a", nil); e != nil || !s.Watching("base") {
 		t.Fatal("lost second consumer", e)
 	}
 	if ethCalls.Load() != 0 || s.Watching("ethereum") {
 		t.Fatal("Base registration woke Ethereum")
 	}
-	if e = s.Subscribe(ctx, "b", nil); e != nil {
+	if _, e = s.Subscribe(ctx, "b", nil); e != nil {
 		t.Fatal(e)
 	}
 	if h, _ := s.Height(ctx, "base"); h != -1 || s.Watching("base") {
 		t.Fatal("idle cursor", h)
 	}
 	tip.Store(500)
-	reg, e = s.SubscribeFrom(ctx, "b", baseWatch)
-	if e != nil || reg[0].FromHeight != 501 {
+	reg, e = s.Subscribe(ctx, "b", baseWatch)
+	if e != nil || reg.Registrations[0].FromHeight != 501 {
 		t.Fatal(reg, e)
 	}
-	if _, e = s.SubscribeFrom(ctx, "a", []feed.Watch{{Network: "ethereum", Address: wallet}}); e != nil {
+	if _, e = s.Subscribe(ctx, "a", []feed.Watch{{Network: "ethereum", Address: wallet}}); e != nil {
 		t.Fatal(e)
 	}
-	if e = s.Subscribe(ctx, "b", nil); e != nil || !s.Watching("ethereum") || s.Watching("base") {
+	if _, e = s.Subscribe(ctx, "b", nil); e != nil || !s.Watching("ethereum") || s.Watching("base") {
 		t.Fatal("mixed EVM chains", e)
 	}
 }

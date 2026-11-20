@@ -312,16 +312,93 @@ func (x *Registration) GetFromHeight() int64 {
 	return 0
 }
 
+type Termination struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Network       string                 `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
+	Address       string                 `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
+	FromHeight    int64                  `protobuf:"varint,3,opt,name=from_height,json=fromHeight,proto3" json:"from_height,omitempty"`
+	ToHeight      int64                  `protobuf:"varint,4,opt,name=to_height,json=toHeight,proto3" json:"to_height,omitempty"`
+	Completed     bool                   `protobuf:"varint,5,opt,name=completed,proto3" json:"completed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Termination) Reset() {
+	*x = Termination{}
+	mi := &file_api_activity_v1_activity_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Termination) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Termination) ProtoMessage() {}
+
+func (x *Termination) ProtoReflect() protoreflect.Message {
+	mi := &file_api_activity_v1_activity_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Termination.ProtoReflect.Descriptor instead.
+func (*Termination) Descriptor() ([]byte, []int) {
+	return file_api_activity_v1_activity_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *Termination) GetNetwork() string {
+	if x != nil {
+		return x.Network
+	}
+	return ""
+}
+
+func (x *Termination) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *Termination) GetFromHeight() int64 {
+	if x != nil {
+		return x.FromHeight
+	}
+	return 0
+}
+
+func (x *Termination) GetToHeight() int64 {
+	if x != nil {
+		return x.ToHeight
+	}
+	return 0
+}
+
+func (x *Termination) GetCompleted() bool {
+	if x != nil {
+		return x.Completed
+	}
+	return false
+}
+
 type Ready struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Registrations []*Registration        `protobuf:"bytes,1,rep,name=registrations,proto3" json:"registrations,omitempty"`
+	Terminations  []*Termination         `protobuf:"bytes,2,rep,name=terminations,proto3" json:"terminations,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Ready) Reset() {
 	*x = Ready{}
-	mi := &file_api_activity_v1_activity_proto_msgTypes[5]
+	mi := &file_api_activity_v1_activity_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -333,7 +410,7 @@ func (x *Ready) String() string {
 func (*Ready) ProtoMessage() {}
 
 func (x *Ready) ProtoReflect() protoreflect.Message {
-	mi := &file_api_activity_v1_activity_proto_msgTypes[5]
+	mi := &file_api_activity_v1_activity_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -346,12 +423,19 @@ func (x *Ready) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Ready.ProtoReflect.Descriptor instead.
 func (*Ready) Descriptor() ([]byte, []int) {
-	return file_api_activity_v1_activity_proto_rawDescGZIP(), []int{5}
+	return file_api_activity_v1_activity_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Ready) GetRegistrations() []*Registration {
 	if x != nil {
 		return x.Registrations
+	}
+	return nil
+}
+
+func (x *Ready) GetTerminations() []*Termination {
+	if x != nil {
+		return x.Terminations
 	}
 	return nil
 }
@@ -373,7 +457,7 @@ type Delivery struct {
 
 func (x *Delivery) Reset() {
 	*x = Delivery{}
-	mi := &file_api_activity_v1_activity_proto_msgTypes[6]
+	mi := &file_api_activity_v1_activity_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -385,7 +469,7 @@ func (x *Delivery) String() string {
 func (*Delivery) ProtoMessage() {}
 
 func (x *Delivery) ProtoReflect() protoreflect.Message {
-	mi := &file_api_activity_v1_activity_proto_msgTypes[6]
+	mi := &file_api_activity_v1_activity_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -398,7 +482,7 @@ func (x *Delivery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Delivery.ProtoReflect.Descriptor instead.
 func (*Delivery) Descriptor() ([]byte, []int) {
-	return file_api_activity_v1_activity_proto_rawDescGZIP(), []int{6}
+	return file_api_activity_v1_activity_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Delivery) GetId() int64 {
@@ -470,7 +554,7 @@ type ServerFrame struct {
 
 func (x *ServerFrame) Reset() {
 	*x = ServerFrame{}
-	mi := &file_api_activity_v1_activity_proto_msgTypes[7]
+	mi := &file_api_activity_v1_activity_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -482,7 +566,7 @@ func (x *ServerFrame) String() string {
 func (*ServerFrame) ProtoMessage() {}
 
 func (x *ServerFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_api_activity_v1_activity_proto_msgTypes[7]
+	mi := &file_api_activity_v1_activity_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -495,7 +579,7 @@ func (x *ServerFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerFrame.ProtoReflect.Descriptor instead.
 func (*ServerFrame) Descriptor() ([]byte, []int) {
-	return file_api_activity_v1_activity_proto_rawDescGZIP(), []int{7}
+	return file_api_activity_v1_activity_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ServerFrame) GetResult() isServerFrame_Result {
@@ -560,9 +644,17 @@ const file_api_activity_v1_activity_proto_rawDesc = "" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x18\n" +
 	"\aaddress\x18\x02 \x01(\tR\aaddress\x12\x1f\n" +
 	"\vfrom_height\x18\x03 \x01(\x03R\n" +
-	"fromHeight\"U\n" +
+	"fromHeight\"\x9d\x01\n" +
+	"\vTermination\x12\x18\n" +
+	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x18\n" +
+	"\aaddress\x18\x02 \x01(\tR\aaddress\x12\x1f\n" +
+	"\vfrom_height\x18\x03 \x01(\x03R\n" +
+	"fromHeight\x12\x1b\n" +
+	"\tto_height\x18\x04 \x01(\x03R\btoHeight\x12\x1c\n" +
+	"\tcompleted\x18\x05 \x01(\bR\tcompleted\"\xa0\x01\n" +
 	"\x05Ready\x12L\n" +
-	"\rregistrations\x18\x01 \x03(\v2&.chainscanner.activity.v1.RegistrationR\rregistrations\"\xdb\x01\n" +
+	"\rregistrations\x18\x01 \x03(\v2&.chainscanner.activity.v1.RegistrationR\rregistrations\x12I\n" +
+	"\fterminations\x18\x02 \x03(\v2%.chainscanner.activity.v1.TerminationR\fterminations\"\xdb\x01\n" +
 	"\bDelivery\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x18\n" +
 	"\anetwork\x18\x02 \x01(\tR\anetwork\x12\x16\n" +
@@ -591,31 +683,33 @@ func file_api_activity_v1_activity_proto_rawDescGZIP() []byte {
 	return file_api_activity_v1_activity_proto_rawDescData
 }
 
-var file_api_activity_v1_activity_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_api_activity_v1_activity_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_api_activity_v1_activity_proto_goTypes = []any{
 	(*Watch)(nil),        // 0: chainscanner.activity.v1.Watch
 	(*WatchSet)(nil),     // 1: chainscanner.activity.v1.WatchSet
 	(*Open)(nil),         // 2: chainscanner.activity.v1.Open
 	(*ClientFrame)(nil),  // 3: chainscanner.activity.v1.ClientFrame
 	(*Registration)(nil), // 4: chainscanner.activity.v1.Registration
-	(*Ready)(nil),        // 5: chainscanner.activity.v1.Ready
-	(*Delivery)(nil),     // 6: chainscanner.activity.v1.Delivery
-	(*ServerFrame)(nil),  // 7: chainscanner.activity.v1.ServerFrame
+	(*Termination)(nil),  // 5: chainscanner.activity.v1.Termination
+	(*Ready)(nil),        // 6: chainscanner.activity.v1.Ready
+	(*Delivery)(nil),     // 7: chainscanner.activity.v1.Delivery
+	(*ServerFrame)(nil),  // 8: chainscanner.activity.v1.ServerFrame
 }
 var file_api_activity_v1_activity_proto_depIdxs = []int32{
 	0, // 0: chainscanner.activity.v1.WatchSet.watches:type_name -> chainscanner.activity.v1.Watch
 	1, // 1: chainscanner.activity.v1.Open.replace:type_name -> chainscanner.activity.v1.WatchSet
 	2, // 2: chainscanner.activity.v1.ClientFrame.open:type_name -> chainscanner.activity.v1.Open
 	4, // 3: chainscanner.activity.v1.Ready.registrations:type_name -> chainscanner.activity.v1.Registration
-	5, // 4: chainscanner.activity.v1.ServerFrame.ready:type_name -> chainscanner.activity.v1.Ready
-	6, // 5: chainscanner.activity.v1.ServerFrame.delivery:type_name -> chainscanner.activity.v1.Delivery
-	3, // 6: chainscanner.activity.v1.ActivityFeed.Subscribe:input_type -> chainscanner.activity.v1.ClientFrame
-	7, // 7: chainscanner.activity.v1.ActivityFeed.Subscribe:output_type -> chainscanner.activity.v1.ServerFrame
-	7, // [7:8] is the sub-list for method output_type
-	6, // [6:7] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	5, // 4: chainscanner.activity.v1.Ready.terminations:type_name -> chainscanner.activity.v1.Termination
+	6, // 5: chainscanner.activity.v1.ServerFrame.ready:type_name -> chainscanner.activity.v1.Ready
+	7, // 6: chainscanner.activity.v1.ServerFrame.delivery:type_name -> chainscanner.activity.v1.Delivery
+	3, // 7: chainscanner.activity.v1.ActivityFeed.Subscribe:input_type -> chainscanner.activity.v1.ClientFrame
+	8, // 8: chainscanner.activity.v1.ActivityFeed.Subscribe:output_type -> chainscanner.activity.v1.ServerFrame
+	8, // [8:9] is the sub-list for method output_type
+	7, // [7:8] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_api_activity_v1_activity_proto_init() }
@@ -627,7 +721,7 @@ func file_api_activity_v1_activity_proto_init() {
 		(*ClientFrame_Open)(nil),
 		(*ClientFrame_Ack)(nil),
 	}
-	file_api_activity_v1_activity_proto_msgTypes[7].OneofWrappers = []any{
+	file_api_activity_v1_activity_proto_msgTypes[8].OneofWrappers = []any{
 		(*ServerFrame_Ready)(nil),
 		(*ServerFrame_Delivery)(nil),
 	}
@@ -637,7 +731,7 @@ func file_api_activity_v1_activity_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_activity_v1_activity_proto_rawDesc), len(file_api_activity_v1_activity_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

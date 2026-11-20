@@ -32,10 +32,10 @@ func TestLivePumpDeliversNewHeadsWhilePreviousTailIsStillReading(t *testing.T) {
 	}
 	defer db.Close()
 	const address = "0x0000000000000000000000000000000000000001"
-	if err = db.Subscribe(ctx, "pay", []feed.Watch{{Network: "base", Address: address}}); err != nil {
+	if err = db.SeedCursor(ctx, "base", 99); err != nil {
 		t.Fatal(err)
 	}
-	if err = db.SeedCursor(ctx, "base", 99); err != nil {
+	if _, err = db.Subscribe(ctx, "pay", []feed.Watch{{Network: "base", Address: address}}); err != nil {
 		t.Fatal(err)
 	}
 	cfg := []chains.Network{{Name: "base", URL: "http://slow.test", Confirmations: 4, IntervalSeconds: 1}, {Name: "base", URL: "http://fast.test", Confirmations: 4, IntervalSeconds: 1}}

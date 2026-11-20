@@ -45,7 +45,7 @@ func (p *paymentSubscriptions) syncLocked(ctx context.Context) error {
 		enabled[c.Network] = true
 	}
 	watches := make([]scanner.Watch, 0, len(wallets))
-	registered := map[scanner.Watch]bool{}
+
 	for _, w := range wallets {
 		if !enabled[w.Network] {
 			continue
@@ -55,14 +55,16 @@ func (p *paymentSubscriptions) syncLocked(ctx context.Context) error {
 			log.Sugar.Warnf("[ChainScanner] invalid wallet row %d on %s", w.ID, w.Network)
 			continue
 		}
-		v := scanner.Watch{Network: w.Network, Address: a}
-		registered[v] = true
-		watches = append(watches, v)
+		watches = append(watches, scanner.Watch{Network: w.Network, Address: a})
 	}
-	if err = p.feed.Subscribe(ctx, paymentConsumer, watches); err != nil {
+	receipt, err := p.feed.Subscribe(ctx, paymentConsumer, watches)
+	if err != nil {
 		return err
 	}
-	p.registered = registered
+	p.registered = make(map[scanner.Watch]bool, len(receipt.Registrations))
+	for _, r := range receipt.Registrations {
+		p.registered[r.Watch] = true
+	}
 	return nil
 }
 
@@ -87,30 +89,7 @@ func (p *paymentSubscriptions) ensure(network, address string) error {
 	if !registered {
 		return errors.New("payment address is not registered with ChainScanner")
 	}
-	return p.waitForCursor(network)
-}
-
-// Orders can expose a payment address as soon as registration returns.
-// The worker for this exact network must first have observed its ledger boundary.
-func (p *paymentSubscriptions) waitForCursor(network string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	tick := time.NewTicker(200 * time.Millisecond)
-	defer tick.Stop()
-	for {
-		h, e := p.feed.Height(ctx, network)
-		if e != nil {
-			return e
-		}
-		if h >= 0 {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("%s scanner cursor unavailable: %w", network, ctx.Err())
-		case <-tick.C:
-		}
-	}
+	return nil
 }
 
 // embeddedWorker adapts EPUSDT's live node selection to the same scanner
@@ -122,6 +101,7 @@ type embeddedWorker struct {
 	name        string
 	store       *scanner.Store
 	src         *scanner.SourcePool
+	idsMu       sync.RWMutex
 	ids         map[scanner.Network]uint64
 }
 
@@ -178,13 +158,13 @@ func scannerNodeConfig(node mdb.RpcNode, candidates []mdb.RpcNode) (scanner.Netw
 	}
 	return n, scanner.ValidateNetwork(n) == nil
 }
-func (w *embeddedWorker) refreshNodes(ctx context.Context) (time.Duration, error) {
+func (w *embeddedWorker) refreshNodes(ctx context.Context, allowDisabled bool) (time.Duration, error) {
 	delay := 5 * time.Second
 	chain, err := data.GetChainByNetwork(w.name)
 	if err != nil {
 		return delay, err
 	}
-	if chain.ID == 0 || !chain.Enabled {
+	if chain.ID == 0 || (!chain.Enabled && !allowDisabled) {
 		w.close()
 		return delay, nil
 	}
@@ -196,7 +176,7 @@ func (w *embeddedWorker) refreshNodes(ctx context.Context) (time.Duration, error
 		return delay, err
 	}
 	var configs []scanner.Network
-	w.ids = map[scanner.Network]uint64{}
+	ids := map[scanner.Network]uint64{}
 	for _, node := range nodes {
 		if node.Network != w.name {
 			continue
@@ -211,16 +191,24 @@ func (w *embeddedWorker) refreshNodes(ctx context.Context) (time.Duration, error
 		candidate.Confirmations = int64(chain.MinConfirmations)
 		candidate.IntervalSeconds = int(delay / time.Second)
 		configs = append(configs, candidate)
-		w.ids[candidate] = node.ID
+		ids[candidate] = node.ID
 	}
 	if len(configs) == 0 {
 		w.close()
 		return delay, nil
 	}
+	w.idsMu.Lock()
+	w.ids = ids
+	w.idsMu.Unlock()
 	if w.src == nil {
 		w.src = scanner.NewSourcePool(ctx, w.name)
 		w.src.Report = func(n scanner.Network, success bool) {
-			id := w.ids[n]
+			w.idsMu.RLock()
+			id, ok := w.ids[n]
+			w.idsMu.RUnlock()
+			if !ok {
+				return
+			}
 			if success {
 				data.RecordRpcNodeSuccess(id)
 			} else {
@@ -235,9 +223,29 @@ func (w *embeddedWorker) refreshNodes(ctx context.Context) (time.Duration, error
 	return delay, nil
 }
 
+// Take a fresh head for cold registration and the inclusive unsubscribe boundary.
+// A disabled payment chain may still owe a final confirmed range.
+func configureEmbedded(store *scanner.Store) {
+	networks := make(map[string]scanner.Network, len(scannerNetworks))
+	for _, n := range scannerNetworks {
+		networks[n] = scanner.Network{Name: n}
+	}
+	scanner.ConfigureNetworks(store, networks, func(ctx context.Context, name string) (int64, error) {
+		w := embeddedWorker{name: name, store: store}
+		defer w.close()
+		if _, err := w.refreshNodes(ctx, true); err != nil {
+			return 0, err
+		}
+		if w.src == nil {
+			return 0, scanner.ErrCursorNotReady
+		}
+		return w.src.Head(ctx)
+	})
+}
+
 func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
 	if !time.Now().Before(w.nextRefresh) {
-		delay, err := w.refreshNodes(ctx)
+		delay, err := w.refreshNodes(ctx, w.store.Draining(w.name))
 		if err != nil {
 			return delay, err
 		}
@@ -267,38 +275,17 @@ func (w *embeddedWorker) step(ctx context.Context) (time.Duration, error) {
 }
 
 func consumeScanner(ctx context.Context, feed scanner.Feed) {
-	lanes, ok := feed.(interface {
-		PendingNetwork(context.Context, string, string, time.Duration) (*scanner.Delivery, error)
-	})
-	if ok {
-		// Probe without acknowledging. Older standalone services expose the global queue.
-		for ctx.Err() == nil {
-			_, err := lanes.PendingNetwork(ctx, paymentConsumer, scannerNetworks[0], 0)
-			if errors.Is(err, scanner.ErrAPINotFound) {
-				break
-			}
-			if err == nil {
-				var wg sync.WaitGroup
-				for _, network := range scannerNetworks {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
-						consumeQueue(ctx, feed, func() (*scanner.Delivery, error) {
-							return lanes.PendingNetwork(ctx, paymentConsumer, network, 15*time.Second)
-						})
-					}()
-				}
-				wg.Wait()
-				return
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Second):
-			}
-		}
+	var wg sync.WaitGroup
+	for _, network := range scannerNetworks {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			consumeQueue(ctx, feed, func() (*scanner.Delivery, error) {
+				return feed.PendingNetwork(ctx, paymentConsumer, network, 15*time.Second)
+			})
+		}()
 	}
-	consumeQueue(ctx, feed, func() (*scanner.Delivery, error) { return feed.Pending(ctx, paymentConsumer) })
+	wg.Wait()
 }
 func consumeQueue(ctx context.Context, feed scanner.Feed, next func() (*scanner.Delivery, error)) {
 	for ctx.Err() == nil {

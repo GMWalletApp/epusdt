@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -18,18 +19,12 @@ import (
 // Feed can be backed by a local Store or by a remote authenticated Client.
 type Feed interface {
 	Height(context.Context, string) (int64, error)
-	Subscribe(context.Context, string, []Watch) error
-	Pending(context.Context, string) (*Delivery, error)
+	Subscribe(context.Context, string, []Watch) (SubscriptionReceipt, error)
+	PendingNetwork(context.Context, string, string, time.Duration) (*Delivery, error)
 	Ack(context.Context, string, int64) error
 }
 
-type subscriptionStore interface {
-	Feed
-	SubscribeFrom(context.Context, string, []Watch) ([]Registration, error)
-	PendingNetwork(context.Context, string, string, time.Duration) (*Delivery, error)
-}
-
-func Handler(s subscriptionStore, consumers map[string]string, configured func(string) bool) (http.Handler, error) {
+func Handler(s Feed, consumers map[string]string, configured func(string) bool) (http.Handler, error) {
 	tokens := map[[32]byte]string{}
 	for name, token := range consumers {
 		key := sha256.Sum256([]byte(token))
@@ -56,46 +51,44 @@ func Handler(s subscriptionStore, consumers map[string]string, configured func(s
 		}
 		ctx := r.Context()
 		switch {
-		case r.Method == "GET" && r.URL.Path == "/v2/events/stream":
+		case r.Method == "GET" && r.URL.Path == "/v1/events/stream":
 			streams.websocket(w, r, consumer)
 			return
-		case r.Method == "PUT" && (r.URL.Path == "/v1/subscriptions" || r.URL.Path == "/v2/subscriptions"):
+		case r.Method == "PUT" && r.URL.Path == "/v1/subscriptions":
 			var watches []Watch
 			dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<20))
-			if err := dec.Decode(&watches); err != nil || watches == nil {
+			if err := dec.Decode(&watches); err != nil || watches == nil || dec.Decode(new(json.RawMessage)) != io.EOF {
 				http.Error(w, "expected address list", 400)
 				return
 			}
 			for _, v := range watches {
-				if r.URL.Path == "/v2/subscriptions" {
-					if !configured(v.Network) {
-						http.Error(w, "network has no configured node", 400)
-						return
-					}
+				if !configured(v.Network) {
+					http.Error(w, "network has no configured node", 400)
+					return
 				}
 				if _, err := chains.Canonical(v.Network, v.Address); err != nil {
 					http.Error(w, err.Error(), 400)
 					return
 				}
 			}
-			if r.URL.Path == "/v2/subscriptions" {
-				rows, err := s.SubscribeFrom(ctx, consumer, watches)
-				if errors.Is(err, ErrCursorNotReady) {
-					http.Error(w, err.Error(), 409)
-					return
-				}
-				if err != nil {
-					http.Error(w, "subscription unavailable", 503)
-					return
-				}
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(rows)
+			receipt, err := s.Subscribe(ctx, consumer, watches)
+			if errors.Is(err, ErrCursorNotReady) {
+				http.Error(w, err.Error(), 409)
 				return
 			}
-			if err := s.Subscribe(ctx, consumer, watches); err != nil {
+			if err != nil {
 				http.Error(w, "subscription unavailable", 503)
 				return
 			}
+			w.Header().Set("Content-Type", "application/json")
+			for _, end := range receipt.Terminations {
+				if !end.Completed {
+					w.WriteHeader(http.StatusAccepted)
+					break
+				}
+			}
+			json.NewEncoder(w).Encode(receipt)
+			return
 		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/v1/heights/"):
 			h, err := s.Height(ctx, strings.TrimPrefix(r.URL.Path, "/v1/heights/"))
 			if err != nil {
@@ -105,14 +98,11 @@ func Handler(s subscriptionStore, consumers map[string]string, configured func(s
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(h)
 			return
-		case r.Method == "GET" && (r.URL.Path == "/v1/events/next" || r.URL.Path == "/v2/events/next"):
-			network := ""
-			if r.URL.Path == "/v2/events/next" {
-				network = r.URL.Query().Get("network")
-				if !chains.Supported(network) {
-					http.Error(w, "unknown network", 400)
-					return
-				}
+		case r.Method == "GET" && r.URL.Path == "/v1/events/next":
+			network := r.URL.Query().Get("network")
+			if !chains.Supported(network) {
+				http.Error(w, "unknown network", 400)
+				return
 			}
 			var d *Delivery
 			var err error
