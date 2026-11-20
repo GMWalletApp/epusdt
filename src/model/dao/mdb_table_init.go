@@ -66,6 +66,7 @@ func MdbTableInit() {
 func seedChains() {
 	defaults := []mdb.Chain{
 		{Network: mdb.NetworkSui, DisplayName: "Sui", Enabled: true, MinConfirmations: 1, ScanIntervalSec: 3},
+		{Network: mdb.NetworkBase, DisplayName: "Base", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 3},
 		{Network: mdb.NetworkOptimism, DisplayName: "OP Mainnet", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 3},
 		{Network: mdb.NetworkAvalanche, DisplayName: "Avalanche C-Chain", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 3},
 		{Network: mdb.NetworkArc, DisplayName: "Arc", Enabled: true, MinConfirmations: 3, ScanIntervalSec: 3},
@@ -97,7 +98,9 @@ func seedChainTokens() {
 	defaults := []mdb.ChainToken{
 		{Network: mdb.NetworkSui, Symbol: "USDC", ContractAddress: "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC", Decimals: 6, Enabled: true},
 		{Network: mdb.NetworkSui, Symbol: "SUI", ContractAddress: "0x2::sui::SUI", Decimals: 9, Enabled: true},
+		{Network: mdb.NetworkBase, Symbol: "USDC", ContractAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", Decimals: 6, Enabled: true},
 		{Network: mdb.NetworkOptimism, Symbol: "USDC", ContractAddress: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", Decimals: 6, Enabled: true},
+		{Network: mdb.NetworkBase, Symbol: "ETH", ContractAddress: "", Decimals: 18, Enabled: true},
 		{Network: mdb.NetworkOptimism, Symbol: "ETH", ContractAddress: "", Decimals: 18, Enabled: true},
 		{Network: mdb.NetworkAvalanche, Symbol: "USDC", ContractAddress: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", Decimals: 6, Enabled: true},
 		{Network: mdb.NetworkAvalanche, Symbol: "AVAX", ContractAddress: "", Decimals: 18, Enabled: true},
@@ -162,7 +165,9 @@ func seedRpcNodes() {
 func defaultRpcNodes() []mdb.RpcNode {
 	defaults := []mdb.RpcNode{
 		{Network: mdb.NetworkSui, Url: "https://fullnode.mainnet.sui.io:443", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkBase, Url: "wss://base-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkOptimism, Url: "wss://optimism-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
+		{Network: mdb.NetworkBase, Url: "https://mainnet.base.org", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkOptimism, Url: "https://mainnet.optimism.io", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkAvalanche, Url: "wss://avalanche-c-chain-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
 		{Network: mdb.NetworkAvalanche, Url: "https://api.avax.network/ext/bc/C/rpc", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},

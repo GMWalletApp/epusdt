@@ -58,6 +58,7 @@ Run `go test -race ./...` to exercise persistent delivery, consumer isolation an
 | monad | Monad, 143 | `wss://rpc.monad.xyz` |
 | arc | Arc mainnet, 5042 | `wss://rpc.mainnet.arc.io` |
 | avalanche | Avalanche C-Chain, 43114 | `https://api.avax.network/ext/bc/C/rpc` or full RPC over WSS |
+| base | Base Mainnet, 8453 | `wss://base-rpc.publicnode.com` or `https://mainnet.base.org` |
 | optimism | OP Mainnet, 10 | Full RPC over WSS or `https://mainnet.optimism.io` |
 
 The EVM client checks `eth_chainId` on connection. A WSS node must support ordinary read calls as well as `eth_subscribe`. New heads wake the reader immediately. Notifications can be coalesced because the persisted cursor identifies the entire outstanding interval. HTTP nodes reuse connections and poll. Sui uses checkpoint stream notifications and reads numbered checkpoints from the same persistent gRPC channel. Every source also checks the tip on a timer; an unavailable subscription cannot strand the cursor. Latest L2 confirmations count L2 blocks and are distinct from Ethereum settlement.

@@ -21,6 +21,7 @@ const (
 	NetworkArc       = "arc"
 	NetworkAvalanche = "avalanche"
 	NetworkOptimism  = "optimism"
+	NetworkBase      = "base"
 )
 
 const (

@@ -138,7 +138,7 @@ func TestNewEVMRejectsWrongChain(t *testing.T) {
 		return "0x1", nil
 	})
 	defer srv.Close()
-	for _, name := range []string{"arbitrum", "optimism", "hyperevm", "monad", "arc", "avalanche"} {
+	for _, name := range []string{"arbitrum", "optimism", "base", "hyperevm", "monad", "arc", "avalanche"} {
 		src, err := NewSource(context.Background(), Network{Name: name, URL: srv.URL})
 		if err == nil {
 			src.Close()

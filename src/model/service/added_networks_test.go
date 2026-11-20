@@ -15,7 +15,7 @@ import (
 )
 
 func TestAdditionalNetworkSettlement(t *testing.T) {
-	for _, network := range []string{"arbitrum", "hyperevm", "monad", "arc", "avalanche", "optimism", "sui"} {
+	for _, network := range []string{"arbitrum", "hyperevm", "monad", "arc", "avalanche", "optimism", "base", "sui"} {
 		t.Run(network, func(t *testing.T) {
 			defer testutil.SetupTestDatabases(t)()
 			address := "0x" + strings.Repeat("a", 40)
@@ -74,5 +74,45 @@ func TestAdditionalNetworkSettlement(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBaseUSDCSettlementUsesSeededContract(t *testing.T) {
+	defer testutil.SetupTestDatabases(t)()
+	dao.ResetMdbTableInitForTest()
+	defer dao.ResetMdbTableInitForTest()
+	dao.MdbTableInit()
+	const recipient = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	order := mdb.Orders{TradeId: "base-usdc", OrderId: "order", Network: mdb.NetworkBase,
+		Token: "USDC", Amount: 1, ActualAmount: 1, ReceiveAddress: recipient, Status: mdb.StatusWaitPay}
+	if err := dao.Mdb.Create(&order).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := data.LockTransaction(order.Network, recipient, order.Token, order.TradeId, 1, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		contract string
+		want     int
+	}{
+		{"0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca", mdb.StatusWaitPay},    // Bridged USDbC
+		{"0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", mdb.StatusPaySuccess}, // Circle USDC
+	} {
+		log := json.RawMessage(fmt.Sprintf(`{"address":%q,"topics":["0x%s","0x%064x","0x%064s"],"data":"0x%064x"}`, tc.contract, transferSignature, 1, recipient[2:], 1000000))
+		evidence, err := json.Marshal(scanner.Evidence{Transaction: json.RawMessage(`{"hash":"digest"}`), Logs: []json.RawMessage{log}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		event := scanner.Activity{Network: order.Network, TxID: "digest", Addresses: []string{recipient}, TimeMS: time.Now().Add(time.Second).UnixMilli(), Data: evidence}
+		if err := ApplyChainActivity(context.Background(), event); err != nil {
+			t.Fatal(err)
+		}
+		got, err := data.GetOrderInfoByTradeId(order.TradeId)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Status != tc.want {
+			t.Fatalf("contract %s: status %d, want %d", tc.contract, got.Status, tc.want)
+		}
 	}
 }
