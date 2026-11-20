@@ -43,6 +43,7 @@ const (
 	SettingKeyBrandSupportUrl          = "brand.support_url"
 	SettingKeyBrandBackgroundColor     = "brand.background_color"
 	SettingKeyBrandBackgroundImageUrl  = "brand.background_image_url"
+	SettingKeyBrandWithdrawalReminder  = "brand.withdrawal_reminder_enabled"
 	SettingKeyRateForcedRateList       = "rate.forced_rate_list"
 	SettingKeyRateAdjustPercent        = "rate.adjust_percent"
 	SettingKeyRateOkxC2cEnabled        = "rate.okx_c2c_enabled"

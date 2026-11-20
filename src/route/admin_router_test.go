@@ -2138,6 +2138,43 @@ func TestAdminConfig_ExposesOkPayCredentials(t *testing.T) {
 	}
 }
 
+func TestAdminSettings_WithdrawalReminder(t *testing.T) {
+	e, token := setupAdminTestEnv(t)
+	const key = mdb.SettingKeyBrandWithdrawalReminder
+	checkConfig := func(want bool) {
+		t.Helper()
+		res := assertOK(t, doGet(e, "/payments/gmpay/v1/config"))
+		site := res["data"].(map[string]interface{})["site"].(map[string]interface{})
+		if got := site["withdrawal_reminder_enabled"]; got != want {
+			t.Fatalf("withdrawal_reminder_enabled = %v, want %v", got, want)
+		}
+	}
+	save := func(group string, value interface{}, wantOK bool) {
+		t.Helper()
+		rec := doPutAdmin(e, "/admin/api/v1/settings", map[string]interface{}{
+			"items": []map[string]interface{}{{"group": group, "key": key, "type": "bool", "value": value}},
+		}, token)
+		rows := assertOK(t, rec)["data"].([]interface{})
+		if len(rows) != 1 || rows[0].(map[string]interface{})["ok"] != wantOK {
+			t.Fatalf("save %s/%v returned %v", group, value, rows)
+		}
+	}
+
+	checkConfig(true)
+	save("brand", false, true)
+	if err := data.ReloadSettings(); err != nil {
+		t.Fatal(err)
+	}
+	checkConfig(false)
+	save("brand", "invalid", false)
+	save("system", true, false)
+	checkConfig(false)
+	save("brand", true, true)
+	checkConfig(true)
+	assertOK(t, doDeleteAdmin(e, "/admin/api/v1/settings/"+key, token))
+	checkConfig(true)
+}
+
 func TestAdminSettings_UpsertBrandReflectsInConfig(t *testing.T) {
 	e, token := setupAdminTestEnv(t)
 

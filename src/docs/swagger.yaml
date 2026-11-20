@@ -1,0 +1,4040 @@
+definitions:
+  admin.AdminAddWalletRequest:
+    properties:
+      address:
+        example: TTestTronAddress001
+        type: string
+      network:
+        example: tron
+        type: string
+      remark:
+        example: 主钱包
+        type: string
+    required:
+    - address
+    - network
+    type: object
+  admin.AdminBatchImportRequest:
+    properties:
+      addresses:
+        description: |-
+          Addresses listed as observation-only wallets. Private-key import
+          and API-managed modes are out of scope for v1.
+        example:
+        - TAddr001
+        - TAddr002
+        - TAddr003
+        items:
+          type: string
+        type: array
+      network:
+        example: tron
+        type: string
+    required:
+    - addresses
+    - network
+    type: object
+  admin.AdminChangeWalletStatusRequest:
+    properties:
+      status:
+        description: 状态 1=启用 2=禁用
+        enum:
+        - 1
+        - 2
+        example: 1
+        type: integer
+    type: object
+  admin.AdminUpdateWalletRequest:
+    properties:
+      remark:
+        example: 已更新的备注
+        type: string
+    type: object
+  admin.ApiKeyStatsResponse:
+    properties:
+      call_count:
+        example: 342
+        type: integer
+      last_used_at:
+        example: "2026-04-14T08:30:00+00:00"
+        type: string
+    type: object
+  admin.BatchImportResult:
+    properties:
+      address:
+        example: TTestTronAddress001
+        type: string
+      error:
+        example: wallet address already exists
+        type: string
+      error_code:
+        example: 10001
+        type: integer
+      ok:
+        example: true
+        type: boolean
+    type: object
+  admin.ChangeApiKeyStatusRequest:
+    properties:
+      status:
+        description: 状态 1=启用 2=禁用
+        enum:
+        - 1
+        - 2
+        example: 1
+        type: integer
+    type: object
+  admin.ChangeChainTokenStatusRequest:
+    properties:
+      enabled:
+        example: true
+        type: boolean
+    type: object
+  admin.ChangeChannelStatusRequest:
+    properties:
+      enabled:
+        example: true
+        type: boolean
+    type: object
+  admin.ChangePasswordRequest:
+    properties:
+      new_password:
+        example: new_pass123
+        type: string
+      old_password:
+        example: old_pass
+        type: string
+    required:
+    - old_password
+    type: object
+  admin.CreateApiKeyRequest:
+    properties:
+      ip_whitelist:
+        example: ""
+        type: string
+      name:
+        example: My API Key
+        type: string
+      notify_url:
+        example: https://example.com/notify
+        type: string
+    type: object
+  admin.CreateApiKeyResponse:
+    properties:
+      id:
+        example: 1
+        type: integer
+      name:
+        example: My API Key
+        type: string
+      pid:
+        example: "1003"
+        type: string
+      secret_key:
+        description: |-
+          SecretKey is returned ONCE on creation. After that, fetch via
+          GET /api-keys/:id/secret or rotate to generate a new one.
+        example: secret123abc456
+        type: string
+    type: object
+  admin.CreateChainTokenRequest:
+    properties:
+      contract_address:
+        description: |-
+          Contract address or chain-native asset identifier. For Aptos this is
+          the Move asset id (coin type, metadata address, or object type).
+        example: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
+        type: string
+      decimals:
+        example: 6
+        type: integer
+      enabled:
+        example: true
+        type: boolean
+      min_amount:
+        example: 1
+        type: number
+      network:
+        example: tron
+        type: string
+      symbol:
+        example: USDT
+        type: string
+    required:
+    - network
+    type: object
+  admin.CreateNotificationChannelRequest:
+    properties:
+      config:
+        additionalProperties: true
+        type: object
+      enabled:
+        example: true
+        type: boolean
+      events: {}
+      name:
+        example: 主通知群
+        type: string
+      type:
+        enum:
+        - telegram
+        - webhook
+        - email
+        example: telegram
+        type: string
+    required:
+    - config
+    type: object
+  admin.CreateRpcNodeRequest:
+    properties:
+      api_key:
+        example: ""
+        type: string
+      enabled:
+        example: true
+        type: boolean
+      network:
+        example: tron
+        type: string
+      purpose:
+        description: 用途 general=通用 manual_verify=补单专用 both=通用+补单
+        enum:
+        - general
+        - manual_verify
+        - both
+        example: general
+        type: string
+      type:
+        description: 连接类型 http=HTTP请求 ws=WebSocket长连接 lite=TON liteserver配置
+        enum:
+        - http
+        - ws
+        - lite
+        - grpc
+        - jsonrpc
+        - rest
+        - graphql
+        - ipc
+        - sse
+        - solidity-grpc
+        - solidity-http
+        example: http
+        type: string
+      url:
+        example: https://api.trongrid.io
+        type: string
+      weight:
+        example: 1
+        type: integer
+    required:
+    - network
+    - url
+    type: object
+  admin.LoginRequest:
+    properties:
+      password:
+        example: password123
+        type: string
+      username:
+        example: admin
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  admin.LoginResponse:
+    properties:
+      token:
+        example: eyJhbGciOiJIUzI1NiIs...
+        type: string
+      user_id:
+        example: 1
+        type: integer
+      username:
+        example: admin
+        type: string
+    type: object
+  admin.MeResponse:
+    properties:
+      created_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      id:
+        example: 1
+        type: integer
+      last_login_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      password_is_default:
+        example: true
+        type: boolean
+      status:
+        description: 状态 1=启用 2=禁用
+        enum:
+        - 1
+        - 2
+        example: 1
+        type: integer
+      updated_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      username:
+        example: admin
+        type: string
+    type: object
+  admin.OrderListResponse:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/mdb.Orders'
+        type: array
+      page:
+        example: 1
+        type: integer
+      page_size:
+        example: 20
+        type: integer
+      total:
+        example: 100
+        type: integer
+    type: object
+  admin.OrderStatsResponse:
+    properties:
+      avg_payment_seconds:
+        example: 120.5
+        type: number
+      expired_unpaid_count:
+        example: 10
+        type: integer
+      order_count:
+        example: 100
+        type: integer
+      success_count:
+        example: 85
+        type: integer
+      success_rate:
+        example: 0.85
+        type: number
+    type: object
+  admin.OrderWithSub:
+    properties:
+      actual_amount:
+        example: 14.2857
+        type: number
+      amount:
+        example: 100
+        type: number
+      api_key_id:
+        example: 1
+        type: integer
+      block_transaction_id:
+        example: 0xabc123...
+        type: string
+      callback_confirm:
+        description: 回调确认状态 1=回调成功 2=未回调/回调失败
+        enum:
+        - 1
+        - 2
+        example: 2
+        type: integer
+      callback_num:
+        example: 0
+        type: integer
+      created_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      currency:
+        example: CNY
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      id:
+        example: 1
+        type: integer
+      is_selected:
+        example: false
+        type: boolean
+      name:
+        example: VIP月卡
+        type: string
+      network:
+        example: tron
+        type: string
+      notify_url:
+        example: https://example.com/notify
+        type: string
+      order_id:
+        example: ORD20260416001
+        type: string
+      parent_trade_id:
+        type: string
+      pay_by_sub_id:
+        description: |-
+          PayBySubId holds the primary-key ID of the sub-order that settled this parent order.
+          Zero when the parent order was paid directly (no sub-order involved).
+        example: 0
+        type: integer
+      pay_provider:
+        description: |-
+          PayProvider identifies how this specific order row is collected.
+
+          Semantics:
+            - chain parent orders and regular chain child orders use on_chain
+            - third-party hosted checkout rows use their provider name
+              (for example okpay)
+
+          Existing rows default to on_chain for backward compatibility so upgrades
+          can rely on AutoMigrate without rewriting old orders.
+        example: on_chain
+        type: string
+      payment_type:
+        description: |-
+          PaymentType is not a channel selector. "Epay" changes callback format
+          to legacy EPay case-insensitively; "Gmpay" uses GMPay JSON.
+        example: Epay
+        type: string
+      receive_address:
+        example: TTestTronAddress001
+        type: string
+      redirect_url:
+        example: https://example.com/success
+        type: string
+      review_transaction_hash:
+        type: string
+      status:
+        description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
+        enum:
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+        - 6
+        example: 1
+        type: integer
+      sub_orders:
+        items:
+          $ref: '#/definitions/mdb.Orders'
+        type: array
+      token:
+        example: USDT
+        type: string
+      trade_id:
+        example: 3nQ9pL2xV7sK1mR8cT4yB_aZ
+        type: string
+      updated_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+    type: object
+  admin.OrderWithSubListResponse:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/admin.OrderWithSub'
+        type: array
+      page:
+        example: 1
+        type: integer
+      page_size:
+        example: 20
+        type: integer
+      total:
+        example: 100
+        type: integer
+    type: object
+  admin.OverviewResponse:
+    properties:
+      active_addresses:
+        example: 5
+        type: integer
+      online_chains:
+        example: 3
+        type: integer
+      order_count:
+        example: 42
+        type: integer
+      seven_day_volume:
+        example: 700.25
+        type: number
+      success_rate:
+        example: 0.85
+        type: number
+      total_asset:
+        example: 12345.6789
+        type: number
+      volume:
+        example: 100.5
+        type: number
+    type: object
+  admin.RateRefreshRequest:
+    properties:
+      bases:
+        example:
+        - cny
+        - usd
+        items:
+          type: string
+        maxItems: 20
+        type: array
+    type: object
+  admin.RotateSecretResponse:
+    properties:
+      secret_key:
+        example: newSecret123abc456
+        type: string
+    type: object
+  admin.RpcHealthCheckResponse:
+    properties:
+      last_latency_ms:
+        example: 120
+        type: integer
+      status:
+        description: 健康状态 unknown=未知 ok=正常 down=异常
+        enum:
+        - unknown
+        - ok
+        - down
+        example: ok
+        type: string
+    type: object
+  admin.RpcStatsChainResponse:
+    properties:
+      display_name:
+        example: TRON
+        type: string
+      enabled:
+        example: true
+        type: boolean
+      failure_count:
+        example: 2
+        type: integer
+      has_data:
+        example: true
+        type: boolean
+      last_sync_at:
+        example: "2026-06-09T12:00:00+08:00"
+        type: string
+      latest_block_height:
+        example: 64532100
+        type: integer
+      network:
+        example: tron
+        type: string
+      status:
+        enum:
+        - ok
+        - warning
+        - down
+        - unknown
+        - disabled
+        example: ok
+        type: string
+      success_count:
+        example: 123
+        type: integer
+      success_rate:
+        example: 0.984
+        type: number
+    type: object
+  admin.RpcStatsDashboardResponse:
+    properties:
+      chains:
+        items:
+          $ref: '#/definitions/admin.RpcStatsChainResponse'
+        type: array
+      generated_at:
+        example: "2026-06-09T12:00:00+08:00"
+        type: string
+      summary:
+        $ref: '#/definitions/admin.RpcStatsSummaryResponse'
+    type: object
+  admin.RpcStatsSummaryResponse:
+    properties:
+      active_chains:
+        example: 4
+        type: integer
+      disabled_chains:
+        example: 1
+        type: integer
+      down_chains:
+        example: 0
+        type: integer
+      enabled_chains:
+        example: 5
+        type: integer
+      failure_count:
+        example: 2
+        type: integer
+      ok_chains:
+        example: 3
+        type: integer
+      success_count:
+        example: 123
+        type: integer
+      success_rate:
+        example: 0.984
+        type: number
+      total_chains:
+        example: 6
+        type: integer
+      unknown_chains:
+        example: 1
+        type: integer
+      warning_chains:
+        example: 1
+        type: integer
+    type: object
+  admin.SettingUpsertItem:
+    properties:
+      group:
+        enum:
+        - brand
+        - rate
+        - system
+        - epay
+        - okpay
+        example: epay
+        type: string
+      key:
+        example: epay.default_network
+        type: string
+      type:
+        enum:
+        - string
+        - int
+        - bool
+        - json
+        example: string
+        type: string
+      value: {}
+    type: object
+  admin.SettingsUpsertRequest:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/admin.SettingUpsertItem'
+        type: array
+    required:
+    - items
+    type: object
+  admin.SettingsUpsertResult:
+    properties:
+      error:
+        example: invalid setting item
+        type: string
+      error_code:
+        example: 10043
+        type: integer
+      key:
+        example: rate.api_url
+        type: string
+      ok:
+        example: true
+        type: boolean
+    type: object
+  admin.UpdateApiKeyRequest:
+    properties:
+      ip_whitelist:
+        example: 10.0.0.1,192.168.0.0/24
+        type: string
+      name:
+        example: Updated Key Name
+        type: string
+      notify_url:
+        example: https://example.com/notify
+        type: string
+    type: object
+  admin.UpdateChainRequest:
+    properties:
+      display_name:
+        example: Tron
+        type: string
+      enabled:
+        example: true
+        type: boolean
+      min_confirmations:
+        example: 20
+        type: integer
+      scan_interval_sec:
+        example: 5
+        type: integer
+    type: object
+  admin.UpdateChainTokenRequest:
+    properties:
+      contract_address:
+        description: |-
+          Contract address or chain-native asset identifier. For Aptos this is
+          the Move asset id (coin type, metadata address, or object type).
+        example: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
+        type: string
+      decimals:
+        example: 6
+        type: integer
+      enabled:
+        example: true
+        type: boolean
+      min_amount:
+        example: 1
+        type: number
+    type: object
+  admin.UpdateNotificationChannelRequest:
+    properties:
+      config:
+        additionalProperties: true
+        type: object
+      enabled:
+        example: true
+        type: boolean
+      events: {}
+      name:
+        example: 更新后的名称
+        type: string
+    type: object
+  admin.UpdateRpcNodeRequest:
+    properties:
+      api_key:
+        example: your-api-key
+        type: string
+      enabled:
+        example: true
+        type: boolean
+      purpose:
+        enum:
+        - general
+        - manual_verify
+        - both
+        example: manual_verify
+        type: string
+      url:
+        example: https://api.trongrid.io
+        type: string
+      weight:
+        example: 1
+        type: integer
+    type: object
+  admin.WalletListItem:
+    properties:
+      address:
+        example: TTestTronAddress001
+        type: string
+      created_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      id:
+        example: 1
+        type: integer
+      network:
+        example: tron
+        type: string
+      order_count:
+        example: 5
+        type: integer
+      remark:
+        example: 主钱包
+        type: string
+      source:
+        enum:
+        - manual
+        - import
+        example: manual
+        type: string
+      status:
+        description: 状态 1=启用 2=禁用
+        enum:
+        - 1
+        - 2
+        example: 1
+        type: integer
+      updated_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+    type: object
+  config.RateBaseStatus:
+    properties:
+      base:
+        example: cny
+        type: string
+      is_stale:
+        type: boolean
+      last_attempt_at:
+        example: "2026-07-22T10:05:00Z"
+        type: string
+      last_error:
+        example: 'call rate api unexpected status: 502 Bad Gateway'
+        type: string
+      last_refresh_ok:
+        type: boolean
+      last_success_at:
+        example: "2026-07-22T10:00:00Z"
+        type: string
+      rates:
+        additionalProperties:
+          format: float64
+          type: number
+        type: object
+      source_url:
+        example: https://cdn.example.com/currencies/
+        type: string
+    type: object
+  config.RateRefreshResult:
+    properties:
+      base:
+        example: cny
+        type: string
+      error:
+        example: 'call rate api unexpected status: 502 Bad Gateway'
+        type: string
+      last_attempt_at:
+        example: "2026-07-22T10:05:00Z"
+        type: string
+      last_success_at:
+        example: "2026-07-22T10:00:00Z"
+        type: string
+      ok:
+        type: boolean
+      rates:
+        additionalProperties:
+          format: float64
+          type: number
+        type: object
+      skipped:
+        type: boolean
+    type: object
+  config.RateStatus:
+    properties:
+      api_url:
+        example: https://cdn.example.com/currencies/
+        type: string
+      bases:
+        items:
+          $ref: '#/definitions/config.RateBaseStatus'
+        type: array
+      cache_ttl_seconds:
+        example: 300
+        maximum: 86400
+        minimum: 10
+        type: integer
+      mode:
+        enum:
+        - fixed
+        - auto
+        example: auto
+        type: string
+    type: object
+  data.DailyStat:
+    properties:
+      actual_amount:
+        description: sum of actual_amount (token)
+        type: number
+      day:
+        description: '"YYYY-MM-DD" (daily) or "YYYY-MM-DD HH:00" (hourly)'
+        type: string
+      order_count:
+        type: integer
+      success_count:
+        type: integer
+      total_amount:
+        description: sum of amount (fiat)
+        type: number
+    type: object
+  data.InitialAdminPasswordHashInfo:
+    properties:
+      algorithm:
+        example: sha256
+        type: string
+      available:
+        example: true
+        type: boolean
+      password_changed:
+        example: false
+        type: boolean
+      password_hash:
+        example: 3f79bb7b435b05321651daefd374cdc9f5f72c467ea3f9f3c5f6e6d7e8f9a0b1
+        type: string
+    type: object
+  gorm.DeletedAt:
+    properties:
+      time:
+        type: string
+      valid:
+        description: Valid is true if Time is not NULL
+        type: boolean
+    type: object
+  install.InstallRequest:
+    properties:
+      app_name:
+        description: 'Application display name (default: epusdt)'
+        example: epusdt
+        type: string
+      app_uri:
+        description: Public base URL of the service, e.g. https://pay.example.com
+          (required)
+        example: https://pay.example.com
+        type: string
+      http_bind_addr:
+        description: 'Bind address for the HTTP server (default: 127.0.0.1)'
+        example: 127.0.0.1
+        type: string
+      http_bind_port:
+        description: 'Bind port for the HTTP server (default: 8000)'
+        example: 8000
+        type: integer
+      log_save_path:
+        description: 'Directory for application log files (default: ./logs)'
+        example: ./logs
+        type: string
+      order_expiration_time:
+        description: 'Minutes before an unpaid order expires (default: 10)'
+        example: 10
+        type: integer
+      order_notice_max_retry:
+        description: 'Maximum webhook retry attempts (default: 1)'
+        example: 1
+        type: integer
+      runtime_root_path:
+        description: 'Runtime directory for SQLite DB and temp files (default: ./runtime)'
+        example: ./runtime
+        type: string
+    type: object
+  install.InstallSubmitResponse:
+    properties:
+      init_password:
+        description: Initial admin password, returned only while the plaintext is
+          still available.
+        example: a1b2c3d4e5f6
+        type: string
+      message:
+        description: Completion message for the install request.
+        example: install complete, starting server…
+        type: string
+    type: object
+  mdb.ApiKey:
+    properties:
+      call_count:
+        example: 342
+        type: integer
+      created_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      id:
+        example: 1
+        type: integer
+      ip_whitelist:
+        example: 192.168.1.0/24,10.0.0.1
+        type: string
+      last_used_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      name:
+        example: My API Key
+        type: string
+      notify_url:
+        example: https://example.com/notify
+        type: string
+      pid:
+        example: "1000"
+        type: string
+      status:
+        description: 状态 1=启用 2=禁用
+        enum:
+        - 1
+        - 2
+        example: 1
+        type: integer
+      updated_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+    type: object
+  mdb.Chain:
+    properties:
+      created_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      display_name:
+        example: Tron
+        type: string
+      enabled:
+        example: true
+        type: boolean
+      extra:
+        example: '{}'
+        type: string
+      id:
+        example: 1
+        type: integer
+      min_confirmations:
+        example: 20
+        type: integer
+      network:
+        example: tron
+        type: string
+      scan_interval_sec:
+        example: 5
+        type: integer
+      updated_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+    type: object
+  mdb.ChainToken:
+    properties:
+      contract_address:
+        example: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
+        type: string
+      created_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      decimals:
+        example: 6
+        type: integer
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      enabled:
+        example: true
+        type: boolean
+      id:
+        example: 1
+        type: integer
+      min_amount:
+        example: 1
+        type: number
+      network:
+        example: tron
+        type: string
+      symbol:
+        example: USDT
+        type: string
+      updated_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+    type: object
+  mdb.NotificationChannel:
+    properties:
+      config:
+        example: '{"bot_token":"123:ABC","chat_id":"456"}'
+        type: string
+      created_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      enabled:
+        example: true
+        type: boolean
+      events:
+        example: '{"pay_success":true,"order_expired":true}'
+        type: string
+      id:
+        example: 1
+        type: integer
+      name:
+        example: 主通知群
+        type: string
+      type:
+        enum:
+        - telegram
+        - webhook
+        - email
+        example: telegram
+        type: string
+      updated_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+    type: object
+  mdb.Orders:
+    properties:
+      actual_amount:
+        example: 14.2857
+        type: number
+      amount:
+        example: 100
+        type: number
+      api_key_id:
+        example: 1
+        type: integer
+      block_transaction_id:
+        example: 0xabc123...
+        type: string
+      callback_confirm:
+        description: 回调确认状态 1=回调成功 2=未回调/回调失败
+        enum:
+        - 1
+        - 2
+        example: 2
+        type: integer
+      callback_num:
+        example: 0
+        type: integer
+      created_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      currency:
+        example: CNY
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      id:
+        example: 1
+        type: integer
+      is_selected:
+        example: false
+        type: boolean
+      name:
+        example: VIP月卡
+        type: string
+      network:
+        example: tron
+        type: string
+      notify_url:
+        example: https://example.com/notify
+        type: string
+      order_id:
+        example: ORD20260416001
+        type: string
+      parent_trade_id:
+        type: string
+      pay_by_sub_id:
+        description: |-
+          PayBySubId holds the primary-key ID of the sub-order that settled this parent order.
+          Zero when the parent order was paid directly (no sub-order involved).
+        example: 0
+        type: integer
+      pay_provider:
+        description: |-
+          PayProvider identifies how this specific order row is collected.
+
+          Semantics:
+            - chain parent orders and regular chain child orders use on_chain
+            - third-party hosted checkout rows use their provider name
+              (for example okpay)
+
+          Existing rows default to on_chain for backward compatibility so upgrades
+          can rely on AutoMigrate without rewriting old orders.
+        example: on_chain
+        type: string
+      payment_type:
+        description: |-
+          PaymentType is not a channel selector. "Epay" changes callback format
+          to legacy EPay case-insensitively; "Gmpay" uses GMPay JSON.
+        example: Epay
+        type: string
+      receive_address:
+        example: TTestTronAddress001
+        type: string
+      redirect_url:
+        example: https://example.com/success
+        type: string
+      review_transaction_hash:
+        type: string
+      status:
+        description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
+        enum:
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+        - 6
+        example: 1
+        type: integer
+      token:
+        example: USDT
+        type: string
+      trade_id:
+        example: 3nQ9pL2xV7sK1mR8cT4yB_aZ
+        type: string
+      updated_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+    type: object
+  mdb.RpcNode:
+    properties:
+      api_key:
+        example: your-api-key
+        type: string
+      created_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      enabled:
+        example: true
+        type: boolean
+      id:
+        example: 1
+        type: integer
+      last_checked_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      last_latency_ms:
+        example: 120
+        type: integer
+      network:
+        example: tron
+        type: string
+      purpose:
+        description: 用途 general=通用 manual_verify=补单专用 both=通用+补单
+        enum:
+        - general
+        - manual_verify
+        - both
+        example: general
+        type: string
+      status:
+        description: 健康状态 unknown=未知 ok=正常 down=异常
+        enum:
+        - unknown
+        - ok
+        - down
+        example: ok
+        type: string
+      type:
+        description: 连接类型 http=HTTP请求 ws=WebSocket长连接 lite=TON liteserver配置
+        enum:
+        - http
+        - ws
+        - lite
+        - grpc
+        - jsonrpc
+        - rest
+        - graphql
+        - ipc
+        - sse
+        - solidity-grpc
+        - solidity-http
+        example: http
+        type: string
+      updated_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      url:
+        example: https://api.trongrid.io
+        type: string
+      weight:
+        example: 1
+        type: integer
+    type: object
+  mdb.Setting:
+    properties:
+      created_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      description:
+        example: 强制汇率列表
+        type: string
+      group:
+        enum:
+        - brand
+        - rate
+        - system
+        - epay
+        - okpay
+        example: rate
+        type: string
+      id:
+        example: 1
+        type: integer
+      key:
+        example: rate.forced_rate_list
+        type: string
+      type:
+        enum:
+        - string
+        - int
+        - bool
+        - json
+        example: json
+        type: string
+      updated_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      value:
+        example: '{"cny":{"usdt":0.14635}}'
+        type: string
+    type: object
+  mdb.WalletAddress:
+    properties:
+      address:
+        example: TTestTronAddress001
+        type: string
+      created_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      id:
+        example: 1
+        type: integer
+      network:
+        example: tron
+        type: string
+      remark:
+        example: 主钱包
+        type: string
+      source:
+        enum:
+        - manual
+        - import
+        example: manual
+        type: string
+      status:
+        description: 状态 1=启用 2=禁用
+        enum:
+        - 1
+        - 2
+        example: 1
+        type: integer
+      updated_at:
+        example: "2026-04-16 12:00:00"
+        type: string
+    type: object
+  request.CreateTransactionRequest:
+    properties:
+      amount:
+        example: 100
+        type: number
+      currency:
+        description: 法币 如：cny
+        example: cny
+        type: string
+      name:
+        example: VIP月卡
+        type: string
+      network:
+        description: 网络 如：ton、tron、aptos；可与 token 同时缺省创建占位订单
+        example: tron
+        type: string
+      notify_url:
+        example: https://example.com/notify
+        type: string
+      order_id:
+        example: ORD20260416001
+        type: string
+      payment_type:
+        description: |-
+          PaymentType is a compatibility flag, not a gateway selector. Only
+          "Epay" (case-insensitive) switches callback format to legacy EPay;
+          empty or any other value is stored as "Gmpay" and uses GMPay JSON.
+          It is optional for GMPay, but must be included in the signature when sent.
+        example: Epay
+        type: string
+      redirect_url:
+        example: https://example.com/success
+        type: string
+      signature:
+        example: 6f874b1919d95081835e2809b620e354a5866f5a6dbb2e432d1627f1eb10059d
+        type: string
+      token:
+        description: 币种 如：usdt、ton；可与 network 同时缺省创建占位订单
+        example: usdt
+        type: string
+    required:
+    - currency
+    - notify_url
+    - signature
+    type: object
+  request.ManualPaymentRequest:
+    properties:
+      block_transaction_id:
+        example: 0xabc123def456...
+        type: string
+    required:
+    - block_transaction_id
+    type: object
+  request.SwitchNetworkRequest:
+    properties:
+      network:
+        example: okpay,tron,solana,ethereum,aptos
+        type: string
+      token:
+        example: USDT
+        type: string
+      trade_id:
+        example: 3nQ9pL2xV7sK1mR8cT4yB_aZ
+        type: string
+    required:
+    - network
+    - token
+    - trade_id
+    type: object
+  response.ApiResponse:
+    properties:
+      data: {}
+      message:
+        description: Default server-side errno text. Frontend should prefer status_code
+          for display translation.
+        example: success
+        type: string
+      request_id:
+        description: Request id echoed from X-Request-ID when present.
+        example: req-123456
+        type: string
+      status_code:
+        description: Stable errno used by the frontend for i18n. Success is 200; failures
+          use codes from util/constant.Errno.
+        example: 200
+        type: integer
+    type: object
+  response.CheckStatusResponse:
+    properties:
+      status:
+        description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
+        enum:
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+        - 6
+        example: 1
+        type: integer
+      trade_id:
+        description: epusdt订单号
+        example: 3nQ9pL2xV7sK1mR8cT4yB_aZ
+        type: string
+    type: object
+  response.CheckoutCounterResponse:
+    properties:
+      actual_amount:
+        description: 订单实际需要支付的金额；status=4 占位订单返回 0
+        example: 14.2857
+        type: number
+      amount:
+        description: 订单金额，按 system.amount_precision 保留小数 法币金额
+        example: 100
+        type: number
+      created_at:
+        description: 订单创建时间 时间戳
+        example: 1713264000
+        type: integer
+      currency:
+        description: 法币币种 CNY USD ...
+        example: CNY
+        type: string
+      expiration_time:
+        description: 过期时间 时间戳
+        example: 1713264600
+        type: integer
+      is_selected:
+        description: 是否已选择当前支付方式；status=4 占位订单和刚补全的占位父单为 false
+        example: false
+        type: boolean
+      network:
+        description: 网络 TRON ETH；status=4 占位订单为空
+        example: tron
+        type: string
+      payment_type:
+        description: 支付接入类型；底层 Epay/Gmpay 转为小写 epay/gmpay 返回
+        enum:
+        - gmpay
+        - epay
+        example: gmpay
+        type: string
+      payment_url:
+        description: 支付链接；链上订单为空，OkPay 订单为第三方 payLink
+        example: https://pay.example.com/checkout/3nQ9pL2xV7sK1mR8cT4yB_aZ
+        type: string
+      receive_address:
+        description: 收款钱包地址；status=4 占位订单为空
+        example: TTestTronAddress001
+        type: string
+      redirect_url:
+        description: 非 EPay 时为商户原始回跳地址；EPay 时为内部中转地址 /pay/return/{trade_id}
+        example: https://example.com/success
+        type: string
+      server_time:
+        description: 服务器当前时间 时间戳
+        example: 1713264100
+        type: integer
+      status:
+        description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核；status=4
+          时前端应引导选择链上 token/network 或 OkPay
+        enum:
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+        - 6
+        example: 1
+        type: integer
+      token:
+        description: 所属币种；status=4 占位订单为空
+        example: USDT
+        type: string
+      trade_id:
+        description: epusdt订单号
+        example: 3nQ9pL2xV7sK1mR8cT4yB_aZ
+        type: string
+    type: object
+  response.CreateTransactionResponse:
+    properties:
+      actual_amount:
+        description: 订单实际需要支付的金额，按 system.amount_precision 保留小数
+        example: 14.2857
+        type: number
+      amount:
+        description: 订单金额，按 system.amount_precision 保留小数
+        example: 100
+        type: number
+      currency:
+        description: 订单货币类型 CNY USD......
+        example: CNY
+        type: string
+      expiration_time:
+        description: 过期时间 时间戳
+        example: 1713264600
+        type: integer
+      order_id:
+        description: 客户交易id
+        example: ORD20260416001
+        type: string
+      payment_url:
+        description: 收银台地址
+        example: https://pay.example.com/checkout/3nQ9pL2xV7sK1mR8cT4yB_aZ
+        type: string
+      receive_address:
+        description: 收款钱包地址
+        example: TTestTronAddress001
+        type: string
+      status:
+        description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
+        enum:
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+        - 6
+        example: 1
+        type: integer
+      token:
+        description: 所属币种 TRX USDT......
+        example: USDT
+        type: string
+      trade_id:
+        description: epusdt订单号
+        example: 3nQ9pL2xV7sK1mR8cT4yB_aZ
+        type: string
+    type: object
+  response.EpayPublicConfig:
+    properties:
+      default_currency:
+        description: EPay default fiat currency; still applies when a supported type
+          selector is supplied and falls back to cny when unset.
+        example: cny
+        type: string
+      default_network:
+        description: EPay default network; ignored when a supported type=token.network
+          selector is supplied. Empty means submit.php can create a status=4 placeholder
+          when request token/network are also absent.
+        example: ""
+        type: string
+      default_token:
+        description: EPay default token; ignored when a supported type=token.network
+          selector is supplied. Empty means submit.php can create a status=4 placeholder
+          when request token/network are also absent.
+        example: ""
+        type: string
+    type: object
+  response.ManualPaymentResponse:
+    properties:
+      block_transaction_id:
+        description: 已验证并入账的交易哈希
+        example: 0xabc123def456...
+        type: string
+      status:
+        description: 订单状态 1=等待支付 2=支付成功 3=已过期
+        enum:
+        - 1
+        - 2
+        - 3
+        example: 2
+        type: integer
+      trade_id:
+        description: epusdt订单号
+        example: 3nQ9pL2xV7sK1mR8cT4yB_aZ
+        type: string
+    type: object
+  response.NetworkTokenSupport:
+    properties:
+      display_name:
+        example: TRON
+        type: string
+      network:
+        example: tron
+        type: string
+      tokens:
+        example:
+        - USDT
+        - USDC
+        items:
+          type: string
+        type: array
+    type: object
+  response.OkPayPublicConfig:
+    properties:
+      allow_tokens:
+        example:
+        - USDT
+        - TRX
+        items:
+          type: string
+        type: array
+      api_url:
+        example: https://api.okaypay.me/shop/
+        type: string
+      callback_url:
+        example: https://pay.example.com/payments/okpay/v1/notify
+        type: string
+      enabled:
+        example: true
+        type: boolean
+      return_url:
+        example: https://pay.example.com/success
+        type: string
+      shop_id:
+        example: okpay-shop-test
+        type: string
+      shop_token:
+        example: secret-token
+        type: string
+      timeout_seconds:
+        example: 10
+        type: integer
+    type: object
+  response.PublicConfigResponse:
+    properties:
+      epay:
+        $ref: '#/definitions/response.EpayPublicConfig'
+      okpay:
+        $ref: '#/definitions/response.OkPayPublicConfig'
+      site:
+        $ref: '#/definitions/response.SitePublicConfig'
+      supported_assets:
+        items:
+          $ref: '#/definitions/response.NetworkTokenSupport'
+        type: array
+      version:
+        example: v1.0.1
+        type: string
+    type: object
+  response.SitePublicConfig:
+    properties:
+      background_color:
+        example: '#0f172a'
+        type: string
+      background_image_url:
+        example: https://cdn.example.com/background.png
+        type: string
+      cashier_name:
+        example: Acme Cashier
+        type: string
+      logo_url:
+        example: https://cdn.example.com/logo.png
+        type: string
+      support_link:
+        example: https://example.com/support
+        type: string
+      website_title:
+        example: Acme Payments
+        type: string
+      withdrawal_reminder_enabled:
+        example: true
+        type: boolean
+    type: object
+info:
+  contact: {}
+paths:
+  /admin/api/v1/api-keys:
+    get:
+      description: Returns all API keys
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/mdb.ApiKey'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: List API keys
+      tags:
+      - Admin API Keys
+    post:
+      consumes:
+      - application/json
+      description: Create a new universal API key. Usable for both gateway flows (epay/gmpay).
+        PID auto-incremented; secret returned once.
+      parameters:
+      - description: API key payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.CreateApiKeyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.CreateApiKeyResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Create API key
+      tags:
+      - Admin API Keys
+  /admin/api/v1/api-keys/{id}:
+    delete:
+      description: Soft-delete an API key
+      parameters:
+      - description: API key ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Delete API key
+      tags:
+      - Admin API Keys
+    patch:
+      consumes:
+      - application/json
+      description: Patch API key name / ip_whitelist / notify_url
+      parameters:
+      - description: API key ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.UpdateApiKeyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Update API key
+      tags:
+      - Admin API Keys
+  /admin/api/v1/api-keys/{id}/rotate-secret:
+    post:
+      description: Generate a new secret_key. Returned only once.
+      parameters:
+      - description: API key ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.RotateSecretResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Rotate API key secret
+      tags:
+      - Admin API Keys
+  /admin/api/v1/api-keys/{id}/secret:
+    get:
+      description: Returns the secret_key for an API key (admin only)
+      parameters:
+      - description: API key ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: string
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: View API key secret
+      tags:
+      - Admin API Keys
+  /admin/api/v1/api-keys/{id}/stats:
+    get:
+      description: Returns usage stats (call_count, last_used_at) for an API key
+      parameters:
+      - description: API key ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.ApiKeyStatsResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Get API key stats
+      tags:
+      - Admin API Keys
+  /admin/api/v1/api-keys/{id}/status:
+    post:
+      consumes:
+      - application/json
+      description: Toggle enable/disable for an API key (1=enabled, 2=disabled)
+      parameters:
+      - description: API key ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Status payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.ChangeApiKeyStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Change API key status
+      tags:
+      - Admin API Keys
+  /admin/api/v1/auth/init-password-hash:
+    get:
+      description: Returns the initial password hash and password-changed flag.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/data.InitialAdminPasswordHashInfo'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      summary: Get initial admin password hash
+      tags:
+      - Admin Auth
+  /admin/api/v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Verify credentials and return a signed JWT token
+      parameters:
+      - description: Login credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.LoginResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      summary: Admin login
+      tags:
+      - Admin Auth
+  /admin/api/v1/auth/logout:
+    post:
+      description: Logout (no-op, frontend discards token)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Admin logout
+      tags:
+      - Admin Auth
+  /admin/api/v1/auth/me:
+    get:
+      description: Returns the currently authenticated admin user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.MeResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Get current admin profile
+      tags:
+      - Admin Auth
+  /admin/api/v1/auth/password:
+    post:
+      consumes:
+      - application/json
+      description: Change the current admin user's password
+      parameters:
+      - description: Password payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Change admin password
+      tags:
+      - Admin Auth
+  /admin/api/v1/chain-tokens:
+    get:
+      description: Returns chain tokens, optionally filtered by network
+      parameters:
+      - description: Network filter
+        in: query
+        name: network
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/mdb.ChainToken'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: List chain tokens
+      tags:
+      - Admin Chain Tokens
+    post:
+      consumes:
+      - application/json
+      description: Create a new chain token entry. For Aptos, contract_address stores
+        the Move asset id rather than an EVM contract address.
+      parameters:
+      - description: Chain token payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.CreateChainTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/mdb.ChainToken'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Create chain token
+      tags:
+      - Admin Chain Tokens
+  /admin/api/v1/chain-tokens/{id}:
+    delete:
+      description: Soft-delete a chain token
+      parameters:
+      - description: Chain token ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Delete chain token
+      tags:
+      - Admin Chain Tokens
+    patch:
+      consumes:
+      - application/json
+      description: Patch chain token fields. For Aptos, contract_address stores the
+        Move asset id rather than an EVM contract address.
+      parameters:
+      - description: Chain token ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.UpdateChainTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Update chain token
+      tags:
+      - Admin Chain Tokens
+  /admin/api/v1/chain-tokens/{id}/status:
+    post:
+      consumes:
+      - application/json
+      description: Toggle enable/disable for a chain token
+      parameters:
+      - description: Chain token ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Status payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.ChangeChainTokenStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Change chain token status
+      tags:
+      - Admin Chain Tokens
+  /admin/api/v1/chains:
+    get:
+      description: Returns all supported blockchain networks
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/mdb.Chain'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: List chains
+      tags:
+      - Admin Chains
+  /admin/api/v1/chains/{network}:
+    patch:
+      consumes:
+      - application/json
+      description: Toggle enabled / tweak scan params for a chain
+      parameters:
+      - description: Network name (e.g. ton, tron, ethereum, solana, aptos)
+        in: path
+        name: network
+        required: true
+        type: string
+      - description: Chain settings
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.UpdateChainRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Update chain
+      tags:
+      - Admin Chains
+  /admin/api/v1/config:
+    get:
+      description: |-
+        Returns supported_assets plus site, epay and okpay config used by cashier/frontends.
+        The authenticated admin variant (/admin/api/v1/config) also includes OkPay shop credentials and internal callback settings.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.PublicConfigResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      summary: Get public payment config
+      tags:
+      - Payment Config
+  /admin/api/v1/dashboard/asset-trend:
+    get:
+      description: Returns per-period actual_amount for paid orders. Hourly for ≤1-day
+        ranges, daily otherwise. Missing buckets are zero-filled.
+      parameters:
+      - default: today
+        description: 'Time range: today, 7d, 30d, custom'
+        in: query
+        name: range
+        type: string
+      - description: Start time (Unix seconds, for custom range)
+        in: query
+        name: start_at
+        type: integer
+      - description: End time (Unix seconds, for custom range)
+        in: query
+        name: end_at
+        type: integer
+      - default: total
+        description: 'Group by: total or address'
+        in: query
+        name: group_by
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/data.DailyStat'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Asset trend
+      tags:
+      - Admin Dashboard
+  /admin/api/v1/dashboard/order-stats:
+    get:
+      description: 'Returns aggregate order figures: count, success rate, avg payment
+        time, expired count'
+      parameters:
+      - default: today
+        description: 'Time range: today, 7d, 30d, custom'
+        in: query
+        name: range
+        type: string
+      - description: Start time (Unix seconds, for custom range)
+        in: query
+        name: start_at
+        type: integer
+      - description: End time (Unix seconds, for custom range)
+        in: query
+        name: end_at
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.OrderStatsResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Order statistics
+      tags:
+      - Admin Dashboard
+  /admin/api/v1/dashboard/overview:
+    get:
+      description: 'Returns top-card numbers: total asset, volume, success rate, active
+        addresses, etc. Supports ?range= for filtering.'
+      parameters:
+      - default: today
+        description: 'Time range: today, 7d, 30d, custom'
+        in: query
+        name: range
+        type: string
+      - description: Start time (Unix seconds, for custom range)
+        in: query
+        name: start_at
+        type: integer
+      - description: End time (Unix seconds, for custom range)
+        in: query
+        name: end_at
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.OverviewResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Dashboard overview
+      tags:
+      - Admin Dashboard
+  /admin/api/v1/dashboard/recent-orders:
+    get:
+      description: Returns the last N orders for the dashboard
+      parameters:
+      - default: 20
+        description: Number of orders to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/mdb.Orders'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Recent orders
+      tags:
+      - Admin Dashboard
+  /admin/api/v1/dashboard/revenue-trend:
+    get:
+      description: Returns per-period revenue stats for charts. Hourly for ≤1-day
+        ranges, daily otherwise. Missing buckets are zero-filled.
+      parameters:
+      - default: today
+        description: 'Time range: today, 7d, 30d, custom'
+        in: query
+        name: range
+        type: string
+      - description: Start time (Unix seconds, for custom range)
+        in: query
+        name: start_at
+        type: integer
+      - description: End time (Unix seconds, for custom range)
+        in: query
+        name: end_at
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/data.DailyStat'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Revenue trend
+      tags:
+      - Admin Dashboard
+  /admin/api/v1/dashboard/rpc-stats:
+    get:
+      description: Streams in-process RPC success/failure counts, success rate, latest
+        block height and last sync time by chain over one authenticated SSE connection.
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.RpcStatsDashboardResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: RPC runtime statistics
+      tags:
+      - Admin Dashboard
+  /admin/api/v1/notification-channels:
+    get:
+      description: Returns notification channels, optionally filtered by type
+      parameters:
+      - description: 'Channel type: telegram, webhook, email'
+        in: query
+        name: type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/mdb.NotificationChannel'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: List notification channels
+      tags:
+      - Admin Notifications
+    post:
+      consumes:
+      - application/json
+      description: Create a new notification channel
+      parameters:
+      - description: Channel payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.CreateNotificationChannelRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/mdb.NotificationChannel'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Create notification channel
+      tags:
+      - Admin Notifications
+  /admin/api/v1/notification-channels/{id}:
+    delete:
+      description: Soft-delete a notification channel
+      parameters:
+      - description: Channel ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Delete notification channel
+      tags:
+      - Admin Notifications
+    patch:
+      consumes:
+      - application/json
+      description: Patch notification channel fields
+      parameters:
+      - description: Channel ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.UpdateNotificationChannelRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Update notification channel
+      tags:
+      - Admin Notifications
+  /admin/api/v1/notification-channels/{id}/status:
+    post:
+      consumes:
+      - application/json
+      description: Toggle enable/disable for a notification channel
+      parameters:
+      - description: Channel ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Status payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.ChangeChannelStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Change notification channel status
+      tags:
+      - Admin Notifications
+  /admin/api/v1/orders:
+    get:
+      description: Returns paginated orders with optional filters
+      parameters:
+      - description: Network filter
+        in: query
+        name: network
+        type: string
+      - description: Token filter
+        in: query
+        name: token
+        type: string
+      - description: Receive address filter
+        in: query
+        name: address
+        type: string
+      - description: Keyword search (trade_id or order_id)
+        in: query
+        name: keyword
+        type: string
+      - description: Order status filter
+        in: query
+        name: status
+        type: integer
+      - description: Start time (Unix seconds)
+        in: query
+        name: start_at
+        type: integer
+      - description: End time (Unix seconds)
+        in: query
+        name: end_at
+        type: integer
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.OrderListResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: List orders
+      tags:
+      - Admin Orders
+  /admin/api/v1/orders/{trade_id}:
+    get:
+      description: Returns full order detail by trade_id
+      parameters:
+      - description: Trade ID
+        in: path
+        name: trade_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/mdb.Orders'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Get order
+      tags:
+      - Admin Orders
+  /admin/api/v1/orders/{trade_id}/close:
+    post:
+      description: Manually close a waiting order (mark as expired)
+      parameters:
+      - description: Trade ID
+        in: path
+        name: trade_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Close order
+      tags:
+      - Admin Orders
+  /admin/api/v1/orders/{trade_id}/mark-paid:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Manually mark a waiting, expired or manual-review on-chain order as paid (operator补单)
+        TON accepts canonical ton:<receive_raw>:<lt>:<hash>, lt:hash, or a unique recent hash-only reference for the order receive address.
+        Aptos accepts a transaction hash.
+        Aptos automatic scanning polls fullnode ledger-version transaction ranges with a runtime cursor.
+      parameters:
+      - description: Trade ID
+        in: path
+        name: trade_id
+        required: true
+        type: string
+      - description: Block transaction ID
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/request.ManualPaymentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Mark order paid
+      tags:
+      - Admin Orders
+  /admin/api/v1/orders/{trade_id}/resend-callback:
+    post:
+      description: Re-queue the order callback notification
+      parameters:
+      - description: Trade ID
+        in: path
+        name: trade_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Resend callback
+      tags:
+      - Admin Orders
+  /admin/api/v1/orders/{trade_id}/with-sub:
+    get:
+      description: Returns an order and its child orders embedded in sub_orders
+      parameters:
+      - description: Trade ID
+        in: path
+        name: trade_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.OrderWithSub'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Get order with sub-orders
+      tags:
+      - Admin Orders
+  /admin/api/v1/orders/export:
+    get:
+      description: Stream matching orders as a CSV file (max 10k rows)
+      parameters:
+      - description: Network filter
+        in: query
+        name: network
+        type: string
+      - description: Token filter
+        in: query
+        name: token
+        type: string
+      - description: Receive address filter
+        in: query
+        name: address
+        type: string
+      - description: Keyword search
+        in: query
+        name: keyword
+        type: string
+      - description: Order status filter
+        in: query
+        name: status
+        type: integer
+      - description: Start time (Unix seconds)
+        in: query
+        name: start_at
+        type: integer
+      - description: End time (Unix seconds)
+        in: query
+        name: end_at
+        type: integer
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: CSV file
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Export orders as CSV
+      tags:
+      - Admin Orders
+  /admin/api/v1/orders/list-with-sub:
+    get:
+      description: Returns paginated orders; each item embeds its child orders in
+        sub_orders
+      parameters:
+      - description: Network filter
+        in: query
+        name: network
+        type: string
+      - description: Token filter
+        in: query
+        name: token
+        type: string
+      - description: Receive address filter
+        in: query
+        name: address
+        type: string
+      - description: Keyword search (trade_id or order_id)
+        in: query
+        name: keyword
+        type: string
+      - description: Order status filter
+        in: query
+        name: status
+        type: integer
+      - description: Start time (Unix seconds)
+        in: query
+        name: start_at
+        type: integer
+      - description: End time (Unix seconds)
+        in: query
+        name: end_at
+        type: integer
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.OrderWithSubListResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: List orders with sub-orders
+      tags:
+      - Admin Orders
+  /admin/api/v1/rpc-nodes:
+    get:
+      description: Returns RPC nodes, optionally filtered by network
+      parameters:
+      - description: Network filter
+        in: query
+        name: network
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/mdb.RpcNode'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: List RPC nodes
+      tags:
+      - Admin RPC Nodes
+    post:
+      consumes:
+      - application/json
+      description: Create a new RPC node
+      parameters:
+      - description: RPC node payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.CreateRpcNodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/mdb.RpcNode'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Create RPC node
+      tags:
+      - Admin RPC Nodes
+  /admin/api/v1/rpc-nodes/{id}:
+    delete:
+      description: Soft-delete an RPC node
+      parameters:
+      - description: RPC node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Delete RPC node
+      tags:
+      - Admin RPC Nodes
+    patch:
+      consumes:
+      - application/json
+      description: Patch RPC node fields
+      parameters:
+      - description: RPC node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.UpdateRpcNodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Update RPC node
+      tags:
+      - Admin RPC Nodes
+  /admin/api/v1/rpc-nodes/{id}/health-check:
+    post:
+      description: Perform an on-demand health probe on an RPC node
+      parameters:
+      - description: RPC node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.RpcHealthCheckResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Health check RPC node
+      tags:
+      - Admin RPC Nodes
+  /admin/api/v1/settings:
+    get:
+      description: |-
+        Returns all settings, optionally filtered by group.
+        Available groups: brand, rate, system, epay, okpay.
+        See SettingUpsertItem for the full list of supported keys per group.
+      parameters:
+      - description: Group filter (brand|rate|system|epay|okpay)
+        in: query
+        name: group
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/mdb.Setting'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: List settings
+      tags:
+      - Admin Settings
+    put:
+      consumes:
+      - application/json
+      description: |-
+        Batch insert/update settings. Returns per-key status; failed items include error_code for frontend i18n.
+        Supported groups: brand, rate, system, epay, okpay.
+        epay group keys: epay.default_token (e.g. "usdt" or "ton", ignored when a supported type=token.network selector is supplied, empty allows status=4 placeholders), epay.default_currency (e.g. "cny", still applies when a supported type selector is supplied, empty falls back to cny), epay.default_network (e.g. "tron" or "ton", ignored when a supported type=token.network selector is supplied, empty allows status=4 placeholders).
+        okpay group keys: okpay.enabled, okpay.shop_id, okpay.shop_token, okpay.api_url, okpay.callback_url, okpay.return_url, okpay.timeout_seconds, okpay.allow_tokens.
+        rate group keys: rate.mode (fixed|auto, default fixed), rate.cache_ttl_seconds (10-86400, default 300), rate.forced_rate_list (JSON map, e.g. {"cny":{"usdt":0.14635,"ton":0.5}}; base/coin keys are normalized to lowercase; empty is restored to the built-in CNY USDT/USDC default), rate.api_url (optional; non-empty value must be a public http/https URL), rate.adjust_percent, rate.okx_c2c_enabled.
+        brand group keys: brand.checkout_name, brand.logo_url, brand.site_title, brand.success_copy, brand.support_url, brand.background_color, brand.background_image_url, brand.withdrawal_reminder_enabled. Legacy aliases brand.site_name, brand.page_title and brand.pay_success_text are also supported.
+        system group keys: system.order_expiration_time, system.amount_precision (int, 2-6, default 2), system.log_level (debug|info|warn|error, default error).
+      parameters:
+      - description: Settings payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.SettingsUpsertRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/admin.SettingsUpsertResult'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Upsert settings
+      tags:
+      - Admin Settings
+  /admin/api/v1/settings/{key}:
+    delete:
+      description: Remove a setting by key (falls back to default). Deleting system.log_level
+        immediately resets runtime logging to error.
+      parameters:
+      - description: Setting key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Delete setting
+      tags:
+      - Admin Settings
+  /admin/api/v1/settings/rate/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Forces refreshes for the requested base currencies. With an empty
+        body, refreshes known cached/configured bases and falls back to CNY. Per-base
+        API failures are returned as result rows while prior successful rates remain
+        cached. Successful partial responses update returned coins and retain previously
+        successful coins omitted by the provider.
+      parameters:
+      - description: Optional base currencies
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/admin.RateRefreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/config.RateRefreshResult'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Refresh external rate cache
+      tags:
+      - Admin Settings
+  /admin/api/v1/settings/rate/status:
+    get:
+      description: Returns effective auto/fixed settings and the last persisted refresh
+        state for every cached base currency.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/config.RateStatus'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Get rate cache status
+      tags:
+      - Admin Settings
+  /admin/api/v1/wallets:
+    get:
+      description: Returns wallets with per-wallet order counts
+      parameters:
+      - description: Network filter
+        in: query
+        name: network
+        type: string
+      - description: Status filter (1=enabled, 2=disabled)
+        in: query
+        name: status
+        type: integer
+      - description: Search by address or remark
+        in: query
+        name: keyword
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/admin.WalletListItem'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: List wallets (admin)
+      tags:
+      - Admin Wallets
+    post:
+      consumes:
+      - application/json
+      description: Create a wallet with admin-specific fields (remark, source=manual)
+      parameters:
+      - description: Wallet payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.AdminAddWalletRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/mdb.WalletAddress'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Add wallet (admin)
+      tags:
+      - Admin Wallets
+  /admin/api/v1/wallets/{id}:
+    delete:
+      description: Soft-delete a wallet
+      parameters:
+      - description: Wallet ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Delete wallet (admin)
+      tags:
+      - Admin Wallets
+    get:
+      description: Returns wallet detail with order count
+      parameters:
+      - description: Wallet ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.WalletListItem'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Get wallet (admin)
+      tags:
+      - Admin Wallets
+    patch:
+      consumes:
+      - application/json
+      description: Patch wallet remark
+      parameters:
+      - description: Wallet ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.AdminUpdateWalletRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Update wallet (admin)
+      tags:
+      - Admin Wallets
+  /admin/api/v1/wallets/{id}/status:
+    post:
+      consumes:
+      - application/json
+      description: Toggle enable/disable for a wallet (1=enabled, 2=disabled)
+      parameters:
+      - description: Wallet ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Status payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.AdminChangeWalletStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Change wallet status (admin)
+      tags:
+      - Admin Wallets
+  /admin/api/v1/wallets/batch-import:
+    post:
+      consumes:
+      - application/json
+      description: Import multiple wallet addresses at once. Per-row status is returned;
+        failed rows include error_code for frontend i18n.
+      parameters:
+      - description: Batch import payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/admin.AdminBatchImportRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/admin.BatchImportResult'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Batch import wallets
+      tags:
+      - Admin Wallets
+  /api/install:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Validates the submitted configuration, writes install=true, performs the minimum DB setup needed to ensure the default admin exists, optionally returns init_password, then rewrites install=false before shutting down the install server.
+        http_bind_addr + http_bind_port are joined internally as "ADDR:PORT" for http_listen. app_uri is required; other fields fall back to GET /api/install/defaults.
+      parameters:
+      - description: Install configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/install.InstallRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/install.InstallSubmitResponse'
+        "400":
+          description: error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Install — submit configuration
+      tags:
+      - Install
+  /api/install/defaults:
+    get:
+      description: Returns sensible default field values for the first-run install
+        form.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Default install values
+          schema:
+            $ref: '#/definitions/install.InstallRequest'
+      summary: Install — get default values
+      tags:
+      - Install
+  /pay/check-status/{trade_id}:
+    get:
+      description: 'Return the current order status by trade ID. Status: 1=waiting
+        payment, 2=paid, 3=expired, 4=waiting token/network selection, 5=confirming
+        on-chain payment, 6=manual review required.'
+      parameters:
+      - description: Trade ID
+        in: path
+        name: trade_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.CheckStatusResponse'
+              type: object
+        "400":
+          description: Order not found (status_code=10008) or other request error
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      summary: Check payment status
+      tags:
+      - Payment
+  /pay/checkout-counter-resp/{trade_id}:
+    get:
+      description: |-
+        Return checkout initialization data when the order exists. This endpoint only confirms order existence and returns base order data; call /pay/check-status/{trade_id} for the current order status (1=waiting payment, 2=paid, 3=expired, 4=waiting token/network selection, 5=confirming on-chain payment, 6=manual review required).
+        When status=4, actual_amount is 0 and token/network/receive_address are empty; this state is produced by GMPay placeholders or EPay submit.php when no token/network request values or defaults resolve to a concrete payment asset. The cashier should guide the payer to choose an on-chain token/network or OkPay and then call /pay/switch-network.
+        For EPay orders with a merchant return_url, the response redirect_url is rewritten to the internal /pay/return/{trade_id} hop; the database still stores the merchant's raw return_url.
+      parameters:
+      - description: Trade ID
+        in: path
+        name: trade_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.CheckoutCounterResponse'
+              type: object
+        "400":
+          description: Order not found (status_code=10008) or other request error
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      summary: Checkout counter page
+      tags:
+      - Payment
+  /pay/return/{trade_id}:
+    get:
+      description: |-
+        Browser-facing success return hop for EPay orders. Paid EPay orders are redirected to the merchant return_url with signed legacy EPay query params. Orders that are not EPay or not yet paid are redirected back to the checkout counter.
+        The signed query params reuse the stored request type. On this branch that means either alipay or a supported token.network selector; if the original request omitted type, type=alipay is returned for compatibility.
+        This route also returns explicit business errors when the merchant return_url is missing, the order API key is unavailable, or EPay signature construction fails.
+      parameters:
+      - description: Trade ID
+        in: path
+        name: trade_id
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Redirect to merchant return_url or checkout counter
+        "400":
+          description: 'Stable errno in status_code: 10008 order not found, 10044
+            invalid order redirect url, 10045 order api key unavailable, 10046 failed
+            to build epay return signature'
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      summary: Return to merchant (EPAY compat)
+      tags:
+      - Payment
+  /pay/submit-tx-hash/{trade_id}:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Submit an on-chain transaction hash from the cashier. The hash is verified against the waiting order and, when valid, the same manual payment processing path used by admin mark-paid is executed. Expired orders and OkPay/provider orders are not supported.
+        TON accepts canonical ton:<receive_raw>:<lt>:<hash>, lt:hash, or a unique recent hash-only reference for the order receive address.
+        Aptos accepts a transaction hash.
+        Aptos automatic scanning polls fullnode ledger-version transaction ranges with a runtime cursor.
+      parameters:
+      - description: Trade ID
+        in: path
+        name: trade_id
+        required: true
+        type: string
+      - description: Transaction hash payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/request.ManualPaymentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.ManualPaymentResponse'
+              type: object
+        "400":
+          description: 'Stable errno in status_code: 10008 order not found, 10009
+            invalid params, 10013 not waiting payment, 10038 verification failed,
+            10039 unsupported provider, 10007 hash already processed'
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      summary: Submit transaction hash
+      tags:
+      - Payment
+  /pay/switch-network:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Switch to a different payment target. A status=4 placeholder is completed in place and returns the same parent trade_id with is_selected=false; an already concrete status=1 parent creates or returns the only sub-order when switching to a different target.
+        Normal values such as ton/tron/solana/ethereum select on-chain payment; the special value okpay selects OkPay hosted payment.
+        For status=4 placeholders from GMPay or EPay submit.php, both on-chain targets and okpay complete the parent in place without creating a child order. Sub-orders cannot be switched again.
+        For EPay orders with a merchant return_url, the returned redirect_url is the internal /pay/return/{trade_id} hop rather than the raw merchant return_url.
+      parameters:
+      - description: Switch network payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/request.SwitchNetworkRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.CheckoutCounterResponse'
+              type: object
+        "400":
+          description: 'Stable errno in status_code: 10008 order not found, 10011
+            sub-order limit, 10012 cannot switch sub-order, 10013 not waiting payment,
+            10016 unsupported asset, 10017/10018/10019 provider errors, 10042 provider
+            order creation failed'
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      summary: Switch payment network
+      tags:
+      - Payment
+  /payments/epay/v1/order/create-transaction/submit.php:
+    get:
+      consumes:
+      - application/x-www-form-urlencoded
+      description: |-
+        Legacy EPAY-style endpoint. Accepts GET (querystring) and POST (form). On success, 302 redirects to /pay/checkout-counter/{trade_id}. Signature uses MD5 of sorted params + secret_key of the api_keys row matching the submitted pid.
+        After signature verification, type accepts only either alipay or a supported type=token.network selector (for example usdt.tron). Token/network resolution is: supported selector first; otherwise request token/network; otherwise epay.default_token / epay.default_network. If token and network are still both empty, the order is created as status=4 placeholder. Supplying only one of token/network remains invalid.
+        Currency resolution is unchanged: request currency -> epay.default_currency -> cny. Supported type selectors bypass only token/network defaults, not currency fallback.
+        Success return/notify reuse the stored request type. On this branch that means either alipay or a supported token.network selector; when the request omitted type, outbound fallback remains alipay. The server injects internal payment_type=Epay after EPay signature verification; merchants do not send GMPay payment_type to this endpoint.
+      parameters:
+      - description: API key PID (GET query)
+        in: query
+        name: pid
+        type: integer
+      - description: Amount (fiat, GET query)
+        in: query
+        name: money
+        type: number
+      - description: Merchant order ID (GET query)
+        in: query
+        name: out_trade_no
+        type: string
+      - description: Callback URL (GET query)
+        in: query
+        name: notify_url
+        type: string
+      - description: Redirect URL after payment (GET query)
+        in: query
+        name: return_url
+        type: string
+      - description: Order name (GET query)
+        in: query
+        name: name
+        type: string
+      - description: Either alipay or a supported token.network selector such as usdt.tron
+          (GET query)
+        in: query
+        name: type
+        type: string
+      - description: MD5 signature (GET query)
+        in: query
+        name: sign
+        type: string
+      - description: Signature type (MD5, GET query)
+        in: query
+        name: sign_type
+        type: string
+      - description: API key PID
+        in: formData
+        name: pid
+        required: true
+        type: integer
+      - description: Amount (fiat)
+        in: formData
+        name: money
+        required: true
+        type: number
+      - description: Merchant order ID
+        in: formData
+        name: out_trade_no
+        required: true
+        type: string
+      - description: Callback URL
+        in: formData
+        name: notify_url
+        required: true
+        type: string
+      - description: Redirect URL after payment
+        in: formData
+        name: return_url
+        type: string
+      - description: Order name
+        in: formData
+        name: name
+        type: string
+      - description: Either alipay or a supported token.network selector such as usdt.tron
+        in: formData
+        name: type
+        type: string
+      - description: MD5 signature
+        in: formData
+        name: sign
+        required: true
+        type: string
+      - description: Signature type (MD5)
+        in: formData
+        name: sign_type
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Redirect to checkout counter
+        "400":
+          description: 'Stable errno in status_code: 10009 invalid params, 10041 invalid
+            notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported
+            asset, 10003 no wallet, 10005 no amount channel'
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      summary: Create transaction and redirect (EPAY compat)
+      tags:
+      - Payment
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      description: |-
+        Legacy EPAY-style endpoint. Accepts GET (querystring) and POST (form). On success, 302 redirects to /pay/checkout-counter/{trade_id}. Signature uses MD5 of sorted params + secret_key of the api_keys row matching the submitted pid.
+        After signature verification, type accepts only either alipay or a supported type=token.network selector (for example usdt.tron). Token/network resolution is: supported selector first; otherwise request token/network; otherwise epay.default_token / epay.default_network. If token and network are still both empty, the order is created as status=4 placeholder. Supplying only one of token/network remains invalid.
+        Currency resolution is unchanged: request currency -> epay.default_currency -> cny. Supported type selectors bypass only token/network defaults, not currency fallback.
+        Success return/notify reuse the stored request type. On this branch that means either alipay or a supported token.network selector; when the request omitted type, outbound fallback remains alipay. The server injects internal payment_type=Epay after EPay signature verification; merchants do not send GMPay payment_type to this endpoint.
+      parameters:
+      - description: API key PID (GET query)
+        in: query
+        name: pid
+        type: integer
+      - description: Amount (fiat, GET query)
+        in: query
+        name: money
+        type: number
+      - description: Merchant order ID (GET query)
+        in: query
+        name: out_trade_no
+        type: string
+      - description: Callback URL (GET query)
+        in: query
+        name: notify_url
+        type: string
+      - description: Redirect URL after payment (GET query)
+        in: query
+        name: return_url
+        type: string
+      - description: Order name (GET query)
+        in: query
+        name: name
+        type: string
+      - description: Either alipay or a supported token.network selector such as usdt.tron
+          (GET query)
+        in: query
+        name: type
+        type: string
+      - description: MD5 signature (GET query)
+        in: query
+        name: sign
+        type: string
+      - description: Signature type (MD5, GET query)
+        in: query
+        name: sign_type
+        type: string
+      - description: API key PID
+        in: formData
+        name: pid
+        required: true
+        type: integer
+      - description: Amount (fiat)
+        in: formData
+        name: money
+        required: true
+        type: number
+      - description: Merchant order ID
+        in: formData
+        name: out_trade_no
+        required: true
+        type: string
+      - description: Callback URL
+        in: formData
+        name: notify_url
+        required: true
+        type: string
+      - description: Redirect URL after payment
+        in: formData
+        name: return_url
+        type: string
+      - description: Order name
+        in: formData
+        name: name
+        type: string
+      - description: Either alipay or a supported token.network selector such as usdt.tron
+        in: formData
+        name: type
+        type: string
+      - description: MD5 signature
+        in: formData
+        name: sign
+        required: true
+        type: string
+      - description: Signature type (MD5)
+        in: formData
+        name: sign_type
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Redirect to checkout counter
+        "400":
+          description: 'Stable errno in status_code: 10009 invalid params, 10041 invalid
+            notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported
+            asset, 10003 no wallet, 10005 no amount channel'
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      summary: Create transaction and redirect (EPAY compat)
+      tags:
+      - Payment
+  /payments/gmpay/v1/config:
+    get:
+      description: |-
+        Returns supported_assets plus site, epay and okpay config used by cashier/frontends.
+        The authenticated admin variant (/admin/api/v1/config) also includes OkPay shop credentials and internal callback settings.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.PublicConfigResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      summary: Get public payment config
+      tags:
+      - Payment Config
+  /payments/gmpay/v1/order/create-transaction:
+    post:
+      consumes:
+      - application/json
+      - application/x-www-form-urlencoded
+      description: |-
+        Create a payment transaction order. Accepts JSON body (application/json) or form-encoded body (application/x-www-form-urlencoded).
+        GMPay may omit both token and network to create a status=4 placeholder order; EPay submit.php can also create one when neither request parameters nor database defaults provide token/network. Supplying only one of token/network is invalid.
+        payment_type is optional for GMPay. If it is sent, it is a normal signed parameter and must be included when calculating signature.
+        GMPay signature uses lowercase hexadecimal HMAC-SHA256 with secret_key as the HMAC key. Legacy MD5 signatures are not accepted.
+      parameters:
+      - description: Transaction payload (JSON)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/request.CreateTransactionRequest'
+      - description: Merchant order ID
+        in: formData
+        name: order_id
+        type: string
+      - description: Fiat currency (e.g. cny)
+        in: formData
+        name: currency
+        type: string
+      - description: Crypto token (e.g. TON, USDT); omit together with network to
+          create a placeholder where supported
+        in: formData
+        name: token
+        type: string
+      - description: Network (e.g. ton, tron); omit together with token to create
+          a placeholder where supported
+        in: formData
+        name: network
+        type: string
+      - description: Amount
+        in: formData
+        name: amount
+        type: number
+      - description: Callback URL
+        in: formData
+        name: notify_url
+        type: string
+      - description: Lowercase hexadecimal HMAC-SHA256 signature
+        in: formData
+        name: signature
+        type: string
+      - description: Redirect URL
+        in: formData
+        name: redirect_url
+        type: string
+      - description: Order name
+        in: formData
+        name: name
+        type: string
+      - description: Optional GMPay compatibility flag; include in signature when
+          sent
+        in: formData
+        name: payment_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.CreateTransactionResponse'
+              type: object
+        "400":
+          description: 'Stable errno in status_code: 10009 invalid params, 10041 invalid
+            notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported
+            asset, 10003 no wallet, 10005 no amount channel'
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      summary: Create transaction
+      tags:
+      - Payment
+  /payments/okpay/v1/notify:
+    post:
+      consumes:
+      - application/json
+      - application/x-www-form-urlencoded
+      description: |-
+        Receives OkPay deposit callbacks for hosted checkout child orders.
+        The callback is verified against the configured OkPay shop token and, on success, marks the matching child order as paid.
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: success
+          schema:
+            type: string
+        "400":
+          description: fail
+          schema:
+            type: string
+      summary: OkPay notify callback
+      tags:
+      - Payment
+swagger: "2.0"
