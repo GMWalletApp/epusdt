@@ -121,7 +121,7 @@ func processExpiredOrders() {
 			if strings.TrimSpace(order.Network) == "" || strings.TrimSpace(order.ReceiveAddress) == "" || strings.TrimSpace(order.Token) == "" || order.ActualAmount <= 0 {
 				continue
 			}
-			if err = data.UnLockTransaction(order.Network, order.ReceiveAddress, order.Token, order.ActualAmount); err != nil {
+			if err = data.UnLockTransactionByTradeId(order.TradeId); err != nil {
 				log.Sugar.Warnf("[mq] release expired transaction lock failed, trade_id=%s, err=%v", order.TradeId, err)
 			}
 		}

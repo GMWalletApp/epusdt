@@ -5,10 +5,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/model/request"
 	addressutil "github.com/GMWalletApp/epusdt/util/address"
+	"github.com/GMWalletApp/epusdt/util/constant"
 	"github.com/dromara/carbon/v2"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -369,19 +371,13 @@ func CompleteWaitSelectOkPayOrderWithTransaction(tx *gorm.DB, tradeID string, to
 }
 
 // MarkProviderSwitchParentSelectedWithTransaction marks a switch-network parent
-// as selected for a hosted payment provider. It intentionally does not fill
-// chain fields or create a transaction lock; the provider child order carries
-// the concrete payment target.
+// as selected for a hosted payment provider, preserving any existing on-chain
+// reservation while extending the parent's payment window.
 func MarkProviderSwitchParentSelectedWithTransaction(tx *gorm.DB, tradeID string) (bool, error) {
-	result := tx.Model(&mdb.Orders{}).
-		Where("trade_id = ?", tradeID).
-		Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusWaitSelect}).
-		Updates(map[string]interface{}{
-			"status":      mdb.StatusWaitPay,
-			"is_selected": true,
-			"created_at":  time.Now(),
-		})
-	return result.RowsAffected > 0, result.Error
+	return refreshOrderExpirationWithTransaction(tx, tradeID, map[string]interface{}{
+		"status":      mdb.StatusWaitPay,
+		"is_selected": true,
+	})
 }
 
 // ExpireOrderByTradeID marks a waiting order as expired. Used to retire failed
@@ -396,12 +392,76 @@ func ExpireOrderByTradeID(tradeId string) error {
 		}).Error
 }
 
-// RefreshOrderExpiration resets created_at to now so the expiration timer restarts.
-// Called on the parent order when a sub-order is created or returned.
+// RefreshOrderExpiration extends a pending order only after its reservation is renewed.
 func RefreshOrderExpiration(tradeId string) error {
-	return dao.Mdb.Model(&mdb.Orders{}).
-		Where("trade_id = ?", tradeId).
-		Update("created_at", time.Now()).Error
+	return dao.Mdb.Transaction(func(tx *gorm.DB) error {
+		return RefreshOrderExpirationWithTransaction(tx, tradeId)
+	})
+}
+
+func RefreshOrderExpirationWithTransaction(tx *gorm.DB, tradeID string) error {
+	updated, err := refreshOrderExpirationWithTransaction(tx, tradeID, map[string]interface{}{})
+	if err != nil {
+		return err
+	}
+	if !updated {
+		return constant.OrderStatusConflict
+	}
+	return nil
+}
+
+func refreshOrderExpirationWithTransaction(tx *gorm.DB, tradeID string, updates map[string]interface{}) (bool, error) {
+	var order mdb.Orders
+	if err := tx.Where("trade_id = ?", tradeID).Limit(1).Find(&order).Error; err != nil {
+		return false, err
+	}
+	now := time.Now()
+	expiration := config.GetOrderExpirationTimeDuration()
+	if order.ID == 0 ||
+		(order.Status != mdb.StatusWaitPay && order.Status != mdb.StatusWaitSelect) ||
+		!order.CreatedAt.StdTime().Add(expiration).After(now) {
+		return false, nil
+	}
+
+	provider := strings.TrimSpace(order.PayProvider)
+	if order.Status == mdb.StatusWaitPay && (provider == "" || provider == mdb.PaymentProviderOnChain) {
+		// Commit the runtime extension first. If the main transaction fails,
+		// retaining a reservation too long is safer than exposing a payable target.
+		renewed, err := renewOrderTransactionLock(&order, now, now.Add(expiration))
+		if err != nil {
+			return false, err
+		}
+		if !renewed {
+			return false, nil
+		}
+	}
+
+	updates["created_at"] = now
+	result := tx.Model(&mdb.Orders{}).
+		Where("trade_id = ?", tradeID).
+		Where("status = ?", order.Status).
+		Where("created_at > ?", now.Add(-expiration)).
+		Updates(updates)
+	return result.RowsAffected > 0, result.Error
+}
+
+func renewOrderTransactionLock(order *mdb.Orders, now, expiresAt time.Time) (bool, error) {
+	var locks []mdb.TransactionLock
+	if err := activeLocksForAddress(dao.RuntimeDB, order.Network, order.ReceiveAddress, order.Token, now).
+		Where("trade_id = ?", order.TradeId).Find(&locks).Error; err != nil {
+		return false, err
+	}
+	for _, lock := range locks {
+		// Keep the stored precision; changing settings must not change this target.
+		if !lockAmountDecimal(lock).Equal(decimal.NewFromFloat(order.ActualAmount)) {
+			continue
+		}
+		result := dao.RuntimeDB.Model(&mdb.TransactionLock{}).
+			Where("id = ? AND trade_id = ? AND expires_at > ?", lock.ID, order.TradeId, time.Now()).
+			Update("expires_at", gorm.Expr("CASE WHEN expires_at < ? THEN ? ELSE expires_at END", expiresAt, expiresAt))
+		return result.RowsAffected > 0, result.Error
+	}
+	return false, nil
 }
 
 // ResetCallbackConfirmOk sets callback_confirm back to Ok.
@@ -551,27 +611,8 @@ func LockTransaction(network, address, token, tradeID string, amount float64, ex
 	})
 }
 
-// UnLockTransaction releases the reservation for network+address+token+amount.
-func UnLockTransaction(network string, address string, token string, amount float64) error {
-	network = normalizeLockNetwork(network)
-	address = normalizeLockAddress(network, address)
-	var locks []mdb.TransactionLock
-	if err := activeLocksForAddress(dao.RuntimeDB, network, address, token, time.Now()).
-		Find(&locks).Error; err != nil {
-		return err
-	}
-	ids := make([]uint64, 0, len(locks))
-	for _, lock := range locks {
-		if lockMatchesAmount(lock, amount) {
-			ids = append(ids, lock.ID)
-		}
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	return dao.RuntimeDB.Where("id IN ?", ids).Delete(&mdb.TransactionLock{}).Error
-}
-
+// UnLockTransactionByTradeId releases only reservations owned by this order,
+// including expired rows. Never release a reusable target without its owner.
 func UnLockTransactionByTradeId(tradeID string) error {
 	return dao.RuntimeDB.Where("trade_id = ?", tradeID).Delete(&mdb.TransactionLock{}).Error
 }

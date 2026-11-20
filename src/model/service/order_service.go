@@ -286,15 +286,13 @@ func orderProcessing(req *request.OrderProcessingRequest, opts orderProcessingOp
 	// Load order to check parent-child relationship
 	order, err := data.GetOrderInfoByTradeId(req.TradeId)
 	if err != nil {
-		if strings.TrimSpace(req.Network) != "" && strings.TrimSpace(req.ReceiveAddress) != "" && strings.TrimSpace(req.Token) != "" && req.Amount > 0 {
-			if unlockErr := data.UnLockTransaction(req.Network, req.ReceiveAddress, req.Token, req.Amount); unlockErr != nil {
-				log.Sugar.Warnf("[order] fallback unlock transaction after pay success failed, trade_id=%s, err=%v", req.TradeId, unlockErr)
-			}
+		if unlockErr := data.UnLockTransactionByTradeId(req.TradeId); unlockErr != nil {
+			log.Sugar.Warnf("[order] fallback unlock transaction after pay success failed, trade_id=%s, err=%v", req.TradeId, unlockErr)
 		}
 		return fmt.Errorf("load paid order failed, trade_id=%s: %w", req.TradeId, err)
 	}
 	if hasTransactionLock(order) {
-		if err = data.UnLockTransaction(order.Network, order.ReceiveAddress, order.Token, order.ActualAmount); err != nil {
+		if err = data.UnLockTransactionByTradeId(order.TradeId); err != nil {
 			log.Sugar.Warnf("[order] unlock transaction after pay success failed, trade_id=%s, err=%v", order.TradeId, err)
 		}
 	}
@@ -309,6 +307,7 @@ func orderProcessing(req *request.OrderProcessingRequest, opts orderProcessingOp
 		for _, sub := range subs {
 			if err = data.ExpireOrderByTradeId(sub.TradeId); err != nil {
 				log.Sugar.Warnf("[order] expire sub-order failed, trade_id=%s, err=%v", sub.TradeId, err)
+				continue
 			}
 			if sub.PayProvider != "" && sub.PayProvider != mdb.PaymentProviderOnChain {
 				if err = data.MarkProviderOrderExpired(sub.TradeId, sub.PayProvider); err != nil {
@@ -316,7 +315,7 @@ func orderProcessing(req *request.OrderProcessingRequest, opts orderProcessingOp
 				}
 			}
 			if hasTransactionLock(&sub) {
-				if err = data.UnLockTransaction(sub.Network, sub.ReceiveAddress, sub.Token, sub.ActualAmount); err != nil {
+				if err = data.UnLockTransactionByTradeId(sub.TradeId); err != nil {
 					log.Sugar.Warnf("[order] unlock sub-order transaction failed, trade_id=%s, err=%v", sub.TradeId, err)
 				}
 			}
@@ -370,7 +369,7 @@ func orderProcessing(req *request.OrderProcessingRequest, opts orderProcessingOp
 
 	// Release parent's own wallet lock
 	if hasTransactionLock(parent) {
-		if err = data.UnLockTransaction(parent.Network, parent.ReceiveAddress, parent.Token, parent.ActualAmount); err != nil {
+		if err = data.UnLockTransactionByTradeId(parent.TradeId); err != nil {
 			log.Sugar.Warnf("[order] unlock parent transaction failed, parent_trade_id=%s, err=%v", parent.TradeId, err)
 		}
 	}
@@ -383,7 +382,7 @@ func orderProcessing(req *request.OrderProcessingRequest, opts orderProcessingOp
 			}
 		}
 		if hasTransactionLock(&sib) {
-			if err = data.UnLockTransaction(sib.Network, sib.ReceiveAddress, sib.Token, sib.ActualAmount); err != nil {
+			if err = data.UnLockTransactionByTradeId(sib.TradeId); err != nil {
 				log.Sugar.Warnf("[order] unlock sibling transaction failed, trade_id=%s, err=%v", sib.TradeId, err)
 			}
 		}
@@ -608,9 +607,11 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 		return nil, err
 	}
 	if existing.ID > 0 {
+		if err = data.RefreshOrderExpiration(parent.TradeId); err != nil {
+			return nil, err
+		}
 		_ = data.MarkOrderSelected(parent.TradeId)
 		_ = data.MarkOrderSelected(existing.TradeId)
-		_ = data.RefreshOrderExpiration(parent.TradeId)
 		existing.IsSelected = true
 		return buildCheckoutResponse(existing), nil
 	}
@@ -692,15 +693,19 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 		_ = data.UnLockTransactionByTradeId(subTradeID)
 		return nil, err
 	}
+	if err = data.RefreshOrderExpirationWithTransaction(tx, parent.TradeId); err != nil {
+		tx.Rollback()
+		_ = data.UnLockTransactionByTradeId(subTradeID)
+		return nil, err
+	}
 	if err = tx.Commit().Error; err != nil {
 		tx.Rollback()
 		_ = data.UnLockTransactionByTradeId(subTradeID)
 		return nil, err
 	}
 
-	// Mark parent as selected and refresh its expiration to match the sub-order
+	// Parent expiration and its reservation were refreshed before the commit.
 	_ = data.MarkOrderSelected(parent.TradeId)
-	_ = data.RefreshOrderExpiration(parent.TradeId)
 
 	return buildCheckoutResponse(subOrder), nil
 }
@@ -881,8 +886,10 @@ func switchToOkPay(parent *mdb.Orders, token string) (*response.CheckoutCounterR
 		if providerRow.ID == 0 || strings.TrimSpace(providerRow.PayURL) == "" {
 			return nil, constant.SystemErr
 		}
+		if err = data.RefreshOrderExpiration(parent.TradeId); err != nil {
+			return nil, err
+		}
 		_ = data.MarkOrderSelected(parent.TradeId)
-		_ = data.RefreshOrderExpiration(parent.TradeId)
 		order, err := data.GetOrderInfoByTradeId(parent.TradeId)
 		if err != nil {
 			return nil, err

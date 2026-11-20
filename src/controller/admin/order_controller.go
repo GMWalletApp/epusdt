@@ -130,7 +130,7 @@ func (c *BaseAdminController) CloseOrder(ctx echo.Context) error {
 		strings.TrimSpace(order.ReceiveAddress) != "" &&
 		strings.TrimSpace(order.Token) != "" &&
 		order.ActualAmount > 0 {
-		_ = data.UnLockTransaction(order.Network, order.ReceiveAddress, order.Token, order.ActualAmount)
+		_ = data.UnLockTransactionByTradeId(order.TradeId)
 	}
 	return c.SucJson(ctx, nil)
 }
