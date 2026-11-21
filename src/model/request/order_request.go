@@ -59,7 +59,7 @@ func (r ManualPaymentRequest) Translates() map[string]string {
 type SwitchNetworkRequest struct {
 	TradeId string `json:"trade_id" validate:"required" example:"3nQ9pL2xV7sK1mR8cT4yB_aZ"`
 	Token   string `json:"token" validate:"required" example:"USDT"`
-	Network string `json:"network" validate:"required" example:"okpay,tron,solana,ethereum,aptos"`
+	Network string `json:"network" validate:"required" example:"okpay,xlayer,tron,solana,ethereum,aptos"`
 }
 
 func (r SwitchNetworkRequest) Translates() map[string]string {

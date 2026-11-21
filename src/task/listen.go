@@ -9,9 +9,25 @@ import (
 	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/model/service"
 	"github.com/GMWalletApp/epusdt/util/log"
+	"github.com/robfig/cron/v3"
 )
 
 func Start() {
+	// X Layer hosted-checkout polling (OKX Onchain OS Payment has no
+	// webhook, so pending provider orders must be queried until settled).
+	// It is independent of the ChainScanner config below, so it is
+	// scheduled first and runs regardless of scanner settings.
+	c := cron.New()
+	_, err := c.AddJob("@every 10s", XLayerPollJob{})
+	if err != nil {
+		log.Sugar.Errorf("[task] Failed to add XLayerPollJob: %v", err)
+		return
+	}
+	log.Sugar.Info("[task] XLayerPollJob scheduled successfully (@every 10s)")
+
+	c.Start()
+	log.Sugar.Info("[task] Task scheduler started")
+
 	url, err := config.ScannerEndpoint()
 	token, tokenErr := config.ScannerToken(false)
 	transport := config.ScannerTransport()
