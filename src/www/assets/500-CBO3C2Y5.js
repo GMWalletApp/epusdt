@@ -1,0 +1,1 @@
+import{t as e}from"./general-error-GNup3Ago.js";var t=e;export{t as component};
