@@ -170,13 +170,7 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 		return buildCreateTransactionResponse(order), nil
 	}
 
-	// X Layer is a hosted checkout (OKX Onchain OS Payment), not a scanned
-	// on-chain network, even though a chains row exists since the
-	// admin-integration change (XLAYER-ADMIN-INTEGRATION-DESIGN.md). Concrete
-	// orders must keep being rejected here exactly as they were before that
-	// row existed — X Layer orders only ever come into being as status=4
-	// placeholders completed via /pay/switch-network, which routes
-	// network="xlayer" to the provider flow before reaching this code.
+	// The cashier creates hosted OKX orders through /pay/switch-network.
 	if network == mdb.PaymentProviderXLayer {
 		return nil, constant.ChainNotEnabled
 	}
