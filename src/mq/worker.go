@@ -207,9 +207,10 @@ func sendOrderCallback(order *mdb.Orders) error {
 
 		epayResp, err := http_client.GetHttpClient().R().SetQueryParams(formData).Get(order.NotifyUrl)
 		if err != nil {
-			return err
+			// HTTP errors can include the full signed callback URL.
+			return errors.New("EPay callback request failed")
 		}
-		log.Sugar.Infof("[mq] epay notify_url response status: %d, body: %s", epayResp.StatusCode(), string(epayResp.Body()))
+		log.Sugar.Infof("[mq] epay notify_url response status: %d", epayResp.StatusCode())
 		if epayResp.StatusCode() != http.StatusOK {
 			return errors.New(epayResp.Status())
 		}

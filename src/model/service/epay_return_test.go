@@ -40,13 +40,38 @@ func TestBuildPublicRedirectURLRewritesOnlyEpayOrders(t *testing.T) {
 	}
 }
 
+func TestEPaySuccessSigningEligibility(t *testing.T) {
+	for _, tc := range []struct {
+		name, paymentType, key string
+		status                 int
+	}{
+		{"pending", mdb.PaymentTypeEpay, "test-key", mdb.StatusWaitPay},
+		{"expired", mdb.PaymentTypeEpay, "test-key", mdb.StatusExpired},
+		{"selecting", mdb.PaymentTypeEpay, "test-key", mdb.StatusWaitSelect},
+		{"confirming", mdb.PaymentTypeEpay, "test-key", mdb.StatusConfirming},
+		{"manual review", mdb.PaymentTypeEpay, "test-key", mdb.StatusManualReview},
+		{"unknown status", mdb.PaymentTypeEpay, "test-key", 0},
+		{"different protocol", mdb.PaymentTypeGmpay, "test-key", mdb.StatusPaySuccess},
+		{"missing key", mdb.PaymentTypeEpay, "", mdb.StatusPaySuccess},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			params, err := BuildEPayResultParams(&mdb.Orders{PaymentType: tc.paymentType, Status: tc.status}, &mdb.ApiKey{Pid: "1001", SecretKey: tc.key})
+			if err != constant.EPayReturnSignatureErr || params != nil {
+				t.Fatal("expected rejection without signed parameters")
+			}
+		})
+	}
+}
+
 func TestBuildEPayResultParamsUsesOriginalType(t *testing.T) {
 	params, err := BuildEPayResultParams(&mdb.Orders{
-		TradeId:  "trade_epay_params",
-		OrderId:  "order_epay_params",
-		Name:     "VIP",
-		Amount:   1,
-		EpayType: "usdt.tron",
+		PaymentType: mdb.PaymentTypeEpay,
+		Status:      mdb.StatusPaySuccess,
+		TradeId:     "trade_epay_params",
+		OrderId:     "order_epay_params",
+		Name:        "VIP",
+		Amount:      1,
+		EpayType:    "usdt.tron",
 	}, &mdb.ApiKey{
 		Pid:       "1001",
 		SecretKey: "epay-secret",
@@ -91,10 +116,12 @@ func TestBuildEPayResultParamsUsesOriginalType(t *testing.T) {
 
 func TestBuildEPayResultParamsFallsBackToAlipayWhenTypeMissing(t *testing.T) {
 	params, err := BuildEPayResultParams(&mdb.Orders{
-		TradeId: "trade_epay_fallback",
-		OrderId: "order_epay_fallback",
-		Name:    "VIP",
-		Amount:  1,
+		PaymentType: mdb.PaymentTypeEpay,
+		Status:      mdb.StatusPaySuccess,
+		TradeId:     "trade_epay_fallback",
+		OrderId:     "order_epay_fallback",
+		Name:        "VIP",
+		Amount:      1,
 	}, &mdb.ApiKey{
 		Pid:       "1001",
 		SecretKey: "epay-secret",
@@ -109,10 +136,12 @@ func TestBuildEPayResultParamsFallsBackToAlipayWhenTypeMissing(t *testing.T) {
 
 func TestBuildEPayResultParamsRejectsNonNumericPid(t *testing.T) {
 	_, err := BuildEPayResultParams(&mdb.Orders{
-		TradeId: "trade_bad_pid",
-		OrderId: "order_bad_pid",
-		Name:    "VIP",
-		Amount:  1,
+		PaymentType: mdb.PaymentTypeEpay,
+		Status:      mdb.StatusPaySuccess,
+		TradeId:     "trade_bad_pid",
+		OrderId:     "order_bad_pid",
+		Name:        "VIP",
+		Amount:      1,
 	}, &mdb.ApiKey{
 		Pid:       "not-a-number",
 		SecretKey: "epay-secret",

@@ -1,8 +1,10 @@
 package dao
 
 import (
+	stdlog "log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/util/log"
@@ -28,7 +30,11 @@ func SqliteInit() error {
 			TablePrefix:   viper.GetString("sqlite_table_prefix"),
 			SingularTable: true,
 		},
-		Logger: logger.Default.LogMode(logger.Error),
+		Logger: logger.New(stdlog.New(os.Stdout, "", stdlog.LstdFlags), logger.Config{
+			LogLevel:             logger.Error,
+			SlowThreshold:        200 * time.Millisecond,
+			ParameterizedQueries: true,
+		}),
 	})
 	if err != nil {
 		color.Red.Printf("[store_db] sqlite open DB,err=%s\n", err)
