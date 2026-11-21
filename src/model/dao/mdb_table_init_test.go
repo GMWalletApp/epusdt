@@ -122,136 +122,20 @@ func TestSeedChainsIncludesAptos(t *testing.T) {
 	}
 }
 
-func TestSeedChainsIncludesXLayer(t *testing.T) {
-	db := setupSeedTableTestDB(t, &mdb.Chain{})
-	Mdb = db
-
+func TestXLayerUsesProviderSettingsOnly(t *testing.T) {
+	Mdb = setupSeedTableTestDB(t, &mdb.Chain{}, &mdb.ChainToken{}, &mdb.Setting{})
 	seedChains()
-
-	var row mdb.Chain
-	if err := Mdb.Where("network = ?", mdb.NetworkXLayer).Take(&row).Error; err != nil {
-		t.Fatalf("load X Layer chain seed: %v", err)
-	}
-	if !row.Enabled {
-		t.Fatal("X Layer chain enabled = false, want true")
-	}
-	if row.DisplayName != "X Layer" {
-		t.Fatalf("X Layer display_name = %q, want %q", row.DisplayName, "X Layer")
-	}
-}
-
-func TestSeedChainTokensIncludesXLayerStablecoins(t *testing.T) {
-	db := setupSeedTableTestDB(t, &mdb.ChainToken{})
-	Mdb = db
-
 	seedChainTokens()
-
-	wantContract := map[string]string{
-		"USDC":  "0xb6ceceab302e2e4948951ee7843fc24e92933061",
-		"USDT0": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
-		"USDG":  "0x4ae46a509f6b1d9056937ba4500cb143933d2dc8",
-	}
-	for symbol, contract := range wantContract {
-		var row mdb.ChainToken
-		if err := Mdb.Where("network = ? AND symbol = ?", mdb.NetworkXLayer, symbol).Take(&row).Error; err != nil {
-			t.Fatalf("load X Layer %s token seed: %v", symbol, err)
-		}
-		if !row.Enabled {
-			t.Fatalf("X Layer %s enabled = false, want true", symbol)
-		}
-		if row.ContractAddress != contract {
-			t.Fatalf("X Layer %s contract_address = %q, want %q", symbol, row.ContractAddress, contract)
-		}
-		if row.Decimals != 6 {
-			t.Fatalf("X Layer %s decimals = %d, want 6", symbol, row.Decimals)
+	seedDefaultSettings()
+	for _, table := range []interface{}{&mdb.Chain{}, &mdb.ChainToken{}} {
+		var count int64
+		if err := Mdb.Model(table).Where("network = ?", mdb.NetworkXLayer).Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("unexpected X Layer rows in %T: count=%d err=%v", table, count, err)
 		}
 	}
-}
-
-func TestSeedXLayerWalletFromSettings(t *testing.T) {
-	db := setupSeedTableTestDB(t, &mdb.Setting{}, &mdb.WalletAddress{})
-	Mdb = db
-
-	// No settings key and no wallet: nothing to do.
-	seedXLayerWalletFromSettings()
-	var count int64
-	Mdb.Model(&mdb.WalletAddress{}).Where("network = ?", mdb.NetworkXLayer).Count(&count)
-	if count != 0 {
-		t.Fatalf("wallet rows = %d, want 0 when no legacy setting exists", count)
-	}
-
-	// With the legacy key set, the value migrates into an enabled wallet row.
-	if err := Mdb.Create(&mdb.Setting{
-		Group: mdb.SettingGroupXLayer,
-		Key:   mdb.SettingKeyXLayerToAddress,
-		Value: " 0xAbC0000000000000000000000000000000000001 ",
-		Type:  mdb.SettingTypeString,
-	}).Error; err != nil {
-		t.Fatalf("seed legacy to_address: %v", err)
-	}
-	seedXLayerWalletFromSettings()
-	var row mdb.WalletAddress
-	if err := Mdb.Where("network = ?", mdb.NetworkXLayer).Take(&row).Error; err != nil {
-		t.Fatalf("load migrated wallet: %v", err)
-	}
-	if row.Address != "0xAbC0000000000000000000000000000000000001" {
-		t.Fatalf("migrated address = %q, want trimmed legacy value", row.Address)
-	}
-	if row.Status != mdb.TokenStatusEnable || row.Source != mdb.WalletSourceManual {
-		t.Fatalf("migrated wallet status=%d source=%q, want enabled/manual", row.Status, row.Source)
-	}
-
-	// Re-running must not create a duplicate.
-	seedXLayerWalletFromSettings()
-	Mdb.Model(&mdb.WalletAddress{}).Where("network = ?", mdb.NetworkXLayer).Count(&count)
-	if count != 1 {
-		t.Fatalf("wallet rows = %d after re-seed, want 1", count)
-	}
-}
-
-func TestSeedXLayerWalletRestoresSoftDeletedRow(t *testing.T) {
-	db := setupSeedTableTestDB(t, &mdb.Setting{}, &mdb.WalletAddress{})
-	Mdb = db
-
-	// A soft-deleted row would violate the (network, address) unique index
-	// if the seed tried to insert the same address again; it must be
-	// restored instead.
-	deleted := &mdb.WalletAddress{
-		Network: mdb.NetworkXLayer,
-		Address: "0xAbC0000000000000000000000000000000000002",
-		Status:  mdb.TokenStatusDisable,
-	}
-	if err := Mdb.Create(deleted).Error; err != nil {
-		t.Fatalf("create wallet: %v", err)
-	}
-	if err := Mdb.Delete(deleted).Error; err != nil {
-		t.Fatalf("soft-delete wallet: %v", err)
-	}
-	if err := Mdb.Create(&mdb.Setting{
-		Group: mdb.SettingGroupXLayer,
-		Key:   mdb.SettingKeyXLayerToAddress,
-		Value: "0xAbC0000000000000000000000000000000000002",
-		Type:  mdb.SettingTypeString,
-	}).Error; err != nil {
-		t.Fatalf("seed legacy to_address: %v", err)
-	}
-
-	seedXLayerWalletFromSettings()
-
-	var count int64
-	Mdb.Unscoped().Model(&mdb.WalletAddress{}).Where("network = ?", mdb.NetworkXLayer).Count(&count)
-	if count != 1 {
-		t.Fatalf("wallet rows (incl. soft-deleted) = %d, want 1", count)
-	}
-	var row mdb.WalletAddress
-	if err := Mdb.Unscoped().Where("network = ?", mdb.NetworkXLayer).Take(&row).Error; err != nil {
-		t.Fatalf("load restored wallet: %v", err)
-	}
-	if row.DeletedAt.Valid {
-		t.Fatal("restored wallet still soft-deleted")
-	}
-	if row.Status != mdb.TokenStatusEnable {
-		t.Fatalf("restored wallet status = %d, want enabled", row.Status)
+	var row mdb.Setting
+	if err := Mdb.Where(&mdb.Setting{Group: mdb.SettingGroupXLayer, Key: mdb.SettingKeyXLayerAllowTokens}).Take(&row).Error; err != nil || row.Value != "USDC,USDT0,USDG" {
+		t.Fatalf("default OKX token list=%q err=%v", row.Value, err)
 	}
 }
 

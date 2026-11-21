@@ -1,0 +1,1 @@
+import{t as e}from"./general-error-Da9eu_tM.js";var t=e;export{t as component};

@@ -2269,8 +2269,8 @@ paths:
   /admin/api/v1/config:
     get:
       description: |-
-        Returns supported_assets plus site, epay and okpay config used by cashier/frontends.
-        The authenticated admin variant (/admin/api/v1/config) also includes OkPay shop credentials and internal callback settings.
+        Returns supported_assets for on-chain payments, site and epay defaults, and separate okpay and xlayer hosted payment settings. The xlayer allow_tokens list controls the tokens shown for OKX OnchainOS.
+        The authenticated admin variant (/admin/api/v1/config) also includes provider credentials, internal callback settings and the merchant X Layer receiving address.
       produces:
       - application/json
       responses:
@@ -3951,8 +3951,8 @@ paths:
   /payments/gmpay/v1/config:
     get:
       description: |-
-        Returns supported_assets plus site, epay and okpay config used by cashier/frontends.
-        The authenticated admin variant (/admin/api/v1/config) also includes OkPay shop credentials and internal callback settings.
+        Returns supported_assets for on-chain payments, site and epay defaults, and separate okpay and xlayer hosted payment settings. The xlayer allow_tokens list controls the tokens shown for OKX OnchainOS.
+        The authenticated admin variant (/admin/api/v1/config) also includes provider credentials, internal callback settings and the merchant X Layer receiving address.
       produces:
       - application/json
       responses:

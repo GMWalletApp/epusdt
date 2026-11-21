@@ -7,5 +7,6 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ./env:/app/.env
+      - ./runtime:/app/runtime
     ports:
       - "8000:8000"

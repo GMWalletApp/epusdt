@@ -13,7 +13,7 @@ import (
 
 // Only the enumerated routes can receive either upstream token. The browser
 // presents its EPUSDT admin JWT and never needs a ChainScanner credential.
-func registerScannerAdmin(group *echo.Group) {
+func registerScannerAdmin(group *echo.Group, connection config.ScannerConnection) {
 	scanner := group.Group("/chainscanner")
 	for _, r := range []struct{ method, path string }{
 		{"GET", "/admin/blacklist"}, {"PUT", "/admin/blacklist/:host"}, {"DELETE", "/admin/blacklist/:host"},
@@ -22,19 +22,19 @@ func registerScannerAdmin(group *echo.Group) {
 		{"POST", "/admin/nodes/:id/test"}, {"POST", "/admin/nodes/test"},
 		{"GET", "/heights/:network"}, {"GET", "/transactions/:network/:hash"}, {"GET", "/transactions/:network/:hash/strict"},
 	} {
-		scanner.Add(r.method, r.path, scannerForward(r.path))
+		scanner.Add(r.method, r.path, scannerForward(r.path, connection))
 	}
 }
 
 var scannerHTTP = &http.Client{Timeout: 10 * time.Minute, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 
-func scannerForward(template string) echo.HandlerFunc {
+func scannerForward(template string, connection config.ScannerConnection) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		base, err := config.ScannerEndpoint()
+		base, err := connection.Endpoint()
 		if err != nil {
 			return echo.NewHTTPError(503, err.Error())
 		}
-		token, err := config.ScannerToken(strings.HasPrefix(template, "/admin/"))
+		token, err := connection.Token(strings.HasPrefix(template, "/admin/"))
 		if err != nil {
 			return echo.NewHTTPError(503, err.Error())
 		}

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/controller/admin"
 	"github.com/GMWalletApp/epusdt/controller/comm"
 	"github.com/GMWalletApp/epusdt/middleware"
@@ -54,6 +55,10 @@ func resolveEPayTypeSelector(rawType string) (string, string, bool, error) {
 
 // RegisterRoute 路由注册
 func RegisterRoute(e *echo.Echo) {
+	RegisterRouteWithScanner(e, config.ExternalScanner())
+}
+
+func RegisterRouteWithScanner(e *echo.Echo, connection config.ScannerConnection) {
 	e.POST("/", func(c echo.Context) error {
 		return c.String(http.StatusOK, "hello epusdt, https://github.com/GMwalletApp/epusdt")
 	})
@@ -229,12 +234,12 @@ func RegisterRoute(e *echo.Echo) {
 		return comm.Ctrl.CreateTransactionAndRedirect(ctx)
 	})
 
-	registerAdminRoutes(e)
+	registerAdminRoutes(e, connection)
 }
 
 // registerAdminRoutes wires the management console API surface under
 // /admin/api/v1. Everything except /auth/login requires a valid JWT.
-func registerAdminRoutes(e *echo.Echo) {
+func registerAdminRoutes(e *echo.Echo, connection config.ScannerConnection) {
 	// CORS for the management console. The admin SPA is commonly served
 	// from a different origin (local dev, CDN, etc.), so allow any origin
 	// but require explicit echoing — browsers refuse wildcard + credentials.
@@ -267,7 +272,7 @@ func registerAdminRoutes(e *echo.Echo) {
 
 	// Authenticated
 	authed := adminV1.Group("", middleware.CheckAdminJWT())
-	registerScannerAdmin(authed)
+	registerScannerAdmin(authed, connection)
 	authed.POST("/auth/logout", admin.Ctrl.Logout)
 	authed.GET("/auth/me", admin.Ctrl.Me)
 	authed.POST("/auth/password", admin.Ctrl.ChangePassword)

@@ -36,16 +36,6 @@ func buildSupportedAssets() ([]response.NetworkTokenSupport, error) {
 		if _, ok := networkHasWallet[network]; !ok {
 			continue
 		}
-		// X Layer is a hosted checkout, not a scanned network, but since the
-		// admin-integration change it lives in chains/chain_tokens/wallet_address
-		// like every other network (see XLAYER-ADMIN-INTEGRATION-DESIGN.md),
-		// so the generic path below produces its entry. The settings master
-		// switch still hides it entirely when off, and only symbols the Go
-		// contract map knows are offered (anything else could never be
-		// created at the provider).
-		if network == mdb.PaymentProviderXLayer && !data.GetXLayerEnabled() {
-			continue
-		}
 		tokens, err := data.ListEnabledChainTokensByNetwork(network)
 		if err != nil {
 			return nil, err
@@ -60,9 +50,6 @@ func buildSupportedAssets() ([]response.NetworkTokenSupport, error) {
 			}
 			sym := strings.ToUpper(strings.TrimSpace(t.Symbol))
 			if sym == "" {
-				continue
-			}
-			if network == mdb.PaymentProviderXLayer && !service.IsPayableXLayerToken(sym) {
 				continue
 			}
 			symbols = append(symbols, sym)
@@ -86,12 +73,10 @@ func buildSupportedAssets() ([]response.NetworkTokenSupport, error) {
 }
 
 // GetPublicConfig returns payment/site config consumed by cashier/frontends.
-// The public route returns brand/site display config plus non-sensitive
-// epay/okpay knobs, while the authenticated admin route also includes OkPay
-// credentials and internal URLs.
+// Hosted providers are advertised separately from on-chain network/token pairs.
 // @Summary      Get public payment config
-// @Description  Returns supported_assets plus site, epay and okpay config used by cashier/frontends.
-// @Description  The authenticated admin variant (/admin/api/v1/config) also includes OkPay shop credentials and internal callback settings.
+// @Description  Returns supported_assets for on-chain payments, site and epay defaults, and separate okpay and xlayer hosted payment settings. The xlayer allow_tokens list controls the tokens shown for OKX OnchainOS.
+// @Description  The authenticated admin variant (/admin/api/v1/config) also includes provider credentials, internal callback settings and the merchant X Layer receiving address.
 // @Tags         Payment Config
 // @Produce      json
 // @Success      200 {object} response.ApiResponse{data=response.PublicConfigResponse}
@@ -108,7 +93,7 @@ func (c *BaseCommController) GetPublicConfig(ctx echo.Context) error {
 		AllowTokens: data.GetOkPayAllowTokens(),
 	}
 	xlayer := response.XLayerPublicConfig{
-		Enabled:     data.GetXLayerEnabled(),
+		Enabled:     data.GetXLayerEnabled() && data.XLayerConfigured(),
 		AllowTokens: data.GetXLayerAllowTokens(),
 	}
 	if ctx.Get(middleware.AdminUserIDKey) != nil {

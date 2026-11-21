@@ -10,7 +10,7 @@ import (
 // ListChains returns all chain rows ordered by id.
 func ListChains() ([]mdb.Chain, error) {
 	var rows []mdb.Chain
-	err := dao.Mdb.Model(&mdb.Chain{}).Order("id ASC").Find(&rows).Error
+	err := dao.Mdb.Model(&mdb.Chain{}).Where("network <> ?", mdb.NetworkXLayer).Order("id ASC").Find(&rows).Error
 	return rows, err
 }
 
@@ -18,7 +18,7 @@ func ListChains() ([]mdb.Chain, error) {
 func ListEnabledChains() ([]mdb.Chain, error) {
 	var rows []mdb.Chain
 	err := dao.Mdb.Model(&mdb.Chain{}).
-		Where("enabled = ?", true).
+		Where("enabled = ? AND network <> ?", true, mdb.NetworkXLayer).
 		Order("id ASC").Find(&rows).Error
 	return rows, err
 }

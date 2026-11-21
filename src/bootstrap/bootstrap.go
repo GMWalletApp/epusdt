@@ -8,7 +8,6 @@ import (
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/mq"
-	"github.com/GMWalletApp/epusdt/task"
 	"github.com/GMWalletApp/epusdt/telegram"
 	appjwt "github.com/GMWalletApp/epusdt/util/jwt"
 	"github.com/GMWalletApp/epusdt/util/log"
@@ -72,7 +71,6 @@ func InitApp() {
 		if err != nil {
 			color.Red.Printf("[bootstrap] ensure default api key err=%s\n", err)
 		}
-		task.Start()
 		mq.Start()
 		go telegram.BotStart()
 	})

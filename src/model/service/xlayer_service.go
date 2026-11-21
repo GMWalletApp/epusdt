@@ -89,15 +89,6 @@ func xlayerTokenContract(token string) (string, bool) {
 	return contract, ok
 }
 
-// IsPayableXLayerToken reports whether the symbol is one of the tokens this
-// integration can actually create OKX orders for (contract known). The
-// cashier listing uses it so a chain_tokens row with an unmapped symbol
-// never surfaces as a selectable option that would always fail at create.
-func IsPayableXLayerToken(token string) bool {
-	_, ok := xlayerTokenContract(token)
-	return ok
-}
-
 // xlayerSign builds the OK-ACCESS-SIGN header value.
 func xlayerSign(secret, timestamp, method, requestPath, body string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
@@ -329,9 +320,6 @@ func xlayerExpireSeconds() int {
 // provider offers no webhook, so this is the only confirmation path; a
 // page redirect or a txHash alone never marks an order paid.
 func PollXLayerProviderOrders() {
-	if !data.GetXLayerEnabled() {
-		return
-	}
 	rows, err := data.ListPendingProviderOrdersByProvider(mdb.PaymentProviderXLayer)
 	if err != nil {
 		log.Sugar.Warnf("[xlayer] list pending provider orders failed err=%v", err)
@@ -340,8 +328,8 @@ func PollXLayerProviderOrders() {
 	if len(rows) == 0 {
 		return
 	}
-	toAddress := data.GetXLayerToAddress()
 	for _, row := range rows {
+		toAddress := row.ReceiveAddress
 		if strings.TrimSpace(row.ProviderOrderID) == "" {
 			continue
 		}
@@ -407,7 +395,7 @@ func PollXLayerProviderOrders() {
 // settled amount is the full order amount, so no local amount replay is
 // attempted here (the local rate can move between create and settle).
 func xlayerSettleMatches(order *mdb.Orders, result *xlayerQueryData, toAddress string) bool {
-	if toAddress != "" && !strings.EqualFold(strings.TrimSpace(result.To), strings.TrimSpace(toAddress)) {
+	if toAddress == "" || !strings.EqualFold(strings.TrimSpace(result.To), strings.TrimSpace(toAddress)) {
 		log.Sugar.Warnf("[xlayer] settle to-address mismatch trade_id=%s got=%s want=%s", order.TradeId, result.To, toAddress)
 		return false
 	}

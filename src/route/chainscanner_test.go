@@ -12,7 +12,6 @@ import (
 )
 
 func TestScannerAdminBlacklistAndFallback(t *testing.T) {
-	e, jwt := setupAdminTestEnv(t)
 	store, err := scanner.Open(":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -33,6 +32,7 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	t.Setenv("CHAINSCANNER_URL", server.URL)
 	t.Setenv("CHAINSCANNER_ADMIN_TOKEN", adminToken)
 	t.Setenv("CHAINSCANNER_TOKEN", consumer)
+	e, jwt := setupAdminTestEnv(t)
 	settingsPath := "/admin/api/v1/settings"
 	settings := doGetAdmin(e, settingsPath+"?group=system", jwt)
 	if settings.Code != 200 {

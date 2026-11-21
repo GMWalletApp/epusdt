@@ -26,6 +26,7 @@ func UpsertProviderOrderCreatingWithTransaction(tx *gorm.DB, row *mdb.ProviderOr
 		Columns: []clause.Column{{Name: "trade_id"}, {Name: "provider"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"provider_order_id",
+			"receive_address",
 			"pay_url",
 			"amount",
 			"coin",

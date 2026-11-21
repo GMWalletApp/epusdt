@@ -1033,6 +1033,7 @@ func completeWaitSelectXLayerOrder(parent *mdb.Orders, token string) (*response.
 	providerRow := &mdb.ProviderOrder{
 		TradeId:         parent.TradeId,
 		Provider:        mdb.PaymentProviderXLayer,
+		ReceiveAddress:  toAddress,
 		ProviderOrderID: "",
 		PayURL:          "",
 		Amount:          tokenAmount.InexactFloat64(),
@@ -1089,10 +1090,10 @@ func completeWaitSelectXLayerOrder(parent *mdb.Orders, token string) (*response.
 
 func switchToXLayer(parent *mdb.Orders, token string) (*response.CheckoutCounterResponse, error) {
 	token = normalizeXLayerToken(token)
-	if !data.GetXLayerEnabled() || !data.IsChainEnabled(mdb.NetworkXLayer) {
+	if !data.GetXLayerEnabled() {
 		return nil, constant.PaymentProviderNotEnabled
 	}
-	if data.GetXLayerAPIKey() == "" || data.GetXLayerAPISecret() == "" || data.GetXLayerPassphrase() == "" || data.GetXLayerToAddress() == "" {
+	if !data.XLayerConfigured() {
 		return nil, constant.PaymentProviderConfigErr
 	}
 	if !xlayerTokenAllowed(token) {
@@ -1207,6 +1208,7 @@ func switchToXLayer(parent *mdb.Orders, token string) (*response.CheckoutCounter
 	providerRow := &mdb.ProviderOrder{
 		TradeId:         subTradeID,
 		Provider:        mdb.PaymentProviderXLayer,
+		ReceiveAddress:  toAddress,
 		ProviderOrderID: "",
 		PayURL:          "",
 		Amount:          tokenAmount.InexactFloat64(),

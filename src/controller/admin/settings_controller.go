@@ -3,7 +3,9 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -52,18 +54,8 @@ import (
 //     xlayer.passphrase      (string) — OKX API passphrase
 //     xlayer.return_url      (string) — optional default browser return URL after payment
 //     xlayer.timeout_seconds (int)    — outbound X Layer API timeout in seconds
-//     The Onchain OS Payment API base URL is NOT configurable: it is the
-//     fixed xlayerAPIBaseURL constant (https://web3.okx.com) in
-//     model/service/xlayer_service.go. A leftover xlayer.api_url row may
-//     exist in the settings table; it is ignored.
-//     Legacy keys, kept only as fallbacks when the authoritative tables have
-//     no xlayer rows yet (see XLAYER-ADMIN-INTEGRATION-DESIGN.md):
-//     xlayer.to_address      (string) — receiving address; the wallet_address
-//                                         table (network=xlayer, enabled) is
-//                                         the single source of truth
-//     xlayer.allow_tokens    (string) — token list; the chain_tokens table
-//                                         (network=xlayer, enabled) is the
-//                                         single source of truth
+//     xlayer.to_address      (string) — merchant receiving address sent in every OKX create request
+//     xlayer.allow_tokens    (string) — comma-separated accepted tokens from USDC, USDT0 and USDG
 //
 //   - group=brand:
 //     brand.checkout_name    (string) — cashier display name (preferred)
@@ -252,6 +244,31 @@ func normalizeSettingValue(value interface{}) (string, error) {
 
 func normalizeAndValidateSettingItem(group, key, value string) (string, error) {
 	switch key {
+	case mdb.SettingKeyXLayerToAddress:
+		value = strings.TrimSpace(value)
+		if group != mdb.SettingGroupXLayer || (value != "" && (!ethcommon.IsHexAddress(value) || !strings.HasPrefix(value, "0x") || ethcommon.HexToAddress(value) == (ethcommon.Address{}))) {
+			return value, fmt.Errorf("invalid X Layer receiving address")
+		}
+		return value, nil
+	case mdb.SettingKeyXLayerAllowTokens:
+		if group != mdb.SettingGroupXLayer {
+			return value, fmt.Errorf("invalid X Layer settings group")
+		}
+		var tokens []string
+		for _, item := range strings.Split(value, ",") {
+			symbol := strings.ToUpper(strings.TrimSpace(item))
+			switch symbol {
+			case "":
+				continue
+			case "USDC", "USDT0", "USDG":
+				if !slices.Contains(tokens, symbol) {
+					tokens = append(tokens, symbol)
+				}
+			default:
+				return value, fmt.Errorf("unsupported X Layer token")
+			}
+		}
+		return strings.Join(tokens, ","), nil
 	case mdb.SettingKeyStrictPayment:
 		if group != mdb.SettingGroupSystem || (value != "true" && value != "false") {
 			return value, fmt.Errorf("%s requires a system boolean", key)

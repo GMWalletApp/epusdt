@@ -188,9 +188,13 @@ Crypto assets are a high-risk emerging asset class. Stablecoins and other digita
   </sub>
 </p>
 
+## OKX OnchainOS payments
+
+In the admin console, open OKX OnchainOS settings. Enter your API key, secret, passphrase and merchant X Layer receiving address, select accepted tokens and enable the provider. The cashier lists OKX OnchainOS as a separate payment method. Once the buyer chooses a token, EPUSDT submits the amount, token and receiving address to OKX and opens the hosted checkout URL returned for that order in the current tab. EPUSDT confirms payment after checking the settled order returned by the query API.
+
 ## ChainScanner integration
 
-Run ChainScanner as a separate service and configure EPUSDT with its HTTP(S) origin in `CHAINSCANNER_URL` and a dedicated consumer credential in `CHAINSCANNER_TOKEN`. Set a separate `CHAINSCANNER_ADMIN_TOKEN` for scan progress, node diagnostics and blacklist management. Configure persistent scanner storage and reconcile pending orders when migrating. The default event transport is WebSocket. Set `CHAINSCANNER_TRANSPORT=grpc` for bidirectional streaming or `http` for long polling.
+EPUSDT starts ChainScanner in-process by default, using a private loopback port and automatically generated credentials. Subscriptions, cursors and node settings persist in `chainscanner.sqlite` in the EPUSDT runtime directory. To use a standalone scanner instead, configure its HTTP(S) origin in `CHAINSCANNER_URL` and a dedicated consumer credential in `CHAINSCANNER_TOKEN`. Set a separate `CHAINSCANNER_ADMIN_TOKEN` for scan progress, node diagnostics and blacklist management. Configure persistent scanner storage and reconcile pending orders when migrating. The default event transport is WebSocket. Set `CHAINSCANNER_TRANSPORT=grpc` for bidirectional streaming or `http` for long polling.
 
 EPUSDT registers enabled receiving addresses and acknowledges events after persisting the payment decision. System settings enable strict verification by default. Candidate payments require matching results from two independent nodes, followed by order and depth checks. Two failed rounds trigger manual review. Disabling strict verification applies to newly queued candidates. The authenticated console API exposes scanner node, fallback, blacklist, height and transaction operations under `/admin/api/v1/chainscanner`. See the [v1 API](chainscanner/docs/api/en.md).
 

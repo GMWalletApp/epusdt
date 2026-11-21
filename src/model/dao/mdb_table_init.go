@@ -58,17 +58,12 @@ func MdbTableInit() {
 		seedRpcNodes()
 		seedChainTokens()
 		seedDefaultSettings()
-		seedXLayerWalletFromSettings()
 		seedTelegramChannelFromSettings()
 	})
 }
 
 // seedChains inserts the built-in networks as enabled rows. Uses
 // ON CONFLICT DO NOTHING so re-runs are no-ops and admin edits persist.
-// X Layer is included so the admin chains/addresses pages can manage the
-// hosted-checkout pseudo-network like any other network; no scanner reads
-// it (all scanner tasks are hardcoded per network), and CreateTransaction
-// rejects concrete orders against it. See XLAYER-ADMIN-INTEGRATION-DESIGN.md.
 func seedChains() {
 	defaults := []mdb.Chain{
 		{Network: mdb.NetworkSui, DisplayName: "Sui", Enabled: true, MinConfirmations: 1, ScanIntervalSec: 3},
@@ -87,7 +82,6 @@ func seedChains() {
 		{Network: mdb.NetworkPlasma, DisplayName: "Plasma", Enabled: true, MinConfirmations: 1, ScanIntervalSec: 5},
 		{Network: mdb.NetworkTon, DisplayName: "TON", Enabled: true, MinConfirmations: 1, ScanIntervalSec: 5},
 		{Network: mdb.NetworkAptos, DisplayName: "Aptos", Enabled: true, MinConfirmations: 1, ScanIntervalSec: 5},
-		{Network: mdb.NetworkXLayer, DisplayName: "X Layer", Enabled: true},
 	}
 	if err := Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&defaults).Error; err != nil {
 		color.Red.Printf("[store_db] seed chains err=%s\n", err)
@@ -142,15 +136,6 @@ func seedChainTokens() {
 		{Network: mdb.NetworkTon, Symbol: "USDT", ContractAddress: "0:b113a994b5024a16719f69139328eb759596c38a25f59028b146fecdc3621dfe", Decimals: 6, Enabled: true},
 		{Network: mdb.NetworkAptos, Symbol: "USDC", ContractAddress: "0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b", Decimals: 6, Enabled: true},
 		{Network: mdb.NetworkAptos, Symbol: "USDT", ContractAddress: "0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d6ffc9dc2b", Decimals: 6, Enabled: true},
-		// X Layer hosted checkout (OKX Onchain OS Payment). The contracts
-		// must stay in sync with xlayerTokenContracts in
-		// model/service/xlayer_service.go — that map, not this table, is
-		// what the create-order API call actually uses. These rows exist
-		// so the admin chains page can toggle which tokens the cashier
-		// offers. USD₮0 is normalized to the ASCII USDT0.
-		{Network: mdb.NetworkXLayer, Symbol: "USDC", ContractAddress: "0xb6ceceab302e2e4948951ee7843fc24e92933061", Decimals: 6, Enabled: true},
-		{Network: mdb.NetworkXLayer, Symbol: "USDT0", ContractAddress: "0x779ded0c9e1022225f8e0630b35a9b54be713736", Decimals: 6, Enabled: true},
-		{Network: mdb.NetworkXLayer, Symbol: "USDG", ContractAddress: "0x4ae46a509f6b1d9056937ba4500cb143933d2dc8", Decimals: 6, Enabled: true},
 	}
 	if err := Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&defaults).Error; err != nil {
 		color.Red.Printf("[store_db] seed chain_tokens err=%s\n", err)
@@ -253,73 +238,6 @@ func seedDefaultSettings() {
 	if err := Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&defaults).Error; err != nil {
 		color.Red.Printf("[store_db] seed default settings err=%s\n", err)
 	}
-}
-
-// seedXLayerWalletFromSettings migrates the legacy settings-only X Layer
-// receiving address (xlayer.to_address) into the wallet_address table, which
-// is the single source of truth since the admin-integration change
-// (XLAYER-ADMIN-INTEGRATION-DESIGN.md). Idempotent: no-op when any X Layer
-// wallet row already exists (soft-deleted rows are restored so the
-// (network, address) unique index is never violated). data.GetXLayerToAddress
-// falls back to the settings key, so installs that seed successfully are
-// unaffected either way.
-func seedXLayerWalletFromSettings() {
-	// Any live (non-deleted) X Layer wallet row means the address is already
-	// migrated or admin-managed on the addresses page — wallet_address is the
-	// source of truth from here on, so the settings key is ignored.
-	var liveCount int64
-	if err := Mdb.Model(&mdb.WalletAddress{}).
-		Where("network = ? AND deleted_at IS NULL", mdb.NetworkXLayer).
-		Count(&liveCount).Error; err != nil {
-		color.Red.Printf("[store_db] seed xlayer wallet check err=%s\n", err)
-		return
-	}
-	if liveCount > 0 {
-		return
-	}
-	var setting mdb.Setting
-	if err := Mdb.Where("`key` = ?", mdb.SettingKeyXLayerToAddress).Limit(1).Find(&setting).Error; err != nil {
-		color.Red.Printf("[store_db] seed xlayer wallet read setting err=%s\n", err)
-		return
-	}
-	address := strings.TrimSpace(setting.Value)
-	if address == "" {
-		return
-	}
-	// A soft-deleted row with the same (network, address) would violate the
-	// unique index on insert; restore it instead of creating a duplicate.
-	var deleted mdb.WalletAddress
-	if err := Mdb.Unscoped().
-		Where("network = ? AND address = ? AND deleted_at IS NOT NULL", mdb.NetworkXLayer, address).
-		Limit(1).Find(&deleted).Error; err != nil {
-		color.Red.Printf("[store_db] seed xlayer wallet lookup deleted err=%s\n", err)
-		return
-	}
-	if deleted.ID > 0 {
-		if err := Mdb.Unscoped().Model(&deleted).Updates(map[string]interface{}{
-			"deleted_at": nil,
-			"status":     mdb.TokenStatusEnable,
-			"source":     mdb.WalletSourceManual,
-			"remark":     "迁移自 OKX OnchainOS 配置的收款地址",
-		}).Error; err != nil {
-			color.Red.Printf("[store_db] seed xlayer wallet restore err=%s\n", err)
-			return
-		}
-		color.Green.Printf("[store_db] restored soft-deleted xlayer wallet_address (id=%d)\n", deleted.ID)
-		return
-	}
-	row := &mdb.WalletAddress{
-		Network: mdb.NetworkXLayer,
-		Address: address,
-		Status:  mdb.TokenStatusEnable,
-		Source:  mdb.WalletSourceManual,
-		Remark:  "迁移自 OKX OnchainOS 配置的收款地址",
-	}
-	if err := Mdb.Create(row).Error; err != nil {
-		color.Red.Printf("[store_db] seed xlayer wallet create err=%s\n", err)
-		return
-	}
-	color.Green.Printf("[store_db] migrated xlayer.to_address into wallet_address (id=%d)\n", row.ID)
 }
 
 // defaultRateModeForSeed keeps fresh installations on the safe fixed default,

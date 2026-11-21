@@ -1,0 +1,1 @@
+import{t as e}from"./not-found-error-Bgum5xdg.js";var t=e;export{t as component};

@@ -23,7 +23,9 @@ const (
 // The main orders table remains the source of truth for merchant-facing state,
 // while this table keeps provider-specific identifiers and callback payloads.
 type ProviderOrder struct {
-	TradeId string `gorm:"column:trade_id;size:32;not null;uniqueIndex:provider_orders_trade_id_provider_uindex,priority:1;index:provider_orders_trade_id_index" json:"trade_id" example:"3nQ9pL2xV7sK1mR8cT4yB_aZ"`
+	// ReceiveAddress pins the destination used to create a hosted OKX order.
+	ReceiveAddress string `gorm:"column:receive_address;size:64" json:"-"`
+	TradeId        string `gorm:"column:trade_id;size:32;not null;uniqueIndex:provider_orders_trade_id_provider_uindex,priority:1;index:provider_orders_trade_id_index" json:"trade_id" example:"3nQ9pL2xV7sK1mR8cT4yB_aZ"`
 	// Provider values should match the bound Orders.PayProvider value.
 	Provider string `gorm:"column:provider;size:32;not null;uniqueIndex:provider_orders_trade_id_provider_uindex,priority:2;index:provider_orders_provider_status_index,priority:1" json:"provider" example:"okpay"`
 	// ProviderOrderID is the downstream provider's own order identifier for the

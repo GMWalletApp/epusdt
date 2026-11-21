@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/GMWalletApp/epusdt/bootstrap"
@@ -14,6 +15,7 @@ import (
 	"github.com/GMWalletApp/epusdt/install"
 	"github.com/GMWalletApp/epusdt/middleware"
 	"github.com/GMWalletApp/epusdt/route"
+	"github.com/GMWalletApp/epusdt/task"
 	"github.com/GMWalletApp/epusdt/util/constant"
 	luluHttp "github.com/GMWalletApp/epusdt/util/http"
 	"github.com/GMWalletApp/epusdt/util/log"
@@ -61,7 +63,9 @@ func HttpServerStart() {
 	e.HTTPErrorHandler = customHTTPErrorHandler
 
 	MiddlewareRegister(e)
-	route.RegisterRoute(e)
+	scanner, stopTasks := task.Start()
+	defer stopTasks()
+	route.RegisterRouteWithScanner(e, scanner)
 	e.Static(config.StaticPath, config.StaticFilePath)
 
 	// Resolve www/ relative to the executable so SPA routes work regardless
@@ -106,7 +110,8 @@ func HttpServerStart() {
 	}()
 
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt, os.Kill)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(quit)
 	<-quit
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

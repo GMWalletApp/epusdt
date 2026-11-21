@@ -16,9 +16,24 @@ func scannerOption(key string) string {
 	return strings.TrimSpace(viper.GetString(strings.ToLower(key)))
 }
 
-// ScannerEndpoint is set by the operator, never by an incoming API request.
-func ScannerEndpoint() (string, error) {
-	raw := scannerOption("CHAINSCANNER_URL")
+// ScannerConnection is resolved once at startup and shared by the payment
+// workers and the authenticated admin proxy.
+type ScannerConnection struct {
+	URL, ConsumerToken, AdminToken, Transport string
+}
+
+func ExternalScanner() ScannerConnection {
+	return ScannerConnection{
+		URL: scannerOption("CHAINSCANNER_URL"), ConsumerToken: scannerOption("CHAINSCANNER_TOKEN"),
+		AdminToken: scannerOption("CHAINSCANNER_ADMIN_TOKEN"), Transport: scannerOption("CHAINSCANNER_TRANSPORT"),
+	}
+}
+
+func (c ScannerConnection) Endpoint() (string, error) {
+	raw := c.URL
+	if raw == "" {
+		return "", errors.New("embedded ChainScanner unavailable; check EPUSDT startup logs")
+	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") || (u.Path != "" && u.Path != "/") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return "", errors.New("configure CHAINSCANNER_URL with the scanner HTTP(S) origin")
@@ -26,10 +41,10 @@ func ScannerEndpoint() (string, error) {
 	return strings.TrimRight(raw, "/"), nil
 }
 
-func ScannerToken(admin bool) (string, error) {
-	token := scannerOption("CHAINSCANNER_TOKEN")
+func (c ScannerConnection) Token(admin bool) (string, error) {
+	token := c.ConsumerToken
 	if admin {
-		other := scannerOption("CHAINSCANNER_ADMIN_TOKEN")
+		other := c.AdminToken
 		if other == token {
 			return "", errors.New("configure a separate ChainScanner administrator token")
 		}
@@ -40,5 +55,3 @@ func ScannerToken(admin bool) (string, error) {
 	}
 	return token, nil
 }
-
-func ScannerTransport() string { return scannerOption("CHAINSCANNER_TRANSPORT") }

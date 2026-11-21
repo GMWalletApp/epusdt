@@ -1,6 +1,7 @@
 package data
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -312,68 +313,25 @@ func GetXLayerTimeoutSeconds() int {
 	return GetSettingInt(mdb.SettingKeyXLayerTimeoutSeconds, 10)
 }
 
-// GetXLayerToAddress returns the merchant X Layer receiving address. The
-// wallet_address table (network=xlayer, status=enabled) is the single source
-// of truth since the admin-integration change — the address is managed on
-// the admin addresses page like any other network. With multiple enabled
-// rows the oldest one wins: the hosted checkout takes exactly one `to`.
-// Falls back to the legacy settings key when no enabled wallet row exists
-// (installs seeded before the migration, and unit tests). See
-// XLAYER-ADMIN-INTEGRATION-DESIGN.md.
 func GetXLayerToAddress() string {
-	var row mdb.WalletAddress
-	err := dao.Mdb.Model(&mdb.WalletAddress{}).
-		Where("network = ? AND status = ?", mdb.NetworkXLayer, mdb.TokenStatusEnable).
-		Order("id ASC").Limit(1).Find(&row).Error
-	if err == nil && row.ID > 0 {
-		return strings.TrimSpace(row.Address)
-	}
 	return strings.TrimSpace(GetSettingString(mdb.SettingKeyXLayerToAddress, ""))
 }
 
-// GetXLayerAllowTokens returns the X Layer tokens the cashier may offer.
-// The chain_tokens table (network=xlayer) is the single source of truth —
-// the per-token switches on the admin chains page write there — so the
-// cashier listing and the switch-network validation (xlayerTokenAllowed)
-// always agree. When the table carries no xlayer rows at all (unit tests,
-// un-migrated installs), the legacy settings key is used as a fallback.
-// An all-disabled table intentionally yields an empty list.
 func GetXLayerAllowTokens() []string {
-	var rows []mdb.ChainToken
-	err := dao.Mdb.Model(&mdb.ChainToken{}).
-		Where("network = ?", mdb.NetworkXLayer).
-		Order("id ASC").Find(&rows).Error
-	if err == nil && len(rows) > 0 {
-		out := make([]string, 0, len(rows))
-		for _, row := range rows {
-			if !row.Enabled {
-				continue
+	tokens := []string{}
+	for _, item := range strings.Split(GetSettingString(mdb.SettingKeyXLayerAllowTokens, ""), ",") {
+		switch symbol := strings.ToUpper(strings.TrimSpace(item)); symbol {
+		case "USDC", "USDT0", "USDG":
+			if !slices.Contains(tokens, symbol) {
+				tokens = append(tokens, symbol)
 			}
-			token := strings.ToUpper(strings.TrimSpace(row.Symbol))
-			if token == "" {
-				continue
-			}
-			out = append(out, token)
 		}
-		return out
 	}
-	raw := GetSettingString(mdb.SettingKeyXLayerAllowTokens, "USDC,USDT0,USDG")
-	if strings.TrimSpace(raw) == "" {
-		return []string{"USDC", "USDT0", "USDG"}
-	}
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		token := strings.ToUpper(strings.TrimSpace(part))
-		if token == "" {
-			continue
-		}
-		out = append(out, token)
-	}
-	if len(out) == 0 {
-		return []string{"USDC", "USDT0", "USDG"}
-	}
-	return out
+	return tokens
+}
+
+func XLayerConfigured() bool {
+	return GetXLayerAPIKey() != "" && GetXLayerAPISecret() != "" && GetXLayerPassphrase() != "" && GetXLayerToAddress() != ""
 }
 
 // ListSettingsByGroup returns all rows for a given group (empty group = all),

@@ -256,6 +256,7 @@ func TestPollXLayerProviderOrdersSettlesOrder(t *testing.T) {
 		TradeId:         "test-order-1",
 		Provider:        mdb.PaymentProviderXLayer,
 		ProviderOrderID: "pi_test_1",
+		ReceiveAddress:  data.GetXLayerToAddress(),
 		PayURL:          "https://web3.okx.com/pay/checkout/pi_test_1",
 		Amount:          1.470588,
 		Coin:            "USDC",
@@ -265,6 +266,9 @@ func TestPollXLayerProviderOrdersSettlesOrder(t *testing.T) {
 		t.Fatalf("seed provider order: %v", err)
 	}
 
+	if err := data.SetSetting(mdb.SettingGroupXLayer, mdb.SettingKeyXLayerToAddress, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", mdb.SettingTypeString); err != nil {
+		t.Fatal(err)
+	}
 	PollXLayerProviderOrders()
 
 	after, err := data.GetOrderInfoByTradeId("test-order-1")
@@ -327,20 +331,23 @@ func TestSwitchToXLayerFromCashierWithoutScanner(t *testing.T) {
 	if err := dao.Mdb.Create(parent).Error; err != nil {
 		t.Fatal(err)
 	}
-	chain := &mdb.Chain{Network: mdb.NetworkXLayer, Enabled: true}
-	if err := dao.Mdb.Where("network = ?", chain.Network).Assign(map[string]interface{}{"enabled": true}).FirstOrCreate(chain).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := dao.Mdb.Model(chain).Update("enabled", false).Error; err != nil {
-		t.Fatal(err)
-	}
 	req := &request.SwitchNetworkRequest{TradeId: parent.TradeId, Network: mdb.NetworkXLayer, Token: "USDT0"}
+	set := func(key, value, kind string) {
+		t.Helper()
+		if err := data.SetSetting(mdb.SettingGroupXLayer, key, value, kind); err != nil {
+			t.Fatal(err)
+		}
+	}
+	set(mdb.SettingKeyXLayerEnabled, "false", mdb.SettingTypeBool)
 	if _, err := SwitchNetwork(req); err != constant.PaymentProviderNotEnabled {
-		t.Fatalf("disabled X Layer returned %v", err)
+		t.Fatalf("disabled provider returned %v", err)
 	}
-	if err := dao.Mdb.Model(chain).Update("enabled", true).Error; err != nil {
-		t.Fatal(err)
+	set(mdb.SettingKeyXLayerEnabled, "true", mdb.SettingTypeBool)
+	set(mdb.SettingKeyXLayerAllowTokens, "USDC", mdb.SettingTypeString)
+	if _, err := SwitchNetwork(req); err != constant.PaymentProviderNotSupport {
+		t.Fatalf("disabled token returned %v", err)
 	}
+	set(mdb.SettingKeyXLayerAllowTokens, "USDT0", mdb.SettingTypeString)
 
 	oldWatch := EnsurePaymentWatch
 	EnsurePaymentWatch = func(string, string) error { t.Fatal("hosted checkout attempted a scanner subscription"); return nil }
