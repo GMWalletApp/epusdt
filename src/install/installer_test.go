@@ -141,6 +141,7 @@ func TestWriteEnvFile(t *testing.T) {
 		"order_notice_max_retry=3",
 		"db_type=sqlite",
 		"install=false",
+		"chainscanner_transport=ws",
 	} {
 		if !strings.Contains(content, want) {
 			t.Errorf("env file missing %q\ncontent:\n%s", want, content)

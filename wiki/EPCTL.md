@@ -33,11 +33,13 @@
 |------|------|
 | 安装目录 | `/opt/epusdt` |
 | 主程序 | `/opt/epusdt/epusdt` |
+| 扫链程序 | `/opt/epusdt/chainscanner` |
 | 配置文件 | `/opt/epusdt/.env` |
+| 扫链配置 | `/opt/epusdt/chainscanner.json` |
 | 示例配置 | `/opt/epusdt/.env.example` |
 | 前端释放目录 | `/opt/epusdt/www` |
 | 下载缓存 | `/tmp/epusdt/<tag>/` |
-| systemd unit | `/etc/systemd/system/epusdt.service` |
+| systemd unit | `/etc/systemd/system/epusdt.service`、`/etc/systemd/system/chainscanner.service` |
 | epctl 全局安装位置 | `/usr/local/bin/epctl` |
 
 ## 快速开始
@@ -72,7 +74,7 @@ epctl
 ./epctl download --tag v1.0.8
 ```
 
-安装服务：
+安装服务（默认 `--component all`，同时部署 `epusdt` 与 `chainscanner` 并自动完成内部连接）：
 
 ```bash
 ./epctl install --tag v1.0.8 \
@@ -80,7 +82,25 @@ epctl
   --listen 127.0.0.1:18000
 ```
 
-升级到新版本：
+分机/独立部署 `chainscanner`（自动生成或自定义 Token，并在终端打印连接凭证）：
+
+```bash
+./epctl install --component chainscanner \
+  --scanner-listen 0.0.0.0:9081
+```
+
+分机/独立部署 `epusdt`（对接远端 `chainscanner`）：
+
+```bash
+./epctl install --component epusdt \
+  --app-uri https://pay.example.com \
+  --listen 127.0.0.1:8000 \
+  --scanner-url http://10.0.0.2:9081 \
+  --scanner-token <chainscanner_token> \
+  --scanner-admin-token <chainscanner_admin_token>
+```
+
+升级到新版本（自动按当前已安装组件升级，也可通过 `--component all|epusdt|chainscanner` 指定）：
 
 ```bash
 ./epctl upgrade --tag v1.0.9

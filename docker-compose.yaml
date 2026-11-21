@@ -1,11 +1,49 @@
 services:
-  epusdt:
-    image: gmwallet/epusdt:latest
-    restart: always
+  chainscanner:
     build:
       context: .
       dockerfile: Dockerfile
+    image: gmwallet/epusdt:latest
+    container_name: epusdt-chainscanner
+    restart: always
+    command: ["./chainscanner", "-config", "/app/runtime/chainscanner.json"]
+    environment:
+      CHAINSCANNER_LISTEN: "0.0.0.0:9081"
+      CHAINSCANNER_DB: "/app/runtime/chainscanner.db"
+      CHAINSCANNER_TOKEN: "${CHAINSCANNER_TOKEN:-epusdt_internal_scanner_token_9f8e7d6c5b4a}"
+      CHAINSCANNER_ADMIN_TOKEN: "${CHAINSCANNER_ADMIN_TOKEN:-epusdt_internal_admin_token_1a2b3c4d5e6f}"
+    expose:
+      - "9081"
     volumes:
-      - ./env:/app/.env
+      - ./runtime/chainscanner:/app/runtime
+    networks:
+      - epusdt-net
+
+  epusdt:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gmwallet/epusdt:latest
+    container_name: epusdt
+    restart: always
+    depends_on:
+      - chainscanner
     ports:
-      - "8000:8000"
+      - "${EPUSDT_PORT:-8000}:8000"
+    environment:
+      EPUSDT_CONFIG: "/app/runtime/.env"
+      EPUSDT_INSTALL: "${EPUSDT_INSTALL:-false}"
+      APP_URI: "${APP_URI:-http://127.0.0.1:8000}"
+      HTTP_LISTEN: "0.0.0.0:8000"
+      CHAINSCANNER_URL: "http://chainscanner:9081"
+      CHAINSCANNER_TOKEN: "${CHAINSCANNER_TOKEN:-epusdt_internal_scanner_token_9f8e7d6c5b4a}"
+      CHAINSCANNER_ADMIN_TOKEN: "${CHAINSCANNER_ADMIN_TOKEN:-epusdt_internal_admin_token_1a2b3c4d5e6f}"
+      CHAINSCANNER_TRANSPORT: "${CHAINSCANNER_TRANSPORT:-ws}"
+    volumes:
+      - ./runtime/epusdt:/app/runtime
+    networks:
+      - epusdt-net
+
+networks:
+  epusdt-net:
+    driver: bridge

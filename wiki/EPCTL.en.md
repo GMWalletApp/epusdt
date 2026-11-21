@@ -33,11 +33,13 @@ Notes:
 |------|------|
 | Install directory | `/opt/epusdt` |
 | Main binary | `/opt/epusdt/epusdt` |
+| Scanner binary | `/opt/epusdt/chainscanner` |
 | Active config | `/opt/epusdt/.env` |
+| Scanner config | `/opt/epusdt/chainscanner.json` |
 | Example config | `/opt/epusdt/.env.example` |
 | Extracted frontend assets | `/opt/epusdt/www` |
 | Download cache | `/tmp/epusdt/<tag>/` |
-| systemd unit | `/etc/systemd/system/epusdt.service` |
+| systemd unit | `/etc/systemd/system/epusdt.service`, `/etc/systemd/system/chainscanner.service` |
 | Global epctl path | `/usr/local/bin/epctl` |
 
 ## Quick Start
@@ -72,7 +74,7 @@ Download a specific release:
 ./epctl download --tag v1.0.8
 ```
 
-Install the service:
+Install the service (defaults to `--component all`, deploying both `epusdt` and `chainscanner` pre-wired together):
 
 ```bash
 ./epctl install --tag v1.0.8 \
@@ -80,7 +82,25 @@ Install the service:
   --listen 127.0.0.1:18000
 ```
 
-Upgrade to a newer release:
+Deploy `chainscanner` standalone (auto-generates or accepts tokens and prints connection credentials):
+
+```bash
+./epctl install --component chainscanner \
+  --scanner-listen 0.0.0.0:9081
+```
+
+Deploy `epusdt` standalone (connecting to a remote `chainscanner`):
+
+```bash
+./epctl install --component epusdt \
+  --app-uri https://pay.example.com \
+  --listen 127.0.0.1:8000 \
+  --scanner-url http://10.0.0.2:9081 \
+  --scanner-token <chainscanner_token> \
+  --scanner-admin-token <chainscanner_admin_token>
+```
+
+Upgrade to a newer release (auto-detects installed components, or pass `--component all|epusdt|chainscanner`):
 
 ```bash
 ./epctl upgrade --tag v1.0.9
