@@ -25,6 +25,16 @@
 
 ---
 
+## Deploy or migrate to EPUSDT
+
+Copy the prompt below and paste it into Codex, Claude Code, Cursor or OpenCode.
+
+```text
+Read https://epusdt.com/agent-setup/prompt.md. Inspect my target environment first, then deploy, upgrade or migrate to EPUSDT (GMPay) using Docker. Preserve existing data. For a new instance, open the setup wizard and let me complete password setup myself.
+```
+
+[Read the deployment checklist](https://epusdt.com/agent-setup/prompt.md)
+
 ## Overview
 
 EPUSDT is a self-hosted crypto payment gateway written in Go. Merchants create orders through the GMPay or EPay-compatible API. Buyers pay the merchant’s wallet, and EPUSDT verifies the transfer before notifying the merchant. Merchants can rotate receiving addresses and receive payment notifications through the Telegram bot.
