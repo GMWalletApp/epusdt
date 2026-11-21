@@ -45,6 +45,26 @@ import (
 //     okpay.timeout_seconds  (int)    — outbound OkPay API timeout in seconds
 //     okpay.allow_tokens     (string) — comma-separated allowed tokens, e.g. "USDT,TRX"
 //
+//   - group=xlayer:
+//     xlayer.enabled         (bool)   — enable X Layer (OKX Onchain OS Payment) as a switch-network payment option
+//     xlayer.api_key         (string) — OKX API Key
+//     xlayer.api_secret      (string) — OKX API Secret (signing key)
+//     xlayer.passphrase      (string) — OKX API passphrase
+//     xlayer.return_url      (string) — optional default browser return URL after payment
+//     xlayer.timeout_seconds (int)    — outbound X Layer API timeout in seconds
+//     The Onchain OS Payment API base URL is NOT configurable: it is the
+//     fixed xlayerAPIBaseURL constant (https://web3.okx.com) in
+//     model/service/xlayer_service.go. A leftover xlayer.api_url row may
+//     exist in the settings table; it is ignored.
+//     Legacy keys, kept only as fallbacks when the authoritative tables have
+//     no xlayer rows yet (see XLAYER-ADMIN-INTEGRATION-DESIGN.md):
+//     xlayer.to_address      (string) — receiving address; the wallet_address
+//                                         table (network=xlayer, enabled) is
+//                                         the single source of truth
+//     xlayer.allow_tokens    (string) — token list; the chain_tokens table
+//                                         (network=xlayer, enabled) is the
+//                                         single source of truth
+//
 //   - group=brand:
 //     brand.checkout_name    (string) — cashier display name (preferred)
 //     brand.logo_url         (string) — logo image URL
@@ -63,7 +83,7 @@ import (
 //     system.amount_precision      (int) — payment amount precision, 2-6 decimals (default 2)
 //     system.log_level             (string) — runtime log level: debug, info, warn, error (default error)
 type SettingUpsertItem struct {
-	Group string      `json:"group" enums:"brand,rate,system,epay,okpay" example:"epay"`
+	Group string      `json:"group" enums:"brand,rate,system,epay,okpay,xlayer" example:"epay"`
 	Key   string      `json:"key" example:"epay.default_network"`
 	Value interface{} `json:"value"`
 	Type  string      `json:"type" enums:"string,int,bool,json" example:"string"`
@@ -77,12 +97,12 @@ type SettingsUpsertRequest struct {
 // ListSettings returns all rows, optionally filtered by group.
 // @Summary      List settings
 // @Description  Returns all settings, optionally filtered by group.
-// @Description  Available groups: brand, rate, system, epay, okpay.
+// @Description  Available groups: brand, rate, system, epay, okpay, xlayer.
 // @Description  See SettingUpsertItem for the full list of supported keys per group.
 // @Tags         Admin Settings
 // @Security     AdminJWT
 // @Produce      json
-// @Param        group query string false "Group filter (brand|rate|system|epay|okpay)"
+// @Param        group query string false "Group filter (brand|rate|system|epay|okpay|xlayer)"
 // @Success      200 {object} response.ApiResponse{data=[]mdb.Setting}
 // @Failure      400 {object} response.ApiResponse
 // @Router       /admin/api/v1/settings [get]
@@ -100,9 +120,10 @@ func (c *BaseAdminController) ListSettings(ctx echo.Context) error {
 // ones. Errors are returned per-key so the UI can surface them.
 // @Summary      Upsert settings
 // @Description  Batch insert/update settings. Returns per-key status; failed items include error_code for frontend i18n.
-// @Description  Supported groups: brand, rate, system, epay, okpay.
+// @Description  Supported groups: brand, rate, system, epay, okpay, xlayer.
 // @Description  epay group keys: epay.default_token (e.g. "usdt" or "ton", ignored when a supported type=token.network selector is supplied, empty allows status=4 placeholders), epay.default_currency (e.g. "cny", still applies when a supported type selector is supplied, empty falls back to cny), epay.default_network (e.g. "tron" or "ton", ignored when a supported type=token.network selector is supplied, empty allows status=4 placeholders).
 // @Description  okpay group keys: okpay.enabled, okpay.shop_id, okpay.shop_token, okpay.api_url, okpay.callback_url, okpay.return_url, okpay.timeout_seconds, okpay.allow_tokens.
+// @Description  xlayer group keys: xlayer.enabled, xlayer.api_key, xlayer.api_secret, xlayer.passphrase, xlayer.to_address, xlayer.return_url, xlayer.timeout_seconds, xlayer.allow_tokens. The Onchain OS Payment base URL is fixed to https://web3.okx.com in code; any leftover xlayer.api_url row is ignored.
 // @Description  rate group keys: rate.mode (fixed|auto, default fixed), rate.cache_ttl_seconds (10-86400, default 300), rate.forced_rate_list (JSON map, e.g. {"cny":{"usdt":0.14635,"ton":0.5}}; base/coin keys are normalized to lowercase; empty is restored to the built-in CNY USDT/USDC default), rate.api_url (optional; non-empty value must be a public http/https URL), rate.adjust_percent, rate.okx_c2c_enabled.
 // @Description  brand group keys: brand.checkout_name, brand.logo_url, brand.site_title, brand.success_copy, brand.support_url, brand.background_color, brand.background_image_url, brand.withdrawal_reminder_enabled. Legacy aliases brand.site_name, brand.page_title and brand.pay_success_text are also supported.
 // @Description  system group keys: system.order_expiration_time, system.amount_precision (int, 2-6, default 2), system.log_level (debug|info|warn|error, default error).

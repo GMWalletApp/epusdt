@@ -22,6 +22,7 @@ const (
 	NetworkAvalanche = "avalanche"
 	NetworkOptimism  = "optimism"
 	NetworkBase      = "base"
+	NetworkXLayer    = "xlayer"
 )
 
 const (

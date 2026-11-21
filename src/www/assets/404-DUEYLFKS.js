@@ -1,0 +1,1 @@
+import{t as e}from"./not-found-error-ChX2Ls50.js";var t=e;export{t as component};

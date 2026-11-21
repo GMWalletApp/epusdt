@@ -12,6 +12,15 @@ import (
 )
 
 func Start() {
+	// Hosted OKX payments settle independently of the on-chain scanner.
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			XLayerPollJob{}.Run()
+		}
+	}()
+
 	url, err := config.ScannerEndpoint()
 	token, tokenErr := config.ScannerToken(false)
 	transport := config.ScannerTransport()

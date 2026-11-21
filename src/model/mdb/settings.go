@@ -1,7 +1,7 @@
 package mdb
 
 // Setting stores non-credential runtime configuration as key/value pairs.
-// Groups: brand, rate, system, epay, okpay. Merchant credentials (pid +
+// Groups: brand, rate, system, epay, okpay, xlayer. Merchant credentials (pid +
 // secret_key) live in the api_keys table; notification configs live in
 // NotificationChannel.
 // Default rows for the system/epay/okpay groups are seeded on first startup
@@ -14,6 +14,7 @@ const (
 	SettingGroupSystem = "system"
 	SettingGroupEpay   = "epay"
 	SettingGroupOkPay  = "okpay"
+	SettingGroupXLayer = "xlayer"
 )
 
 const (
@@ -65,6 +66,20 @@ const (
 	SettingKeyOkPayReturnURL      = "okpay.return_url"
 	SettingKeyOkPayTimeoutSeconds = "okpay.timeout_seconds"
 	SettingKeyOkPayAllowTokens    = "okpay.allow_tokens"
+
+	// X Layer hosted-checkout settings (OKX Onchain OS Payment).
+	// The API key/secret/passphrase authenticate the merchant server to
+	// https://web3.okx.com; to_address is the merchant's own X Layer
+	// receiving address (funds settle there directly, no webhook exists).
+	SettingKeyXLayerEnabled        = "xlayer.enabled"
+	SettingKeyXLayerAPIKey         = "xlayer.api_key"
+	SettingKeyXLayerAPISecret      = "xlayer.api_secret"
+	SettingKeyXLayerPassphrase     = "xlayer.passphrase"
+	SettingKeyXLayerAPIURL         = "xlayer.api_url" // legacy, no longer read (fixed xlayerAPIBaseURL in model/service)
+	SettingKeyXLayerReturnURL      = "xlayer.return_url"
+	SettingKeyXLayerTimeoutSeconds = "xlayer.timeout_seconds"
+	SettingKeyXLayerAllowTokens    = "xlayer.allow_tokens"
+	SettingKeyXLayerToAddress      = "xlayer.to_address"
 )
 
 const (
@@ -75,7 +90,7 @@ const (
 )
 
 type Setting struct {
-	Group       string `gorm:"column:group;size:32;index:settings_group_index" json:"group" enums:"brand,rate,system,epay,okpay" example:"rate"`
+	Group       string `gorm:"column:group;size:32;index:settings_group_index" json:"group" enums:"brand,rate,system,epay,okpay,xlayer" example:"rate"`
 	Key         string `gorm:"column:key;uniqueIndex:settings_key_uindex;size:128" json:"key" example:"rate.forced_rate_list"`
 	Value       string `gorm:"column:value;type:text" json:"value" example:"{\"cny\":{\"usdt\":0.14635}}"`
 	Type        string `gorm:"column:type;size:16;default:string" json:"type" enums:"string,int,bool,json" example:"json"`

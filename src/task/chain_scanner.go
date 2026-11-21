@@ -45,7 +45,7 @@ func (p *paymentSubscriptions) syncLocked(ctx context.Context) error {
 	watches := make([]scanner.Watch, 0, len(wallets))
 
 	for _, w := range wallets {
-		if !enabled[w.Network] {
+		if w.Network == mdb.NetworkXLayer || !enabled[w.Network] {
 			continue
 		}
 		a, e := scanner.Canonical(w.Network, w.Address)

@@ -2385,7 +2385,7 @@
                         "AdminJWT": []
                     }
                 ],
-                "description": "Returns all settings, optionally filtered by group.\nAvailable groups: brand, rate, system, epay, okpay.\nSee SettingUpsertItem for the full list of supported keys per group.",
+                "description": "Returns all settings, optionally filtered by group.\nAvailable groups: brand, rate, system, epay, okpay, xlayer.\nSee SettingUpsertItem for the full list of supported keys per group.",
                 "produces": [
                     "application/json"
                 ],
@@ -2396,7 +2396,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Group filter (brand|rate|system|epay|okpay)",
+                        "description": "Group filter (brand|rate|system|epay|okpay|xlayer)",
                         "name": "group",
                         "in": "query"
                     }
@@ -2437,7 +2437,7 @@
                         "AdminJWT": []
                     }
                 ],
-                "description": "Batch insert/update settings. Returns per-key status; failed items include error_code for frontend i18n.\nSupported groups: brand, rate, system, epay, okpay.\nepay group keys: epay.default_token (e.g. \"usdt\" or \"ton\", ignored when a supported type=token.network selector is supplied, empty allows status=4 placeholders), epay.default_currency (e.g. \"cny\", still applies when a supported type selector is supplied, empty falls back to cny), epay.default_network (e.g. \"tron\" or \"ton\", ignored when a supported type=token.network selector is supplied, empty allows status=4 placeholders).\nokpay group keys: okpay.enabled, okpay.shop_id, okpay.shop_token, okpay.api_url, okpay.callback_url, okpay.return_url, okpay.timeout_seconds, okpay.allow_tokens.\nrate group keys: rate.mode (fixed|auto, default fixed), rate.cache_ttl_seconds (10-86400, default 300), rate.forced_rate_list (JSON map, e.g. {\"cny\":{\"usdt\":0.14635,\"ton\":0.5}}; base/coin keys are normalized to lowercase; empty is restored to the built-in CNY USDT/USDC default), rate.api_url (optional; non-empty value must be a public http/https URL), rate.adjust_percent, rate.okx_c2c_enabled.\nbrand group keys: brand.checkout_name, brand.logo_url, brand.site_title, brand.success_copy, brand.support_url, brand.background_color, brand.background_image_url, brand.withdrawal_reminder_enabled. Legacy aliases brand.site_name, brand.page_title and brand.pay_success_text are also supported.\nsystem group keys: system.order_expiration_time, system.amount_precision (int, 2-6, default 2), system.log_level (debug|info|warn|error, default error).",
+                "description": "Batch insert/update settings. Returns per-key status; failed items include error_code for frontend i18n.\nSupported groups: brand, rate, system, epay, okpay, xlayer.\nepay group keys: epay.default_token (e.g. \"usdt\" or \"ton\", ignored when a supported type=token.network selector is supplied, empty allows status=4 placeholders), epay.default_currency (e.g. \"cny\", still applies when a supported type selector is supplied, empty falls back to cny), epay.default_network (e.g. \"tron\" or \"ton\", ignored when a supported type=token.network selector is supplied, empty allows status=4 placeholders).\nokpay group keys: okpay.enabled, okpay.shop_id, okpay.shop_token, okpay.api_url, okpay.callback_url, okpay.return_url, okpay.timeout_seconds, okpay.allow_tokens.\nxlayer group keys: xlayer.enabled, xlayer.api_key, xlayer.api_secret, xlayer.passphrase, xlayer.to_address, xlayer.return_url, xlayer.timeout_seconds, xlayer.allow_tokens. The Onchain OS Payment base URL is fixed to https://web3.okx.com in code; any leftover xlayer.api_url row is ignored.\nrate group keys: rate.mode (fixed|auto, default fixed), rate.cache_ttl_seconds (10-86400, default 300), rate.forced_rate_list (JSON map, e.g. {\"cny\":{\"usdt\":0.14635,\"ton\":0.5}}; base/coin keys are normalized to lowercase; empty is restored to the built-in CNY USDT/USDC default), rate.api_url (optional; non-empty value must be a public http/https URL), rate.adjust_percent, rate.okx_c2c_enabled.\nbrand group keys: brand.checkout_name, brand.logo_url, brand.site_title, brand.success_copy, brand.support_url, brand.background_color, brand.background_image_url, brand.withdrawal_reminder_enabled. Legacy aliases brand.site_name, brand.page_title and brand.pay_success_text are also supported.\nsystem group keys: system.order_expiration_time, system.amount_precision (int, 2-6, default 2), system.log_level (debug|info|warn|error, default error).",
                 "consumes": [
                     "application/json"
                 ],
@@ -4567,7 +4567,8 @@
                         "rate",
                         "system",
                         "epay",
-                        "okpay"
+                        "okpay",
+                        "xlayer"
                     ],
                     "example": "epay"
                 },
@@ -5417,7 +5418,8 @@
                         "rate",
                         "system",
                         "epay",
-                        "okpay"
+                        "okpay",
+                        "xlayer"
                     ],
                     "example": "rate"
                 },
@@ -5574,7 +5576,7 @@
             "properties": {
                 "network": {
                     "type": "string",
-                    "example": "okpay,tron,solana,ethereum,aptos"
+                    "example": "okpay,xlayer,tron,solana,ethereum,aptos"
                 },
                 "token": {
                     "type": "string",
@@ -5917,6 +5919,9 @@
                 "version": {
                     "type": "string",
                     "example": "v1.0.1"
+                },
+                "xlayer": {
+                    "$ref": "#/definitions/response.XLayerPublicConfig"
                 }
             }
         },
@@ -5950,6 +5955,50 @@
                 "withdrawal_reminder_enabled": {
                     "type": "boolean",
                     "example": true
+                }
+            }
+        },
+        "response.XLayerPublicConfig": {
+            "type": "object",
+            "properties": {
+                "allow_tokens": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "USDC",
+                        "USDT0",
+                        "USDG"
+                    ]
+                },
+                "api_key": {
+                    "type": "string",
+                    "example": "okx-api-key"
+                },
+                "api_secret": {
+                    "type": "string",
+                    "example": "okx-api-secret"
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "passphrase": {
+                    "type": "string",
+                    "example": "okx-passphrase"
+                },
+                "return_url": {
+                    "type": "string",
+                    "example": "https://pay.example.com/success"
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "to_address": {
+                    "type": "string",
+                    "example": "0x0000000000000000000000000000000000000000"
                 }
             }
         }

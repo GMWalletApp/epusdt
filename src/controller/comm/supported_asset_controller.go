@@ -36,6 +36,16 @@ func buildSupportedAssets() ([]response.NetworkTokenSupport, error) {
 		if _, ok := networkHasWallet[network]; !ok {
 			continue
 		}
+		// X Layer is a hosted checkout, not a scanned network, but since the
+		// admin-integration change it lives in chains/chain_tokens/wallet_address
+		// like every other network (see XLAYER-ADMIN-INTEGRATION-DESIGN.md),
+		// so the generic path below produces its entry. The settings master
+		// switch still hides it entirely when off, and only symbols the Go
+		// contract map knows are offered (anything else could never be
+		// created at the provider).
+		if network == mdb.PaymentProviderXLayer && !data.GetXLayerEnabled() {
+			continue
+		}
 		tokens, err := data.ListEnabledChainTokensByNetwork(network)
 		if err != nil {
 			return nil, err
@@ -50,6 +60,9 @@ func buildSupportedAssets() ([]response.NetworkTokenSupport, error) {
 			}
 			sym := strings.ToUpper(strings.TrimSpace(t.Symbol))
 			if sym == "" {
+				continue
+			}
+			if network == mdb.PaymentProviderXLayer && !service.IsPayableXLayerToken(sym) {
 				continue
 			}
 			symbols = append(symbols, sym)
@@ -94,6 +107,10 @@ func (c *BaseCommController) GetPublicConfig(ctx echo.Context) error {
 		Enabled:     data.GetOkPayEnabled(),
 		AllowTokens: data.GetOkPayAllowTokens(),
 	}
+	xlayer := response.XLayerPublicConfig{
+		Enabled:     data.GetXLayerEnabled(),
+		AllowTokens: data.GetXLayerAllowTokens(),
+	}
 	if ctx.Get(middleware.AdminUserIDKey) != nil {
 		okpay.ShopID = data.GetOkPayShopID()
 		okpay.ShopToken = data.GetOkPayShopToken()
@@ -101,6 +118,12 @@ func (c *BaseCommController) GetPublicConfig(ctx echo.Context) error {
 		okpay.CallbackURL = data.GetOkPayCallbackURL()
 		okpay.ReturnURL = data.GetOkPayReturnURL()
 		okpay.TimeoutSeconds = data.GetOkPayTimeoutSeconds()
+		xlayer.APIKey = data.GetXLayerAPIKey()
+		xlayer.APISecret = data.GetXLayerAPISecret()
+		xlayer.Passphrase = data.GetXLayerPassphrase()
+		xlayer.ReturnURL = data.GetXLayerReturnURL()
+		xlayer.TimeoutSeconds = data.GetXLayerTimeoutSeconds()
+		xlayer.ToAddress = data.GetXLayerToAddress()
 	}
 	return c.SucJson(ctx, response.PublicConfigResponse{
 		SupportedAssets: supports,
@@ -119,6 +142,7 @@ func (c *BaseCommController) GetPublicConfig(ctx echo.Context) error {
 			DefaultNetwork:  data.GetSettingString(mdb.SettingKeyEpayDefaultNetwork, ""),
 		},
 		OkPay:   okpay,
+		XLayer:  xlayer,
 		Version: config.GetAppVersion(),
 	})
 }

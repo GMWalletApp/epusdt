@@ -1,0 +1,1 @@
+import{t as e}from"./preload-helper-DX1F7c5z.js";import{t}from"./_.contribution-Df89lVWF.js";t({id:`markdown`,extensions:[`.md`,`.markdown`,`.mdown`,`.mkdn`,`.mkd`,`.mdwn`,`.mdtxt`,`.mdtext`],aliases:[`Markdown`,`markdown`],loader:()=>e(()=>import(`./markdown-2--JIua0.js`),[])});
