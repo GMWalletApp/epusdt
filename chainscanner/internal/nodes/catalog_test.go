@@ -163,3 +163,70 @@ func TestBuiltinUpgradeReusesEquivalentRows(t *testing.T) {
 		}
 	}
 }
+
+func TestRetiredPublicRoutes(t *testing.T) {
+	ctx := context.Background()
+	store, err := engine.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	r, err := NewNodeRegistry(ctx, store, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := engine.Database(store)
+	for e := range retiredEndpoints {
+		var count int
+		if err := db.QueryRow("SELECT count(*) FROM rpc_nodes WHERE url=?", e.URL).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("retired endpoint seeded: %v, count=%d, err=%v", e, count, err)
+		}
+	}
+	for _, row := range []struct{ url, origin string }{
+		{"https://POLYGON-RPC.COM:443/", "builtin"},
+		{"https://polygon.lava.build", "comparenodes"},
+		{"https://web3.mybitkeep.vip", "custom"},
+		{"https://geth.mybitkeep.vip", "fallback"},
+		{"https://web3os.bitkeep.pro", "builtin"},
+	} {
+		network := "ethereum"
+		if strings.Contains(strings.ToLower(row.url), "polygon") {
+			network = "polygon"
+		}
+		if _, err := db.Exec("INSERT INTO rpc_nodes(network,protocol,url,origin) VALUES(?,?,?,?)", network, "http", row.url, row.origin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		r, err = NewNodeRegistry(ctx, store, []chains.Network{{Name: "ethereum", URL: "https://web3os.bitkeep.pro"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, origin := range []string{"chainlist", "openchainbench", "comparenodes"} {
+			candidates := []NodeEndpoint{{"polygon", "http", "https://POLYGON-RPC.COM:443/"}, {"polygon", "http", "https://polygon.lava.build"}}
+			count, err := r.refreshCandidates(ctx, origin, "polygon", candidates, func(context.Context, chains.Network) (int64, error) {
+				t.Error("probed retired endpoint")
+				return 1, nil
+			})
+			if err != nil || count != 0 {
+				t.Fatal(origin, count, err)
+			}
+		}
+		rows, err := r.List(ctx, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		kept := 0
+		for _, n := range rows {
+			if retiredEndpoints[n.NodeEndpoint.identity()] {
+				if n.Network != "ethereum" {
+					t.Fatal("retired automatic node remains", n.URL)
+				}
+				kept++
+			}
+		}
+		if kept != 3 {
+			t.Fatalf("expected three operator-selected nodes, got %d", kept)
+		}
+	}
+}

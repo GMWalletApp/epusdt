@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"math/rand/v2"
 	"net/http"
 	"sync"
@@ -172,7 +173,7 @@ func (r *NodeRegistry) refreshCandidates(ctx context.Context, origin, network st
 		})
 	}
 	for i, e := range candidates {
-		if r.blacklist.hosts().matches(e.URL) {
+		if excluded[e.identity()] || r.blacklist.hosts().matches(e.URL) {
 			continue
 		}
 		// Once admitted, the regular health worker owns checks and cooldowns.
@@ -180,7 +181,7 @@ func (r *NodeRegistry) refreshCandidates(ctx context.Context, origin, network st
 			results[i].endpoint = e
 			continue
 		}
-		if excluded[e] || probeCtx.Err() != nil {
+		if probeCtx.Err() != nil {
 			continue
 		}
 		select {
@@ -207,7 +208,7 @@ func discoveryInventory(ctx context.Context, db interface {
 		return nil, nil, err
 	}
 	defer rows.Close()
-	protected := map[NodeEndpoint]bool{}
+	protected := maps.Clone(retiredEndpoints)
 	existing := map[NodeEndpoint]NodeEndpoint{}
 	for rows.Next() {
 		var e NodeEndpoint

@@ -7,6 +7,15 @@ type NodeEndpoint struct {
 	URL      string `json:"url"`
 }
 
+// Retired public routes must not be readmitted from an older discovery directory.
+var retiredEndpoints = map[NodeEndpoint]bool{
+	{"ethereum", "http", "https://web3.mybitkeep.vip"}: true,
+	{"ethereum", "http", "https://geth.mybitkeep.vip"}: true,
+	{"ethereum", "http", "https://web3os.bitkeep.pro"}: true,
+	{"polygon", "http", "https://polygon-rpc.com"}:     true,
+	{"polygon", "http", "https://polygon.lava.build"}:  true,
+}
+
 // These public routes serve heights, but restrict methods required to scan blocks.
 var heightOnlyNodes = []NodeEndpoint{
 	{"base", "http", "https://public-base-mainnet.rpcnode.dev"},
@@ -73,9 +82,6 @@ var builtinNodes = append([]NodeEndpoint{
 	{"ethereum", "ws", "wss://ethereum-rpc.publicnode.com"},
 	{"ethereum", "http", "https://public-ethereum-mainnet.rpcnode.dev"},
 	{"ethereum", "http", "https://eth-mainnet.token.im"},
-	{"ethereum", "http", "https://web3.mybitkeep.vip"},
-	{"ethereum", "http", "https://geth.mybitkeep.vip"},
-	{"ethereum", "http", "https://web3os.bitkeep.pro"},
 	{"ethereum", "http", "https://eth626892d.jccdex.cn"},
 	{"ethereum", "http", "https://0xrpc.io/eth"},
 	{"ethereum", "http", "https://eth-mainnet.g.alchemy.com/public"},
@@ -138,10 +144,8 @@ var builtinNodes = append([]NodeEndpoint{
 	{"polygon", "ws", "wss://polygon-bor-rpc.publicnode.com"},
 	{"polygon", "http", "https://polygon-mainnet.token.im"},
 	{"polygon", "http", "https://polygon.drpc.org"},
-	{"polygon", "http", "https://polygon-rpc.com"},
 	{"polygon", "http", "https://1rpc.io/matic"},
 	{"polygon", "http", "https://rpc-mainnet.matic.quiknode.pro"},
-	{"polygon", "http", "https://polygon.lava.build"},
 	{"polygon", "http", "https://api.uniblock.dev/uni/v1/json-rpc?chainId=137"},
 	{"polygon", "http", "https://poly.api.pocket.network"},
 	{"polygon", "http", "https://polygon-bor-mainnet.rpc.services.stakecraft.com"},

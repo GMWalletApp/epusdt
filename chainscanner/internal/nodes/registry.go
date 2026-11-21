@@ -113,6 +113,18 @@ func NewNodeRegistry(ctx context.Context, s *engine.Store, networks []chains.Net
 		}
 		r.configured[stored] = n
 	}
+	// Explicit configuration has already claimed its rows. Remove obsolete
+	// automatic entries left over from a previous catalog.
+	for key := range retiredEndpoints {
+		for _, row := range existing[key] {
+			if row.removed || (row.origin != "builtin" && !isDiscoveryOrigin(row.origin)) {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, "DELETE FROM rpc_nodes WHERE id=?", row.id); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
