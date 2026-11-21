@@ -9,19 +9,16 @@
 <p><a href="./README.md">English</a> · <strong>简体中文</strong></p>
 
 <p>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-brightgreen" alt="GPLv3"></a>
-  <a href="https://github.com/GMWalletApp/epusdt/releases/latest"><img src="https://img.shields.io/github/v/release/GMWalletApp/epusdt?color=brightgreen" alt="GitHub release"></a>
-  <a href="https://hub.docker.com/r/gmwallet/epusdt"><img src="https://img.shields.io/badge/Docker-gmwallet%2Fepusdt-2496ED?logo=docker&logoColor=white" alt="Docker Hub"></a>
-  <a href="https://t.me/epusdt"><img src="https://img.shields.io/badge/Telegram-EPUSDT-26A5E4?logo=telegram&logoColor=white" alt="Telegram"></a>
+  <a href="wiki/API.md">商户 API</a> ·
+  <a href="wiki/README.zh_CN.md">文档目录</a> ·
+  <a href="https://t.me/epusdt">Telegram 频道</a> ·
+  <a href="https://t.me/epusdt_group">Telegram 交流群</a>
 </p>
 
 <p>
-  <a href="#screenshots">界面预览</a> •
-  <a href="#networks">网络与币种</a> •
-  <a href="#checkout">托管收银台</a> •
-  <a href="#quick-start">快速开始</a> •
-  <a href="#deployment">部署</a> •
-  <a href="#documentation">文档</a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-brightgreen" alt="GPLv3"></a>
+  <a href="https://github.com/GMWalletApp/epusdt/releases/latest"><img src="https://img.shields.io/github/v/release/GMWalletApp/epusdt?color=brightgreen" alt="GitHub release"></a>
+  <a href="https://hub.docker.com/r/gmwallet/epusdt"><img src="https://img.shields.io/badge/Docker-gmwallet%2Fepusdt-2496ED?logo=docker&logoColor=white" alt="Docker Hub"></a>
 </p>
 
 </div>
@@ -31,6 +28,18 @@
 ## 项目介绍
 
 EPUSDT 是用 Go 编写的自托管加密支付网关。商户通过 GMPay 或易支付兼容接口创建订单，买家向商户钱包转账，EPUSDT 核验到账后回调商户。支持多个收款地址轮换，也可以通过 Telegram Bot 接收支付通知。
+
+```mermaid
+flowchart TB
+    accTitle: 支付网关与上下游服务
+    M["商户系统"] -->|"通过 GMPay 或易支付创建订单"| G["EPUSDT"]
+    G -->|"订阅收款地址"| S["ChainScanner"]
+    S -->|"读取区块、补扫缺块"| N["链上 RPC 节点"]
+    S -->|"推送地址活动"| G
+    G -->|"创建托管收银台"| H["OKPay 或 OKX OnchainOS"]
+    H -->|"OKPay 签名通知或 OKX 结算查询结果"| G
+    G -->|"到账后发送签名回调"| M
+```
 
 <a id="screenshots"></a>
 
@@ -78,17 +87,31 @@ Polygon 的 USDC 和 USDC.e 是两种不同资产。Plasma 的预置收款币种
 - **OKX OnchainOS（X Layer）** 支持 USDC、USDT0、USDG。在后台填写 OKX API Key、Secret、Passphrase 和 X Layer 收款地址，选择接受的币种。买家在 OKX 页面完成支付，EPUSDT 查询到 `settled` 并核对订单后确认到账。
 - **OKPay** 默认允许 USDT、TRX。收银台按商户配置显示可用币种。
 
-## 链上收款流程
+## 订单处理流程
 
-1. 创建订单后，EPUSDT 分配收款地址和应付金额，在订单有效期内保留这组地址与金额。
-2. ChainScanner 按链订阅启用的收款地址。匹配网络、币种、金额和付款时间的转账会让订单进入「确认中」。
-3. 到账前严格核验默认开启。两个独立节点的结果一致、收款信息与确认数通过检查后，EPUSDT 确认到账并回调商户。连续两轮核验失败，订单转人工复核，保留交易哈希并暂停成功回调。
+```mermaid
+flowchart TB
+    accTitle: 订单状态与商户回调
+    Start["创建订单"] -->|"已指定网络与币种"| Wait["1 · 等待付款"]
+    Start -->|"买家在收银台选择"| Select["4 · 等待选择"]
+    Select -->|"选择资产或托管通道"| Wait
+    Wait -->|"匹配到链上转账"| Confirm["5 · 确认中"]
+    Confirm -->|"达到确认数并核验到账"| Paid["2 · 已支付"]
+    Confirm -->|"两轮严格核验未通过"| Review["6 · 人工复核"]
+    Review -->|"管理员重新核验通过"| Paid
+    Wait -->|"托管支付结果已核实"| Paid
+    Select -->|"超时"| Expired["3 · 已过期"]
+    Wait -->|"超时"| Expired
+    Paid --> Notify["通知商户"]
+```
+
+链上收款会核对网络、币种、地址、金额和付款时间。严格核验默认开启，要求两个独立节点返回一致结果。关闭后仍需核对到账与区块确认数。在付款窗口内发生的转账，可能在订单过期后才被补扫发现。
 
 <a id="quick-start"></a>
 
 ## 快速开始
 
-1. 使用 [Linux 安装工具](wiki/EPCTL.md) 或 [Docker Compose](docker-compose.yaml) 部署 EPUSDT。
+1. 使用 [Linux 安装工具](wiki/EPCTL.md) 或 [Docker Compose](wiki/docker-RUN.md) 部署 EPUSDT。
 2. 在后台启用收款网络和币种，并添加该网络的收款地址。
 3. 调用 `GET /payments/gmpay/v1/config` 查看可用币种，再按[商户 API 指南](wiki/API.md)创建订单。
 
@@ -96,7 +119,7 @@ Polygon 的 USDC 和 USDC.e 是两种不同资产。Plasma 的预置收款币种
 
 ## 部署与升级
 
-Linux 二进制安装和升级使用 [epctl 指南](wiki/EPCTL.md)。也可以选择 [Docker Compose](docker-compose.yaml)、[宝塔面板](https://epusdt.com/guide/installation/aapanel) 或[手动部署](https://epusdt.com/guide/installation/manual.html)。从 v2.0.0 升级 Docker Compose 时，先备份并迁移数据到新的挂载目录，再重建容器。[v2.1.0 升级说明](https://github.com/GMWalletApp/epusdt/releases/tag/v2.1.0)
+Linux 二进制安装和升级使用 [epctl 指南](wiki/EPCTL.md)。也可以选择 [Docker Compose](wiki/docker-RUN.md)、[宝塔面板](wiki/BT_RUN.md) 或[手动部署](wiki/manual_RUN.md)。从 v2.0.0 升级 Docker Compose 时，先备份并迁移数据到新的挂载目录，再重建容器。[v2.1.0 升级说明](https://github.com/GMWalletApp/epusdt/releases/tag/v2.1.0)
 
 ### 数据库与升级
 
@@ -143,24 +166,27 @@ EPUSDT 仅支持 SQLite。新安装可省略 `db_type`，也可以显式设置 `
 
 <a id="documentation"></a>
 
-## 文档与社区
+## 生态集成
 
-[商户 API](wiki/API.md) · [OpenAPI 规范](src/docs/swagger.json) · [ChainScanner API](chainscanner/docs/api/zh-CN.md)
+<details>
+<summary>兼容平台</summary>
 
-| 领域 | 已支持系统 |
-|------|-----------|
-| **AI 分发** | [OneAPI](https://github.com/songquanpeng/one-api)、[Sub2API](https://github.com/Wei-Shaw/sub2api)、[NewAPI](https://github.com/QuantumNous/new-api) |
-| **发卡系统** | [独角数卡（Dujiaoka）](https://dujiao-next.com/)、[异次元发卡](https://github.com/lizhipay/acg-faka) |
-| **代理面板** | [V2Board](https://github.com/v2board/v2board)、[XBoard](https://github.com/cedar2025/Xboard)、[xiaoV2board](https://github.com/wyx2685/v2board/)、[SSPanel](https://github.com/anankke/sspanel-uim) |
-| **建站生态** | [WordPress](https://wordpress.com/)、[WHMCS](https://www.whmcs.com/) |
-| **Epay 兼容** | 兼容各类支持 Epay 易支付接口的平台 |
+- **AI 分发** — [OneAPI](https://github.com/songquanpeng/one-api)、[Sub2API](https://github.com/Wei-Shaw/sub2api)、[NewAPI](https://github.com/QuantumNous/new-api)
 
-[官方文档](https://epusdt.com) · [问题反馈](https://github.com/GMWalletApp/epusdt/issues) · [Telegram 频道](https://t.me/epusdt) · [Telegram 交流群](https://t.me/epusdt_group)
+- **发卡系统** — [独角数卡（Dujiaoka）](https://dujiao-next.com/)、[异次元发卡](https://github.com/lizhipay/acg-faka)
+
+- **代理面板** — [V2Board](https://github.com/v2board/v2board)、[XBoard](https://github.com/cedar2025/Xboard)、[xiaoV2board](https://github.com/wyx2685/v2board/)、[SSPanel](https://github.com/anankke/sspanel-uim)
+
+- **建站生态** — [WordPress](https://wordpress.com/)、[WHMCS](https://www.whmcs.com/)
+
+- **Epay 兼容** — 兼容各类支持 Epay 易支付接口的平台
+
+</details>
 
 相关项目：[GMPay Edge 支付网关](https://github.com/GMWalletApp/gmpay-edge) 和 [GMShop Edge 数字商品商城](https://github.com/GMWalletApp/gmshop-edge) 均运行在 Cloudflare Workers 上。
 
 <details>
-<summary>Star History</summary>
+<summary>GitHub 星标历史</summary>
 
 <a href="https://www.star-history.com/?type=date&repos=gmwalletapp%2Fepusdt">
  <picture>
@@ -171,6 +197,8 @@ EPUSDT 仅支持 SQLite。新安装可省略 `db_type`，也可以显式设置 `
 </a>
 
 </details>
+
+[问题反馈](https://github.com/GMWalletApp/epusdt/issues) · [项目网站](https://epusdt.com)
 
 ## 安全审计与许可
 

@@ -1,5 +1,9 @@
 # Review
 
+[Documentation index](wiki/README.md) · [简体中文](REVIEW.zh_CN.md)
+
+This is a historical review of the SQLite runtime migration. For current behavior and installation, see the [documentation index](wiki/README.md).
+
 ## Scope
 
 This review checks `dev-runtime` against `dev` with the following standards:

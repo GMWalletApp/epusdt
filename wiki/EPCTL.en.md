@@ -1,5 +1,7 @@
 # epctl Installation and Verification Scripts
 
+[Documentation index](README.md) · [简体中文](EPCTL.md)
+
 `epctl` is the repo-root Linux binary installer and service manager for released `epusdt` binaries on GitHub Releases.
 `epctl-docker-test.sh` is the matching end-to-end validation script. It launches Ubuntu + systemd in Docker and verifies download, install, startup, upgrade, and init-password behavior with real release artifacts.
 
@@ -71,13 +73,13 @@ epctl
 Download a specific release:
 
 ```bash
-./epctl download --tag v1.0.8
+./epctl download --tag v2.1.0
 ```
 
 Install the service (defaults to `--component epusdt` with the embedded scanner. Use `--component all` for two separate services):
 
 ```bash
-./epctl install --tag v1.0.8 \
+./epctl install --tag v2.1.0 \
   --app-uri https://pay.example.com \
   --listen 127.0.0.1:18000
 ```
@@ -103,7 +105,7 @@ Deploy `epusdt` standalone (connecting to a remote `chainscanner`):
 Upgrade to a newer release (auto-detects installed components, or pass `--component all|epusdt|chainscanner`):
 
 ```bash
-./epctl upgrade --tag v1.0.9
+./epctl upgrade --tag v2.1.0
 ```
 
 Running `./epctl upgrade --tag ...` directly restarts `epusdt` immediately after the files are replaced.
@@ -230,8 +232,8 @@ The repo also provides:
 Examples:
 
 ```bash
-./epctl-docker-test.sh v1.0.6
-./epctl-docker-test.sh --lang en v1.0.6 v1.0.8
+./epctl-docker-test.sh v2.1.0
+./epctl-docker-test.sh --lang en v2.0.0 v2.1.0
 ```
 
 It performs these checks on the local machine:

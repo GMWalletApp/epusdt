@@ -1,5 +1,7 @@
 # epctl 安装与验证脚本
 
+[文档目录](README.zh_CN.md) · [English](EPCTL.en.md)
+
 `epctl` 是仓库顶层的 Linux 二进制安装管理脚本，面向已经发布到 GitHub Releases 的 `epusdt` 二进制包。
 `epctl-docker-test.sh` 是配套的真实验收脚本，用本机 Docker 启动 Ubuntu + systemd 容器，完整验证安装、启动、升级和初始化密码流程。
 
@@ -71,13 +73,13 @@ epctl
 下载指定版本：
 
 ```bash
-./epctl download --tag v1.0.8
+./epctl download --tag v2.1.0
 ```
 
 安装服务（默认 `--component epusdt`，直接使用内置扫描器；显式选择 `--component all` 可部署两个独立服务）：
 
 ```bash
-./epctl install --tag v1.0.8 \
+./epctl install --tag v2.1.0 \
   --app-uri https://pay.example.com \
   --listen 127.0.0.1:18000
 ```
@@ -103,7 +105,7 @@ epctl
 升级到新版本（自动按当前已安装组件升级，也可通过 `--component all|epusdt|chainscanner` 指定）：
 
 ```bash
-./epctl upgrade --tag v1.0.9
+./epctl upgrade --tag v2.1.0
 ```
 
 直接执行 `./epctl upgrade --tag ...` 时，脚本会在文件替换完成后默认立即执行 `systemctl restart epusdt`。
@@ -230,8 +232,8 @@ GET /admin/api/v1/auth/init-password
 示例：
 
 ```bash
-./epctl-docker-test.sh v1.0.6
-./epctl-docker-test.sh --lang zh v1.0.6 v1.0.8
+./epctl-docker-test.sh v2.1.0
+./epctl-docker-test.sh --lang zh v2.0.0 v2.1.0
 ```
 
 它会在本机：

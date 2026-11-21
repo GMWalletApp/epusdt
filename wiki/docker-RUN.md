@@ -1,81 +1,36 @@
-1. 创建和进去这个目录
-```shell
-mkdir epusdt && cd epusdt
+# 使用 Docker Compose 部署
+
+[文档目录](README.zh_CN.md) · [English](docker-RUN.en.md)
+
+使用部署版本自带的 [Compose 配置](../docker-compose.yaml)。默认支付服务内置 ChainScanner。
+
+## 启动网关
+
+在仓库根目录设置 Compose 环境变量（例如写入项目根目录的 `.env`）。入口脚本每次启动都会读取公开收银台地址。
+
+```dotenv
+APP_URI=https://pay.example.com
+EPUSDT_PORT=8000
 ```
 
-2. 把配置文件放进去这个目录，只需要改
-
-app_url
-
-tron_grid_api_key
-
-api_rate_url
-
-```shell
-cat <<EOF > env
-app_name=epusdt
-app_uri=https://dujiaoka.com
-log_level=info
-http_access_log=false
-sql_debug=false
-http_listen=:8000
-
-static_path=/static
-runtime_root_path=/app/conf/runtime
-
-log_save_path=/logs
-log_max_size=32
-log_max_age=7
-max_backups=3
-
-# SQLite is the only supported database and the default.
-db_type=sqlite
-
-# sqlite primary database config
-sqlite_database_filename=/app/conf/epusdt.db
-sqlite_table_prefix=
-
-# sqlite runtime store config
-runtime_sqlite_filename=epusdt-runtime.db
-
-# background scheduler config
-queue_concurrency=10
-queue_poll_interval_ms=1000
-callback_retry_base_seconds=5
-
-tg_bot_token=
-tg_proxy=
-tg_manage=
-
-api_auth_token=
-
-order_expiration_time=10
-order_notice_max_retry=0
-api_rate_url=https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/
-tron_grid_api_key=
-EOF
+```sh
+docker compose up -d epusdt
+docker compose logs --tail=100 epusdt
+curl -fsS http://127.0.0.1:8000/payments/gmpay/v1/config
 ```
-3. docker compose 创建
-```shell
-cat <<EOF > docker-compose.yaml
-services:
-  epusdt:
-    image: gmwallet/epusdt:latest
-    restart: always
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - ./env:/app/.env
-      - ./data:/app/conf
-    ports:
-      - "8000:8000"
-EOF
-```
-4. 运行
-```shell
-docker compose up -d
-```
-5. 配置独角兽后台
 
-商户密钥： http://your_domain/payments/epusdt/v1/order/create-transaction
+将 HTTPS 反向代理指向映射端口。在后台添加收款地址后，检查响应中的 `data.supported_assets`。
+
+## 持久化与升级
+
+Compose 将宿主机 `./runtime/epusdt` 挂载到容器的 `/app/runtime`。其中包含应用的 `.env`、业务库、运行库和内置扫描器数据库。项目根目录的 Compose 环境文件与此处的应用配置文件分别维护。
+
+从 v2.0.0 升级时，先停止旧服务，备份配置和数据库，**在重建旧容器之前**将数据迁移到新挂载目录。保留原备份，并核对配置中的数据库文件名。[升级说明](https://github.com/GMWalletApp/epusdt/releases/tag/v2.1.0)
+
+## 使用独立扫描器
+
+设置 `CHAINSCANNER_URL=http://chainscanner:9081`，配置不同的消费者令牌和管理员令牌。升级已有独立部署时，应保留原扫描器数据卷（`./runtime/chainscanner`）、连接地址和凭据。
+
+```sh
+docker compose --profile scanner up -d
+```

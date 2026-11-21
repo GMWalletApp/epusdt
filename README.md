@@ -9,19 +9,16 @@
 <p><strong>English</strong> · <a href="./README.zh_CN.md">简体中文</a></p>
 
 <p>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-brightgreen" alt="GPLv3"></a>
-  <a href="https://github.com/GMWalletApp/epusdt/releases/latest"><img src="https://img.shields.io/github/v/release/GMWalletApp/epusdt?color=brightgreen" alt="GitHub release"></a>
-  <a href="https://hub.docker.com/r/gmwallet/epusdt"><img src="https://img.shields.io/badge/Docker-gmwallet%2Fepusdt-2496ED?logo=docker&logoColor=white" alt="Docker Hub"></a>
-  <a href="https://t.me/epusdt"><img src="https://img.shields.io/badge/Telegram-EPUSDT-26A5E4?logo=telegram&logoColor=white" alt="Telegram"></a>
+  <a href="wiki/API.en.md">Merchant API</a> ·
+  <a href="wiki/README.md">Documentation</a> ·
+  <a href="https://t.me/epusdt">Telegram channel</a> ·
+  <a href="https://t.me/epusdt_group">Telegram group</a>
 </p>
 
 <p>
-  <a href="#screenshots">Screenshots</a> •
-  <a href="#networks">Networks &amp; tokens</a> •
-  <a href="#checkout">Hosted checkout</a> •
-  <a href="#quick-start">Quick start</a> •
-  <a href="#deployment">Deployment</a> •
-  <a href="#documentation">Documentation</a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-brightgreen" alt="GPLv3"></a>
+  <a href="https://github.com/GMWalletApp/epusdt/releases/latest"><img src="https://img.shields.io/github/v/release/GMWalletApp/epusdt?color=brightgreen" alt="GitHub release"></a>
+  <a href="https://hub.docker.com/r/gmwallet/epusdt"><img src="https://img.shields.io/badge/Docker-gmwallet%2Fepusdt-2496ED?logo=docker&logoColor=white" alt="Docker Hub"></a>
 </p>
 
 </div>
@@ -31,6 +28,18 @@
 ## Overview
 
 EPUSDT is a self-hosted crypto payment gateway written in Go. Merchants create orders through the GMPay or EPay-compatible API. Buyers pay the merchant’s wallet, and EPUSDT verifies the transfer before notifying the merchant. Merchants can rotate receiving addresses and receive payment notifications through the Telegram bot.
+
+```mermaid
+flowchart TB
+    accTitle: Payment services and their responsibilities
+    M["Merchant"] -->|"Create order via GMPay or EPay"| G["EPUSDT"]
+    G -->|"Subscribe receiving addresses"| S["ChainScanner"]
+    S -->|"Read blocks and retry gaps"| N["Chain RPC nodes"]
+    S -->|"Report address activity"| G
+    G -->|"Create hosted checkout"| H["OKPay or OKX OnchainOS"]
+    H -->|"Signed OKPay notice or OKX settlement query result"| G
+    G -->|"Signed notification after payment"| M
+```
 
 <a id="screenshots"></a>
 
@@ -78,25 +87,39 @@ Merchants enable these payment methods separately. The public config endpoint ex
 - **OKX OnchainOS (X Layer)** supports USDC, USDT0 and USDG. Enter your OKX API key, secret, passphrase and X Layer receiving address in the admin console, then select the tokens to accept. Buyers pay on the OKX checkout page. EPUSDT verifies the order when OKX reports `settled`.
 - **OKPay** allows USDT and TRX by default. Checkout displays the tokens enabled by the merchant.
 
-## How on-chain payments work
+## Order lifecycle
 
-1. EPUSDT assigns an address and amount to an order and reserves that combination for the payment window.
-2. ChainScanner watches enabled receiving addresses on each network. A transfer matching the network, asset, amount and payment window moves the order to confirming.
-3. Strict verification is on by default. EPUSDT credits the order and notifies the merchant once two independent nodes agree and the payment details and confirmation depth match. After two failed rounds it retains the transaction hash for manual review and pauses the success callback.
+```mermaid
+flowchart TB
+    accTitle: Order states and merchant notification
+    Start["Create order"] -->|"Network and token supplied"| Wait["1 · Awaiting payment"]
+    Start -->|"Buyer chooses at checkout"| Select["4 · Awaiting selection"]
+    Select -->|"Select asset or provider"| Wait
+    Wait -->|"Matching on-chain transfer"| Confirm["5 · Confirming"]
+    Confirm -->|"Depth reached and payment verified"| Paid["2 · Paid"]
+    Confirm -->|"Two unsuccessful strict rounds"| Review["6 · Manual review"]
+    Review -->|"Admin recheck succeeds"| Paid
+    Wait -->|"Hosted payment verified"| Paid
+    Select -->|"Timed out"| Expired["3 · Expired"]
+    Wait -->|"Timed out"| Expired
+    Paid --> Notify["Notify merchant"]
+```
+
+For direct transfers, EPUSDT matches the chain, asset, receiving address, amount and payment window. Strict verification is enabled by default and requires matching results from two independent nodes. Confirmation depth and order matching still apply when strict mode is disabled. A transfer made within the payment window can be picked up by a later backfill, even after the order has expired.
 
 <a id="quick-start"></a>
 
 ## Getting started
 
-1. Install EPUSDT using the [Linux installer](wiki/EPCTL.en.md) or [Docker Compose](docker-compose.yaml).
+1. Install EPUSDT using the [Linux installer](wiki/EPCTL.en.md) or [Docker Compose](wiki/docker-RUN.en.md).
 2. Enable a network and its assets in the admin console, then add a receiving address on that network.
-3. Read `GET /payments/gmpay/v1/config` to check available assets, then create an order using the [merchant API guide](wiki/API.md).
+3. Read `GET /payments/gmpay/v1/config` to check available assets, then create an order using the [merchant API guide](wiki/API.en.md).
 
 <a id="deployment"></a>
 
 ## Installation and upgrades
 
-For Linux binary installation and upgrades, follow the [epctl guide](wiki/EPCTL.en.md). Other options include [Docker Compose](docker-compose.yaml), [aaPanel](https://epusdt.com/guide/installation/aapanel) and [manual installation](https://epusdt.com/guide/installation/manual.html). When upgrading Compose from v2.0.0, back up and migrate the data to the new mount before recreating the container. [v2.1.0 upgrade notes](https://github.com/GMWalletApp/epusdt/releases/tag/v2.1.0)
+For Linux binary installation and upgrades, follow the [epctl guide](wiki/EPCTL.en.md). Other options include [Docker Compose](wiki/docker-RUN.en.md), [aaPanel](wiki/BT_RUN.en.md) and [manual installation](wiki/manual_RUN.en.md). When upgrading Compose from v2.0.0, back up and migrate the data to the new mount before recreating the container. [v2.1.0 upgrade notes](https://github.com/GMWalletApp/epusdt/releases/tag/v2.1.0)
 
 ### Database and upgrades
 
@@ -126,19 +149,22 @@ You can configure fallback nodes from two independent providers per network for 
 
 <a id="documentation"></a>
 
-## Documentation and community
+## Integrations
 
-[Merchant API (Chinese)](wiki/API.md) · [OpenAPI specification](src/docs/swagger.json) · [ChainScanner API](chainscanner/docs/api/en.md)
+<details>
+<summary>Compatible platforms</summary>
 
-| Category | Supported Systems |
-|----------|-------------------|
-| **AI Distribution** | [OneAPI](https://github.com/songquanpeng/one-api), [Sub2API](https://github.com/Wei-Shaw/sub2api), [NewAPI](https://github.com/QuantumNous/new-api) |
-| **Card/Voucher Platforms** | [Dujiaoka](https://dujiao-next.com/), [ACG Faka](https://github.com/lizhipay/acg-faka) |
-| **Proxy Panels** | [V2Board](https://github.com/v2board/v2board), [XBoard](https://github.com/cedar2025/Xboard), [xiaoV2board](https://github.com/wyx2685/v2board/), [SSPanel](https://github.com/anankke/sspanel-uim) |
-| **Website Ecosystem** | [WordPress](https://wordpress.com/), [WHMCS](https://www.whmcs.com/) |
-| **Epay-Compatible Flow** | Works with platforms already using Epay-style payment interfaces |
+- **AI Distribution** — [OneAPI](https://github.com/songquanpeng/one-api), [Sub2API](https://github.com/Wei-Shaw/sub2api), [NewAPI](https://github.com/QuantumNous/new-api)
 
-[Documentation](https://epusdt.com) · [Report an issue](https://github.com/GMWalletApp/epusdt/issues) · [Telegram channel](https://t.me/epusdt) · [Telegram group](https://t.me/epusdt_group)
+- **Card/Voucher Platforms** — [Dujiaoka](https://dujiao-next.com/), [ACG Faka](https://github.com/lizhipay/acg-faka)
+
+- **Proxy Panels** — [V2Board](https://github.com/v2board/v2board), [XBoard](https://github.com/cedar2025/Xboard), [xiaoV2board](https://github.com/wyx2685/v2board/), [SSPanel](https://github.com/anankke/sspanel-uim)
+
+- **Website Ecosystem** — [WordPress](https://wordpress.com/), [WHMCS](https://www.whmcs.com/)
+
+- **Epay-Compatible Flow** — Works with platforms already using Epay-style payment interfaces
+
+</details>
 
 Related projects on Cloudflare Workers include the [GMPay Edge payment gateway](https://github.com/GMWalletApp/gmpay-edge) and the [GMShop Edge digital storefront](https://github.com/GMWalletApp/gmshop-edge).
 
@@ -154,6 +180,8 @@ Related projects on Cloudflare Workers include the [GMPay Edge payment gateway](
 </a>
 
 </details>
+
+[Report an issue](https://github.com/GMWalletApp/epusdt/issues) · [Project website](https://epusdt.com)
 
 ## Audit and license
 
