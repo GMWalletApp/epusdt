@@ -1,1 +1,0 @@
-import{Uh as e}from"./messages-CYJ43oR5.js";import{n as t}from"./dist-Dh_FzoXD.js";var n=e();function r(e,r=`You submitted the following values:`){t.message(r,{description:(0,n.jsx)(`pre`,{className:`mt-2 w-full overflow-x-auto rounded-md bg-slate-950 p-4`,children:(0,n.jsx)(`code`,{className:`text-white`,children:JSON.stringify(e,null,2)})})})}export{r as t};

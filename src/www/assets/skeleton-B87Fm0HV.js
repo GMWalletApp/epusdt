@@ -1,0 +1,1 @@
+import{Am as e}from"./messages-C9SWHkfc.js";import{i as t}from"./button-Cd_ZUAtY.js";import{t as n}from"./createLucideIcon-Br0Bd5k2.js";var r=n(`chevron-right`,[[`path`,{d:`m9 18 6-6-6-6`,key:`mthhwq`}]]),i=e();function a({className:e,...n}){return(0,i.jsx)(`div`,{className:t(`animate-pulse rounded-md bg-accent`,e),"data-slot":`skeleton`,...n})}export{r as n,a as t};

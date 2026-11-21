@@ -1,0 +1,1 @@
+import{t as e}from"./forbidden-YixI0uxk.js";var t=e;export{t as component};
