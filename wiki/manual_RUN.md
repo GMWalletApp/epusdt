@@ -8,24 +8,13 @@ cd /var/www/
 mkdir epusdt
 chmod 777 -R /var/www/epusdt
 cd epusdt
-wget https://github.com/GMWalletApp/epusdt/releases/download/v0.0.3/epusdt_0.0.3_Linux_x86_64.tar.gz
-tar -xzf epusdt_0.0.3_Linux_x86_64.tar.gz
-rm epusdt_0.0.3_Linux_x86_64.tar.gz
+# 从项目 Releases 下载适合本机架构的当前版本，解压到本目录。
 ```
-## 2.创建数据库
-当前版本无需手动导入 SQL 文件。创建数据库并配置连接后，Epusdt 启动时会自动创建和升级所需表结构。
+[下载 EPUSDT](https://github.com/GMWalletApp/epusdt/releases/latest)
 
-- 创建数据库
-```bash
-mysql
-```
-接下来输入命令 
-```sql
-CREATE DATABASE [这里替换为数据库名] ;
-GRANT ALL ON [这里替换为数据库名].* TO '[这里替换为用户名]'@'localhost' IDENTIFIED BY '[这里替换为密码]' WITH GRANT OPTION;
-FLUSH PRIVILEGES;
-EXIT
-```
+## 2.准备 SQLite 数据目录
+EPUSDT 首次启动会创建 SQLite 文件和表。请确保运行用户对配置文件旁的主库目录及运行目录有写权限；如需另选位置，可设置下文的数据库路径。
+
 ## 3.配置反向代理
 ```bash
 nano /etc/nginx/sites-enabled/epusdt
@@ -72,30 +61,17 @@ http_listen=:8000
 #静态资源文件目录
 static_path=/static
 #缓存路径
-runtime_root_path=/runtime
+runtime_root_path=./runtime
 #日志配置
 log_save_path=/logs
 log_max_size=32
 log_max_age=7
 max_backups=3
-# mysql配置
-mysql_host=127.0.0.1
-mysql_port=3306
-mysql_user=mysql账号
-mysql_passwd=mysql密码
-mysql_database=数据库
-mysql_table_prefix=
-mysql_max_idle_conns=10
-mysql_max_open_conns=100
-mysql_max_life_time=6
-# redis配置
-redis_host=127.0.0.1
-redis_port=6379
-redis_passwd=
-redis_db=5
-redis_pool_size=5
-redis_max_retries=3
-redis_idle_timeout=1000
+# SQLite 数据文件
+db_type=sqlite
+sqlite_database_filename=epusdt.db
+runtime_sqlite_filename=epusdt-runtime.db
+
 # 消息队列配置
 queue_concurrency=10
 queue_level_critical=6
@@ -115,7 +91,7 @@ order_expiration_time=10
 ```
 ⚠️注意：配置文件里面不认识的不要修改，留空即可，不会改又要瞎改，除非你对项目源代码很熟悉很有信心😁
 
-必填配置项：app_uri、mysql配置、redis配置、api_auth_token
+请按实际部署填写 app_uri 和 api_auth_token。
 
 选填配置项：tg_bot_token、tg_manage
 ## 6、配置supervisor

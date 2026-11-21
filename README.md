@@ -1,7 +1,7 @@
 # Epusdt — Easy Payment USDT
 
 <p align="center">
-  <img src="https://gmwallet.app/favicon.png" alt="Epusdt Logo - Multi-chain Crypto Payment Gateway" width="120">
+  <img src="./src/www/images/logo.png" alt="Epusdt Logo - Multi-chain Crypto Payment Gateway" width="120">
 </p>
 
 <p align="center">
@@ -85,7 +85,7 @@ Epusdt 已完成第三方安全审计。
 
 - **多链多币种** — 支持 TRC20、ERC20、BEP20、Polygon、Aptos 等主流网络
 - **私有化部署** — 资金完全自主掌控
-- **零依赖运行** — 单个二进制即可启动，低并发场景无需 MySQL + Redis
+- **内置 SQLite** — 业务数据和运行状态保存在本地文件中。
 - **跨平台** — 支持 x86 / ARM 架构的 Windows / Linux / Mac
 - **多钱包轮询** — 自动轮换收款地址，提高并发处理能力
 - **异步队列** — 高性能消息回调，适配高并发场景
@@ -93,6 +93,17 @@ Epusdt 已完成第三方安全审计。
 - **Telegram Bot** — 实时支付通知，快捷管理与监控
 
 ---
+
+## 数据库与升级
+
+EPUSDT 仅支持 SQLite。新安装可省略 `db_type`，也可以显式设置 `db_type=sqlite`。首次启动会自动建表。
+
+| 用途 | 配置项 | 默认位置 |
+| --- | --- | --- |
+| 业务数据（订单、钱包、商户配置） | `sqlite_database_filename` | 配置文件同目录的 `epusdt.db` |
+| 运行状态（交易锁等） | `runtime_sqlite_filename` | `runtime_root_path` 下的 `epusdt-runtime.db` |
+
+升级现有 SQLite 部署时，请保留原配置、两个数据库文件及其存储目录。旧版 MySQL 或 PostgreSQL 部署需先备份、自行迁移并核对数据，再切换到 SQLite。修改 `db_type` 不会转换历史数据。
 
 ## 文档与教程
 

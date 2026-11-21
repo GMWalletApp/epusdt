@@ -21,41 +21,19 @@ sql_debug=false
 http_listen=:8000
 
 static_path=/static
-runtime_root_path=/runtime
+runtime_root_path=/app/conf/runtime
 
 log_save_path=/logs
 log_max_size=32
 log_max_age=7
 max_backups=3
 
-# supported values: postgres,mysql,sqlite
+# SQLite is the only supported database and the default.
 db_type=sqlite
 
 # sqlite primary database config
-sqlite_database_filename=
+sqlite_database_filename=/app/conf/epusdt.db
 sqlite_table_prefix=
-
-# postgres config
-postgres_host=127.0.0.1
-postgres_port=3306
-postgres_user=mysql_user
-postgres_passwd=mysql_password
-postgres_database=database_name
-postgres_table_prefix=
-postgres_max_idle_conns=10
-postgres_max_open_conns=100
-postgres_max_life_time=6
-
-# mysql config
-mysql_host=127.0.0.1
-mysql_port=3306
-mysql_user=mysql_user
-mysql_passwd=mysql_password
-mysql_database=database_name
-mysql_table_prefix=
-mysql_max_idle_conns=10
-mysql_max_open_conns=100
-mysql_max_life_time=6
 
 # sqlite runtime store config
 runtime_sqlite_filename=epusdt-runtime.db
@@ -89,6 +67,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ./env:/app/.env
+      - ./data:/app/conf
     ports:
       - "8000:8000"
 EOF

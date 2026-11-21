@@ -20,8 +20,7 @@ func ListNotificationChannels(channelType string) ([]mdb.NotificationChannel, er
 }
 
 // ListEnabledChannelsByEvent returns enabled rows whose Events JSON has
-// the named event key set to true. Done in Go (rather than JSON_EXTRACT)
-// because the runtime DB is DB-agnostic (MySQL/Postgres/SQLite).
+// the named event key set to true.
 func ListEnabledChannelsByEvent(event string) ([]mdb.NotificationChannel, error) {
 	var rows []mdb.NotificationChannel
 	if err := dao.Mdb.Model(&mdb.NotificationChannel{}).

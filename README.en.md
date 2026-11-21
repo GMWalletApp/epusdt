@@ -1,7 +1,7 @@
 # Epusdt — Easy Payment USDT
 
 <p align="center">
-  <img src="https://gmwallet.app/favicon.png" alt="Epusdt Logo - Multi-chain Crypto Payment Gateway" width="120">
+  <img src="./src/www/images/logo.png" alt="Epusdt Logo - Multi-chain Crypto Payment Gateway" width="120">
 </p>
 
 <p align="center">
@@ -75,7 +75,7 @@ No matter what kind of platform you operate, Epusdt can fit into existing paymen
 
 - **Multi-chain and multi-token** — TRC20, ERC20, BEP20, Polygon, Aptos, and more
 - **Self-hosted** — full control of funds and wallet infrastructure
-- **Low-dependency runtime** — a single binary can run the service; low-traffic setups do not require MySQL + Redis
+- **Embedded SQLite** — business data and runtime state are stored in local files.
 - **Cross-platform** — supports x86 / ARM on Windows / Linux / Mac
 - **Multi-wallet rotation** — rotates receiving addresses to improve concurrency handling
 - **Async callback queue** — handles merchant notifications efficiently
@@ -83,6 +83,17 @@ No matter what kind of platform you operate, Epusdt can fit into existing paymen
 - **Telegram Bot** — instant payment notifications and lightweight operations
 
 ---
+
+## Database and upgrades
+
+EPUSDT supports SQLite only. New installations can omit `db_type` or set `db_type=sqlite`. EPUSDT creates the tables on first startup.
+
+| Contents | Setting | Default location |
+| --- | --- | --- |
+| Business data (orders, wallets, merchant settings) | `sqlite_database_filename` | `epusdt.db` next to the configuration file |
+| Runtime state (including transaction locks) | `runtime_sqlite_filename` | `epusdt-runtime.db` under `runtime_root_path` |
+
+When upgrading an existing SQLite deployment, keep the configuration, both database files and their storage directories. For a legacy MySQL or PostgreSQL deployment, back up, migrate and verify your data before switching to SQLite. Changing `db_type` does not convert historical data.
 
 ## Documentation and Guides
 
