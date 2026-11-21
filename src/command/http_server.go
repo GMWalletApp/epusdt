@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -25,38 +24,37 @@ import (
 	"github.com/spf13/viper"
 )
 
-var httpCmd = &cobra.Command{
-	Use:   "http",
-	Short: "http service",
-	Long:  "http service commands",
-	Run: func(cmd *cobra.Command, args []string) {
-	},
+func newHTTPCommand(frontend http.FileSystem) *cobra.Command {
+	httpCmd := &cobra.Command{
+		Use:   "http",
+		Short: "http service",
+		Long:  "http service commands",
+		Run: func(cmd *cobra.Command, args []string) {
+		},
+	}
+
+	httpCmd.AddCommand(&cobra.Command{
+		Use:   "start",
+		Short: "start",
+		Long:  "start http service",
+		Run: func(cmd *cobra.Command, args []string) {
+			// If no config file exists, or if install=true is set in the config,
+			// run the first-run install API on the same port as the main server.
+			// The wizard writes the .env (with install=false) and shuts itself
+			// down so bootstrap.InitApp() can read it normally on the same port.
+			if config.NeedsInstall() {
+				envPath, _ := config.ResolveConfigPath()
+				install.RunInstallServer(install.DefaultInstallAddr, envPath, frontend)
+			}
+			bootstrap.InitApp()
+			printBanner()
+			HttpServerStart(frontend)
+		},
+	})
+	return httpCmd
 }
 
-func init() {
-	httpCmd.AddCommand(startCmd)
-}
-
-var startCmd = &cobra.Command{
-	Use:   "start",
-	Short: "start",
-	Long:  "start http service",
-	Run: func(cmd *cobra.Command, args []string) {
-		// If no config file exists, or if install=true is set in the config,
-		// run the first-run install API on the same port as the main server.
-		// The wizard writes the .env (with install=false) and shuts itself
-		// down so bootstrap.InitApp() can read it normally on the same port.
-		if config.NeedsInstall() {
-			envPath, _ := config.ResolveConfigPath()
-			install.RunInstallServer(install.DefaultInstallAddr, envPath)
-		}
-		bootstrap.InitApp()
-		printBanner()
-		HttpServerStart()
-	},
-}
-
-func HttpServerStart() {
+func HttpServerStart(frontend http.FileSystem) {
 	var err error
 	e := echo.New()
 	e.HideBanner = true
@@ -68,14 +66,6 @@ func HttpServerStart() {
 	route.RegisterRouteWithScanner(e, scanner)
 	e.Static(config.StaticPath, config.StaticFilePath)
 
-	// Resolve www/ relative to the executable so SPA routes work regardless
-	// of the working directory. main.go extracts www/ next to the binary.
-	wwwRoot := "./www"
-	if exePath, err := os.Executable(); err == nil {
-		if exePath, err = filepath.EvalSymlinks(exePath); err == nil {
-			wwwRoot = filepath.Join(filepath.Dir(exePath), "www")
-		}
-	}
 	// Revalidate assets when the embedded frontend changes.
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -95,9 +85,9 @@ func HttpServerStart() {
 			}
 			return luluHttp.ShouldSkipSPAFallback(path)
 		},
-		HTML5: true,
-		Index: "index.html",
-		Root:  wwwRoot,
+		HTML5:      true,
+		Index:      "index.html",
+		Filesystem: frontend,
 	}))
 
 	httpListen := viper.GetString("http_listen")

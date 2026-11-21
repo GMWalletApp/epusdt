@@ -1,6 +1,8 @@
 package command
 
 import (
+	"net/http"
+
 	"github.com/GMWalletApp/epusdt/config"
 	"github.com/spf13/cobra"
 )
@@ -9,7 +11,8 @@ var configPath string
 
 var rootCmd = &cobra.Command{}
 
-func Execute() error {
+func Execute(frontend http.FileSystem) error {
+	rootCmd.AddCommand(newHTTPCommand(frontend))
 	return rootCmd.Execute()
 }
 
@@ -18,5 +21,4 @@ func init() {
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
 		config.SetConfigPath(configPath)
 	}
-	rootCmd.AddCommand(httpCmd)
 }

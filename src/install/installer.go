@@ -104,19 +104,7 @@ func installRootRedirectMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-func resolveInstallWWWRoot() string {
-	// Resolve www/ relative to the executable so SPA routes work regardless
-	// of the working directory. main.go extracts www/ next to the binary.
-	wwwRoot := "./www"
-	if exePath, err := os.Executable(); err == nil {
-		if exePath, err = filepath.EvalSymlinks(exePath); err == nil {
-			wwwRoot = filepath.Join(filepath.Dir(exePath), "www")
-		}
-	}
-	return wwwRoot
-}
-
-func newInstallServer(envFilePath, wwwRoot string) (*echo.Echo, *installHandler) {
+func newInstallServer(envFilePath string, frontend http.FileSystem) (*echo.Echo, *installHandler) {
 	h := &installHandler{
 		envFilePath: envFilePath,
 		done:        make(chan struct{}),
@@ -141,9 +129,9 @@ func newInstallServer(envFilePath, wwwRoot string) (*echo.Echo, *installHandler)
 		Skipper: func(c echo.Context) bool {
 			return luluHttp.ShouldSkipSPAFallback(c.Request().URL.Path)
 		},
-		HTML5: true,
-		Index: "index.html",
-		Root:  wwwRoot,
+		HTML5:      true,
+		Index:      "index.html",
+		Filesystem: frontend,
 	}))
 
 	return e, h
@@ -239,12 +227,12 @@ func (h *installHandler) Submit(c echo.Context) error {
 // RunInstallServer starts the install UI and REST API on listenAddr
 // (default :8000), then blocks until installation has been finalized.
 // The caller should then proceed with normal app initialisation (bootstrap.InitApp).
-func RunInstallServer(listenAddr, envFilePath string) {
+func RunInstallServer(listenAddr, envFilePath string, frontend http.FileSystem) {
 	if listenAddr == "" {
 		listenAddr = DefaultInstallAddr
 	}
 
-	e, h := newInstallServer(envFilePath, resolveInstallWWWRoot())
+	e, h := newInstallServer(envFilePath, frontend)
 
 	// Build a human-readable URL for the console hint.
 	installHost := listenAddr

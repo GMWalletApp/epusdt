@@ -25,6 +25,8 @@ Point your HTTPS reverse proxy at the mapped port. Configure a receiving address
 
 Compose mounts `./runtime/epusdt` at `/app/runtime`. That directory holds the application `.env`, business and runtime databases, and the embedded scanner database. The project-level Compose environment and the application configuration are separate files.
 
+With an image built from this revision, set `EPUSDT_READ_ONLY=true` to mount the gateway root filesystem read-only. Keep `/app/runtime` writable for configuration, databases and logs. When upgrading from an image that extracts `www/` (including v2.1.1), switch to the updated image before enabling this setting.
+
 When upgrading from v2.0.0, stop the old service, back up its configuration and databases, and copy them to the new mount **before recreating the old container**. Preserve the original backups and check the configured database filenames. [Release notes](https://github.com/GMWalletApp/epusdt/releases/tag/v2.1.0)
 
 ## Using a standalone scanner
