@@ -383,3 +383,32 @@ func TestInstallAPISubmitInvalidPort(t *testing.T) {
 		t.Error("env file should not have been written for invalid port")
 	}
 }
+
+func TestInstallerPreservesUnsupportedDatabaseConfig(t *testing.T) {
+	for _, legacy := range []string{"db_type=postgres", "db_type=mysql", "db_type=unknown", "mysql_database=payments", "postgres_host=localhost"} {
+		t.Run(legacy, func(t *testing.T) {
+			resetInstallTestState(t)
+			path := filepath.Join(t.TempDir(), ".env")
+			original := legacy + "\ninstall=true\n"
+			if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := writeEnvFile(path, &InstallRequest{}, true); err == nil || !strings.Contains(err.Error(), "SQLite") {
+				t.Fatalf("installer database check: %v", err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil || string(got) != original {
+				t.Fatalf("existing config changed: %q (error %v)", got, err)
+			}
+			if err := initInstallConfig(path); err != nil {
+				t.Fatal(err)
+			}
+			if err := dao.DBInit(); err == nil || !strings.Contains(err.Error(), "SQLite") {
+				t.Fatalf("startup database check: %v", err)
+			}
+			if _, err := os.Stat(config.GetPrimarySqlitePath()); !os.IsNotExist(err) {
+				t.Fatalf("unexpected SQLite database after failed startup: %v", err)
+			}
+		})
+	}
+}

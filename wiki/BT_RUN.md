@@ -2,18 +2,18 @@
 本教程基于`宝塔`操作面板演示`Epusdt`如何运行，如果你未使用`宝塔`面板和有更强的服务器运维基础相信你也能根据教程的一些操作找到灵感！     
 
 ## 准备工作
-- 请确保已经安装并启动了`Mysql`和`redis`、`Supervisord`服务
+- 请安装并启动用于守护 EPUSDT 进程的 `Supervisord` 服务。
 - 准备一个`telgeram`机器人🤖（用于操作你的钱包和接收交易通知），申请教程参考：[https://w37fhy.cn/2364.html](https://w37fhy.cn/2364.html)
 - 准备一个收银台域名，并完成解析(例如：`upay.dujiaoka.com`)。用于支付请求发起和扫码页面
 
 ## 开始使用
 ### 一、新增网站
-在`宝塔`面板网站里新增一个网站，无需`php`和`ftp`纯静态即可，但是需要数据库！        
+在`宝塔`面板网站里新增一个网站，选择纯静态站点，数据库选项选「不创建」。
 将提前解析好的收银台域名绑定。     
 ![新增网站](img/add_web.png)
 
 ### 二、数据库说明
-当前版本无需手动导入 SQL 文件。配置好数据库连接后，Epusdt 启动时会自动创建和升级所需表结构。
+EPUSDT 启动时会自动创建 SQLite 文件和表。请给运行 EPUSDT 的用户授予数据目录写入权限，并将数据库放在网站公开目录之外。
 
 ### 三、配置Epusdt
 1.将编译好的`Epusdt`项目压缩包上传至刚刚新增的网站目录，随后解压。    
@@ -32,7 +32,7 @@ http_listen=:8000
 #静态资源文件目录
 static_path=/static
 #缓存路径
-runtime_root_path=/runtime
+runtime_root_path=/www/epusdt-data/runtime
 
 #日志配置
 log_save_path=/logs
@@ -40,25 +40,10 @@ log_max_size=32
 log_max_age=7
 max_backups=3
 
-# mysql配置
-mysql_host=127.0.0.1
-mysql_port=3306
-mysql_user=mysql账号
-mysql_passwd=mysql密码
-mysql_database=数据库
-mysql_table_prefix=
-mysql_max_idle_conns=10
-mysql_max_open_conns=100
-mysql_max_life_time=6
-
-# redis配置
-redis_host=127.0.0.1
-redis_port=6379
-redis_passwd=
-redis_db=5
-redis_pool_size=5
-redis_max_retries=3
-redis_idle_timeout=1000
+# SQLite 数据文件
+db_type=sqlite
+sqlite_database_filename=/www/epusdt-data/epusdt.db
+runtime_sqlite_filename=epusdt-runtime.db
 
 # 消息队列配置
 queue_concurrency=10

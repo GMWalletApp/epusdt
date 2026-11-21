@@ -38,6 +38,7 @@ import (
 	"github.com/gookit/color"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
@@ -295,14 +296,26 @@ type envTemplateData struct {
 func writeEnvFile(path string, r *InstallRequest, installEnabled bool) error {
 	// Collect existing non-empty key→value pairs for non-form keys.
 	existingValues := map[string]string{}
-	if data, err := os.ReadFile(path); err == nil {
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err == nil {
+		previous := viper.New()
+		previous.SetConfigType("env")
+		if err := previous.ReadConfig(bytes.NewReader(data)); err != nil {
+			return fmt.Errorf("read existing configuration: %w", err)
+		}
+		if err := config.ValidateDatabase(previous); err != nil {
+			return err
+		}
 		for _, line := range strings.Split(string(data), "\n") {
 			line = strings.TrimSpace(line)
 			if line == "" || strings.HasPrefix(line, "#") {
 				continue
 			}
 			if idx := strings.IndexByte(line, '='); idx >= 0 {
-				k := strings.TrimSpace(line[:idx])
+				k := strings.ToLower(strings.TrimSpace(line[:idx]))
 				v := strings.TrimSpace(line[idx+1:])
 				if v != "" && !formControlledKeys[k] {
 					existingValues[k] = v
@@ -451,7 +464,7 @@ log_max_size=32
 log_max_age=7
 max_backups=3
 
-# supported values: postgres,mysql,sqlite
+# SQLite is the only supported database and the default.
 db_type=sqlite
 
 # sqlite primary database config
