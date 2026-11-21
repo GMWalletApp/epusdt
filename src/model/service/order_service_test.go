@@ -1634,3 +1634,132 @@ func TestOrderProcessingSubOrderExpiresSiblingsAndReleasesLocks(t *testing.T) {
 		t.Fatalf("eth sub-order runtime lock still held: trade_id=%s", ethLock)
 	}
 }
+
+func TestCreateTransactionIdempotentReplayReturnsOriginalOrder(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	apiKey := &mdb.ApiKey{}
+	apiKey.ID = 41
+	req := newCreateTransactionRequest("idempotent-placeholder", 12.34)
+	req.Token = ""
+	req.Network = ""
+	req.RedirectUrl = "https://example.com/return"
+	req.Name = "Same order"
+
+	first, err := CreateTransaction(req, apiKey)
+	if err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	second, err := CreateTransaction(req, apiKey)
+	if err != nil {
+		t.Fatalf("idempotent replay: %v", err)
+	}
+	if second.TradeId != first.TradeId || second.OrderId != first.OrderId {
+		t.Fatalf("replay returned a different order: first=%+v second=%+v", first, second)
+	}
+	if second.ExpirationTime != first.ExpirationTime {
+		t.Fatalf("replay extended expiration: first=%d second=%d", first.ExpirationTime, second.ExpirationTime)
+	}
+	var count int64
+	if err := dao.Mdb.Model(&mdb.Orders{}).Where("order_id = ?", req.OrderId).Count(&count).Error; err != nil {
+		t.Fatalf("count orders: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("order count = %d, want 1", count)
+	}
+}
+
+func TestCreateTransactionIdempotentReplayRejectsChangedRequest(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	apiKey := &mdb.ApiKey{}
+	apiKey.ID = 42
+	req := newCreateTransactionRequest("idempotent-conflict", 12.34)
+	req.Token = ""
+	req.Network = ""
+	if _, err := CreateTransaction(req, apiKey); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+
+	changed := *req
+	changed.Amount = 12.35
+	if _, err := CreateTransaction(&changed, apiKey); err != constant.OrderAlreadyExists {
+		t.Fatalf("changed amount error = %v, want %v", err, constant.OrderAlreadyExists)
+	}
+	changed = *req
+	changed.NotifyUrl = "https://example.net/other-callback"
+	if _, err := CreateTransaction(&changed, apiKey); err != constant.OrderAlreadyExists {
+		t.Fatalf("changed callback error = %v, want %v", err, constant.OrderAlreadyExists)
+	}
+}
+
+func TestCreateTransactionIdempotentReplayRejectsOtherMerchant(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	owner := &mdb.ApiKey{}
+	owner.ID = 43
+	other := &mdb.ApiKey{}
+	other.ID = 44
+	req := newCreateTransactionRequest("idempotent-owner", 12.34)
+	req.Token = ""
+	req.Network = ""
+	if _, err := CreateTransaction(req, owner); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	if _, err := CreateTransaction(req, other); err != constant.OrderAlreadyExists {
+		t.Fatalf("other merchant error = %v, want %v", err, constant.OrderAlreadyExists)
+	}
+}
+
+func TestCreateTransactionConcurrentReplayCreatesOneOrder(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	apiKey := &mdb.ApiKey{}
+	apiKey.ID = 45
+	const workers = 8
+	responses := make(chan string, workers)
+	errors := make(chan error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := newCreateTransactionRequest("idempotent-concurrent", 12.34)
+			req.Token = ""
+			req.Network = ""
+			resp, err := CreateTransaction(req, apiKey)
+			if err != nil {
+				errors <- err
+				return
+			}
+			responses <- resp.TradeId
+		}()
+	}
+	wg.Wait()
+	close(errors)
+	close(responses)
+	for err := range errors {
+		t.Fatalf("concurrent create: %v", err)
+	}
+	var tradeID string
+	for got := range responses {
+		if tradeID == "" {
+			tradeID = got
+		}
+		if got != tradeID {
+			t.Fatalf("concurrent replay returned trade_id %q, want %q", got, tradeID)
+		}
+	}
+	var count int64
+	if err := dao.Mdb.Model(&mdb.Orders{}).Where("order_id = ?", "idempotent-concurrent").Count(&count).Error; err != nil {
+		t.Fatalf("count orders: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("order count = %d, want 1", count)
+	}
+}
