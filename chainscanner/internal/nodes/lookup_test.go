@@ -281,3 +281,19 @@ func TestSingleStrictRoundRetriesWithTwoNewProviders(t *testing.T) {
 		}
 	}
 }
+
+func TestOfficialGatewayVotes(t *testing.T) {
+	for _, tc := range []struct{ chain, first, second string }{
+		{"binance", "https://bsc-dataseed-public.bnbchain.org", "https://bsc-dataseed.binance.org"},
+		{"monad", "wss://rpc3.monad.xyz", "https://rpc.ankr.com/monad_mainnet"},
+		{"solana", "https://api.mainnet-beta.solana.com", "https://api.mainnet.solana.com"},
+		{"aptos", "https://fullnode.mainnet.aptoslabs.com/v1", "https://api.mainnet.aptoslabs.com/v1"},
+	} {
+		if providerKey(chains.Network{Name: tc.chain, URL: tc.first}) != providerKey(chains.Network{Name: tc.chain, URL: tc.second}) {
+			t.Errorf("same provider received two votes: %s and %s", tc.first, tc.second)
+		}
+	}
+	if providerKey(chains.Network{Name: "monad", URL: "https://rpc2.monad.xyz"}) == providerKey(chains.Network{Name: "monad", URL: "wss://rpc3.monad.xyz"}) {
+		t.Fatal("Goldsky and Ankr must be independent")
+	}
+}
