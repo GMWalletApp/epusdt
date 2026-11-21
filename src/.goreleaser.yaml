@@ -23,11 +23,29 @@ builds:
     goarch:
       - amd64
       - arm64
+  - id: chainscanner
+    dir: ../chainscanner
+    main: ./cmd/chainscanner
+    binary: chainscanner
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
 
 archives:
   - id: epusdt
     ids:
       - epusdt
+      - chainscanner
     name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
     files:
       - .env.example

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	scanner "github.com/GMWalletApp/ChainScanner"
+	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
@@ -59,6 +60,11 @@ func queueConfirmation(order *mdb.Orders, e scanner.Activity) error {
 					return errInactiveCandidate
 				}
 			}
+			if hasTransactionLock(&row) {
+				if err := data.ExtendOrderTransactionLock(&row, time.Now().Add(config.GetOrderExpirationTimeDuration())); err != nil {
+					return err
+				}
+			}
 		}
 		// Read the policy transactionally across payment replicas. Re-inclusion
 		// or redelivery of the same hash keeps the original strict decision.
@@ -86,6 +92,7 @@ var ErrStrictRoundUnsupported = errors.New("scanner did not acknowledge single-r
 
 var errRoundLimit = errors.New("both strict rounds have been used")
 var errPaymentMismatch = errors.New("strict result does not match order")
+var errWaitingBlockDepth = errors.New("waiting for required block depth")
 
 var errInactiveCandidate = errors.New("payment candidate no longer active")
 
@@ -162,7 +169,7 @@ func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup Stric
 		return true, markPaymentForReview(db, job, lease)
 	}
 	if err != nil && !errors.Is(err, errInactiveCandidate) {
-		if attempted || errors.Is(err, errPaymentMismatch) {
+		if attempted || errors.Is(err, errPaymentMismatch) || errors.Is(err, errWaitingBlockDepth) {
 			if e := claimed().Updates(map[string]any{"verified_result": "", "retry_at": time.Now().Add(time.Second).UnixMilli()}).Error; e != nil {
 				return false, e
 			}
@@ -180,15 +187,21 @@ func ConfirmPayment(ctx context.Context, feed scanner.Feed, lookup StrictLookup,
 	}
 	if order.ParentTradeId != "" {
 		var parent mdb.Orders
-		if err := dao.Mdb.WithContext(ctx).Select("status").Where("trade_id = ?", order.ParentTradeId).Take(&parent).Error; err != nil {
+		if err := dao.Mdb.WithContext(ctx).Where("trade_id = ?", order.ParentTradeId).Take(&parent).Error; err != nil {
 			return err
 		}
 		if parent.Status != mdb.StatusConfirming {
 			return errInactiveCandidate
 		}
+		if hasTransactionLock(&parent) {
+			_ = data.ExtendOrderTransactionLock(&parent, time.Now().Add(config.GetOrderExpirationTimeDuration()))
+		}
 	}
 	if order.Status != mdb.StatusConfirming {
 		return errInactiveCandidate
+	}
+	if hasTransactionLock(&order) {
+		_ = data.ExtendOrderTransactionLock(&order, time.Now().Add(config.GetOrderExpirationTimeDuration()))
 	}
 	var e scanner.Activity
 	if err := json.Unmarshal([]byte(job.Activity), &e); err != nil {
@@ -210,7 +223,7 @@ func ConfirmPayment(ctx context.Context, feed scanner.Feed, lookup StrictLookup,
 			return err
 		}
 		if h-e.Height+1 < int64(chain.MinConfirmations) {
-			return errors.New("waiting for required block depth")
+			return errWaitingBlockDepth
 		}
 	}
 	verified := e

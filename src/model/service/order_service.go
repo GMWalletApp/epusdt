@@ -414,6 +414,37 @@ func SubmitManualPayment(tradeId, blockTransactionId string) (*response.ManualPa
 	if err != nil {
 		return nil, err
 	}
+	if order.ParentTradeId == "" {
+		subs, subErr := data.GetAllSubOrders(order.TradeId)
+		if subErr != nil {
+			return nil, subErr
+		}
+		for i := range subs {
+			sub := &subs[i]
+			if !manualPaymentStatusAllowed(sub.Status, adminManualPaymentStatuses) || !isOnChainOrder(sub.PayProvider) {
+				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(sub.ReviewTransactionHash), blockTransactionId) || sub.Status == mdb.StatusManualReview {
+				if resp, err := submitManualPaymentForOrder(sub, blockTransactionId, adminManualPaymentStatuses); err == nil {
+					return resp, nil
+				}
+			}
+		}
+		resp, err := submitManualPaymentForOrder(order, blockTransactionId, adminManualPaymentStatuses)
+		if err == nil {
+			return resp, nil
+		}
+		for i := range subs {
+			sub := &subs[i]
+			if !manualPaymentStatusAllowed(sub.Status, adminManualPaymentStatuses) || !isOnChainOrder(sub.PayProvider) {
+				continue
+			}
+			if subResp, subPayErr := submitManualPaymentForOrder(sub, blockTransactionId, adminManualPaymentStatuses); subPayErr == nil {
+				return subResp, nil
+			}
+		}
+		return nil, err
+	}
 	return submitManualPaymentForOrder(order, blockTransactionId, adminManualPaymentStatuses)
 }
 

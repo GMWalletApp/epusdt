@@ -194,6 +194,8 @@ In the admin console, open OKX OnchainOS settings. Enter your API key, secret, p
 
 ## ChainScanner integration
 
+Docker Compose starts the embedded scanner by default. Existing standalone Compose deployments can keep their scanner data volume, credentials and service URL and run `docker compose --profile scanner up -d` to retain subscriptions and cursors. For a new standalone service, supply separate consumer and administrator tokens and set `CHAINSCANNER_URL=http://chainscanner:9081` for EPUSDT.
+
 EPUSDT starts ChainScanner in-process by default, using a private loopback port and automatically generated credentials. Subscriptions, cursors and node settings persist in `chainscanner.sqlite` in the EPUSDT runtime directory. To use a standalone scanner instead, configure its HTTP(S) origin in `CHAINSCANNER_URL` and a dedicated consumer credential in `CHAINSCANNER_TOKEN`. Set a separate `CHAINSCANNER_ADMIN_TOKEN` for scan progress, node diagnostics and blacklist management. Configure persistent scanner storage and reconcile pending orders when migrating. The default event transport is WebSocket. Set `CHAINSCANNER_TRANSPORT=grpc` for bidirectional streaming or `http` for long polling.
 
 EPUSDT registers enabled receiving addresses and acknowledges events after persisting the payment decision. System settings enable strict verification by default. Candidate payments require matching results from two independent nodes, followed by order and depth checks. Two failed rounds trigger manual review. Disabling strict verification applies to newly queued candidates. The authenticated console API exposes scanner node, fallback, blacklist, height and transaction operations under `/admin/api/v1/chainscanner`. See the [v1 API](chainscanner/docs/api/en.md).

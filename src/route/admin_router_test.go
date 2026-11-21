@@ -790,6 +790,135 @@ func TestAdminOrders_CloseWaitSelectOrder(t *testing.T) {
 	}
 }
 
+func TestAdminOrders_CloseManualReviewParentAndChildOrder(t *testing.T) {
+	e, token := setupAdminTestEnv(t)
+	parent := &mdb.Orders{
+		TradeId:               "trade-admin-close-review-parent",
+		OrderId:               "order-admin-close-review-parent",
+		Amount:                10,
+		Currency:              "CNY",
+		ActualAmount:          1.23,
+		ReceiveAddress:        "TParentReviewAddr",
+		Token:                 "USDT",
+		Network:               mdb.NetworkTron,
+		Status:                mdb.StatusManualReview,
+		ReviewTransactionHash: "0xreviewhash",
+		PayProvider:           mdb.PaymentProviderOnChain,
+	}
+	if err := dao.Mdb.Create(parent).Error; err != nil {
+		t.Fatal(err)
+	}
+	sub := &mdb.Orders{
+		TradeId:               "trade-admin-close-review-sub",
+		OrderId:               "order-admin-close-review-sub",
+		ParentTradeId:         parent.TradeId,
+		Amount:                10,
+		Currency:              "CNY",
+		ActualAmount:          0.1,
+		ReceiveAddress:        "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+		Token:                 "ETH",
+		Network:               mdb.NetworkBase,
+		Status:                mdb.StatusManualReview,
+		ReviewTransactionHash: "0xreviewhash",
+		PayProvider:           mdb.PaymentProviderOnChain,
+	}
+	if err := dao.Mdb.Create(sub).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := data.LockTransaction(parent.Network, parent.ReceiveAddress, parent.Token, parent.TradeId, parent.ActualAmount, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if err := data.LockTransaction(sub.Network, sub.ReceiveAddress, sub.Token, sub.TradeId, sub.ActualAmount, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := doPostAdmin(e, "/admin/api/v1/orders/"+parent.TradeId+"/close", nil, token)
+	assertOK(t, rec)
+
+	for _, id := range []string{parent.TradeId, sub.TradeId} {
+		reloaded, err := data.GetOrderInfoByTradeId(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reloaded.Status != mdb.StatusExpired || reloaded.ReviewTransactionHash != "" {
+			t.Fatalf("order %s after close: status=%d review_hash=%q", id, reloaded.Status, reloaded.ReviewTransactionHash)
+		}
+	}
+	var lockCount int64
+	if err := dao.RuntimeDB.Model(&mdb.TransactionLock{}).Where("trade_id IN ?", []string{parent.TradeId, sub.TradeId}).Count(&lockCount).Error; err != nil || lockCount != 0 {
+		t.Fatalf("locks remaining=%d err=%v", lockCount, err)
+	}
+}
+
+func TestAdminOrders_MarkPaidParentOrderRoutesToManualReviewSubOrder(t *testing.T) {
+	e, token := setupAdminTestEnv(t)
+	parent := &mdb.Orders{
+		TradeId:               "trade-admin-mark-paid-review-parent",
+		OrderId:               "order-admin-mark-paid-review-parent",
+		Amount:                10,
+		Currency:              "CNY",
+		ActualAmount:          1.47,
+		ReceiveAddress:        "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+		Token:                 "USDC",
+		Network:               mdb.NetworkBase,
+		Status:                mdb.StatusManualReview,
+		ReviewTransactionHash: "0xchildreviewtx",
+		NotifyUrl:             "https://merchant.example/notify",
+		PayProvider:           mdb.PaymentProviderOnChain,
+	}
+	if err := dao.Mdb.Create(parent).Error; err != nil {
+		t.Fatal(err)
+	}
+	sub := &mdb.Orders{
+		TradeId:               "trade-admin-mark-paid-review-sub",
+		OrderId:               "order-admin-mark-paid-review-sub",
+		ParentTradeId:         parent.TradeId,
+		Amount:                10,
+		Currency:              "CNY",
+		ActualAmount:          0.1,
+		ReceiveAddress:        "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+		Token:                 "ETH",
+		Network:               mdb.NetworkBase,
+		Status:                mdb.StatusManualReview,
+		ReviewTransactionHash: "0xchildreviewtx",
+		PayProvider:           mdb.PaymentProviderOnChain,
+	}
+	if err := dao.Mdb.Create(sub).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	restore := service.SetManualOrderPaymentValidatorForTest(func(got *mdb.Orders, blockID string) (string, error) {
+		if got.TradeId != sub.TradeId {
+			return "", errors.New("does not match parent asset")
+		}
+		if blockID != "0xchildreviewtx" {
+			t.Fatalf("validator block id = %s, want 0xchildreviewtx", blockID)
+		}
+		return "0xchildreviewtx", nil
+	})
+	defer restore()
+
+	rec := doPostAdmin(e, "/admin/api/v1/orders/"+parent.TradeId+"/mark-paid", map[string]interface{}{
+		"block_transaction_id": "0xchildreviewtx",
+	}, token)
+	assertOK(t, rec)
+
+	paidParent, err := data.GetOrderInfoByTradeId(parent.TradeId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paidSub, err := data.GetOrderInfoByTradeId(sub.TradeId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paidParent.Status != mdb.StatusPaySuccess || paidParent.PayBySubId != paidSub.ID || paidParent.ReviewTransactionHash != "" {
+		t.Fatalf("parent after mark-paid: %+v", paidParent)
+	}
+	if paidSub.Status != mdb.StatusPaySuccess || paidSub.BlockTransactionId != "0xchildreviewtx" || paidSub.ReviewTransactionHash != "" {
+		t.Fatalf("sub after mark-paid: %+v", paidSub)
+	}
+}
+
 // TestAdminOrders_MarkPaidNotFound verifies mark-paid on non-existent order.
 func TestAdminOrders_MarkPaidNotFound(t *testing.T) {
 	e, token := setupAdminTestEnv(t)

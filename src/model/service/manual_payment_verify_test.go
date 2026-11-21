@@ -824,6 +824,51 @@ func TestManualVerifyTronPaymentHTTPFlow(t *testing.T) {
 
 }
 
+func TestManualVerifyEvmFallsBackToStrictTransactionWithoutLegacyRpcNodes(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	upsertTestChainToken(t, mdb.ChainToken{
+		Network:  mdb.NetworkBase,
+		Symbol:   "ETH",
+		Decimals: 18,
+		Enabled:  true,
+	})
+	txHash := "0x" + strings.Repeat("d", 64)
+	receive := "0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
+	sender := "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+	order := &mdb.Orders{
+		TradeId:        "manual-evm-strict-only",
+		OrderId:        "manual-evm-strict-only",
+		ActualAmount:   0.1,
+		ReceiveAddress: receive,
+		Token:          "ETH",
+		Network:        mdb.NetworkBase,
+		Status:         mdb.StatusManualReview,
+		PayProvider:    mdb.PaymentProviderOnChain,
+	}
+	if err := dao.Mdb.Create(order).Error; err != nil {
+		t.Fatalf("create order: %v", err)
+	}
+
+	previous := StrictTransaction
+	t.Cleanup(func() { StrictTransaction = previous })
+	StrictTransaction = func(_ context.Context, n, h string) (json.RawMessage, error) {
+		if n != mdb.NetworkBase || h != txHash {
+			t.Fatalf("unexpected strict lookup %s %s", n, h)
+		}
+		return json.RawMessage(fmt.Sprintf(`{"transaction":{"hash":%q,"blockHash":"0x123","blockNumber":"0xa","from":%q,"to":%q,"value":"0x16345785d8a0000"},"receipt":{"transactionHash":%q,"blockHash":"0x123","blockNumber":"0xa","status":"0x1","logs":[]}}`, txHash, sender, receive, txHash)), nil
+	}
+
+	got, err := ValidateManualOrderPayment(order, strings.ToUpper(txHash))
+	if err != nil {
+		t.Fatalf("ValidateManualOrderPayment() without legacy rpc_nodes failed: %v", err)
+	}
+	if got != txHash {
+		t.Fatalf("canonical txHash = %q, want %q", got, txHash)
+	}
+}
+
 func TestManualVerifySolanaRejectsMissingBlockTime(t *testing.T) {
 	order := &mdb.Orders{BaseModel: mdb.BaseModel{CreatedAt: *carbon.NewTime(carbon.CreateFromTimestampMilli(time.Now().UnixMilli()))}}
 	if err := ensureSolanaTransferNotBeforeOrder(0, order); err == nil {

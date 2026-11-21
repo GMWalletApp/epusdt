@@ -5,17 +5,27 @@ readonly EPCTL_NAME="epctl"
 readonly REPO_OWNER="GMWalletApp"
 readonly REPO_NAME="epusdt"
 readonly SERVICE_NAME="epusdt"
+readonly SCANNER_SERVICE_NAME="chainscanner"
 readonly SYSTEM_USER="epusdt"
 readonly INSTALL_DIR="/opt/epusdt"
+readonly RUNTIME_DIR="${INSTALL_DIR}/runtime"
 readonly BIN_PATH="${INSTALL_DIR}/epusdt"
+readonly SCANNER_BIN_PATH="${INSTALL_DIR}/chainscanner"
 readonly CONFIG_PATH="${INSTALL_DIR}/.env"
 readonly CONFIG_EXAMPLE_PATH="${INSTALL_DIR}/.env.example"
+readonly SCANNER_CONFIG_PATH="${INSTALL_DIR}/chainscanner.json"
+readonly SCANNER_DB_PATH="${RUNTIME_DIR}/chainscanner.db"
 readonly WWW_PATH="${INSTALL_DIR}/www"
 readonly CACHE_ROOT="/tmp/epusdt"
 readonly SYSTEMD_UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
+readonly SCANNER_SYSTEMD_UNIT_PATH="/etc/systemd/system/${SCANNER_SERVICE_NAME}.service"
 readonly SELF_INSTALL_PATH="/usr/local/bin/${EPCTL_NAME}"
 readonly DEFAULT_APP_URI="http://127.0.0.1:8000"
 readonly DEFAULT_LISTEN="127.0.0.1:8000"
+readonly DEFAULT_SCANNER_LISTEN="127.0.0.1:9081"
+readonly DEFAULT_SCANNER_URL="http://127.0.0.1:9081"
+readonly DEFAULT_SCANNER_TRANSPORT="ws"
+readonly DEFAULT_COMPONENT="epusdt"
 readonly SCRIPT_SOURCE_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 
 COLOR_RESET=""
@@ -99,6 +109,14 @@ trf() {
     zh:release_tag_invalid) template='--tag 必须是有效的 release tag，例如 v1.0.6' ;;
     en:unsupported_arch) template='unsupported architecture: %s' ;;
     zh:unsupported_arch) template='不支持的架构：%s' ;;
+    en:invalid_component) template='invalid component: %s (expected all, epusdt, or chainscanner)' ;;
+    zh:invalid_component) template='无效的组件：%s（可选值：all、epusdt、chainscanner）' ;;
+    en:invalid_scanner_token) template='--scanner-token must be at least 24 characters' ;;
+    zh:invalid_scanner_token) template='--scanner-token 长度必须至少为 24 位' ;;
+    en:invalid_scanner_admin_token) template='--scanner-admin-token must be at least 24 characters and different from --scanner-token' ;;
+    zh:invalid_scanner_admin_token) template='--scanner-admin-token 长度必须至少为 24 位，且不能与 --scanner-token 相同' ;;
+    en:invalid_scanner_transport) template='--scanner-transport must be one of: ws, grpc, http' ;;
+    zh:invalid_scanner_transport) template='--scanner-transport 必须是 ws、grpc 或 http 之一' ;;
     en:checksum_missing) template='checksum entry for %s not found in %s' ;;
     zh:checksum_missing) template='在 %s 中找不到 %s 的校验项' ;;
     en:latest_release_resolve_failed) template='failed to resolve the latest release tag from GitHub' ;;
@@ -119,10 +137,16 @@ trf() {
     zh:checksum_skipped) template='未检测到 sha256sum，已跳过校验' ;;
     en:archive_missing_binary) template='release archive is missing the epusdt binary' ;;
     zh:archive_missing_binary) template='release 压缩包中缺少 epusdt 二进制文件' ;;
+    en:archive_missing_scanner_binary) template='release archive is missing the chainscanner binary' ;;
+    zh:archive_missing_scanner_binary) template='release 压缩包中缺少 chainscanner 二进制文件' ;;
+    en:archive_missing_scanner_fallback) template='release archive does not contain chainscanner; deploying epusdt only' ;;
+    zh:archive_missing_scanner_fallback) template='该版本 release 压缩包中不包含 chainscanner，将仅部署 epusdt' ;;
     en:archive_missing_env_example) template='release archive is missing .env.example' ;;
     zh:archive_missing_env_example) template='release 压缩包中缺少 .env.example' ;;
     en:keeping_existing_config) template='keeping existing config at %s' ;;
     zh:keeping_existing_config) template='保留现有配置文件：%s' ;;
+    en:scanner_credentials_ready) template='chainscanner connection credentials (for epusdt): url=%s token=%s admin_token=%s' ;;
+    zh:scanner_credentials_ready) template='chainscanner 连接凭证（供 epusdt 对接使用）：url=%s token=%s admin_token=%s' ;;
     en:service_failed_active) template='service %s failed to become active' ;;
     zh:service_failed_active) template='服务 %s 未能成功进入 active 状态' ;;
     en:service_installed) template='installed %s to %s from %s' ;;
@@ -177,14 +201,18 @@ trf() {
     zh:state_inactive) template='已安装，但未运行' ;;
     en:menu_title) template='EPCTL Console' ;;
     zh:menu_title) template='EPCTL 控制台' ;;
-    en:menu_subtitle) template='Linux binary manager for epusdt' ;;
-    zh:menu_subtitle) template='面向 epusdt 的 Linux 二进制管理工具' ;;
-    en:label_service) template='service' ;;
-    zh:label_service) template='服务状态' ;;
+    en:menu_subtitle) template='Linux binary manager for epusdt & chainscanner' ;;
+    zh:menu_subtitle) template='面向 epusdt 与 chainscanner 的 Linux 二进制管理工具' ;;
+    en:label_service) template='epusdt service' ;;
+    zh:label_service) template='epusdt 状态' ;;
+    en:label_scanner_service) template='chainscanner service' ;;
+    zh:label_scanner_service) template='chainscanner 状态' ;;
     en:label_install_dir) template='install dir' ;;
     zh:label_install_dir) template='安装目录' ;;
-    en:label_config) template='config' ;;
-    zh:label_config) template='配置文件' ;;
+    en:label_config) template='epusdt config' ;;
+    zh:label_config) template='epusdt 配置' ;;
+    en:label_scanner_config) template='scanner config' ;;
+    zh:label_scanner_config) template='scanner 配置' ;;
     en:menu_section_setup) template='Setup and release management' ;;
     zh:menu_section_setup) template='部署与发布' ;;
     en:menu_section_runtime) template='Runtime inspection' ;;
@@ -213,6 +241,8 @@ trf() {
     zh:unknown_arg) template='%s 命令不支持该参数：%s' ;;
     en:unknown_command) template='unknown command: %s' ;;
     zh:unknown_command) template='未知命令：%s' ;;
+    en:input_component) template='Component (1=all [epusdt+chainscanner], 2=epusdt, 3=chainscanner)' ;;
+    zh:input_component) template='部署/操作组件（1=all [epusdt+chainscanner]，2=仅 epusdt，3=仅 chainscanner）' ;;
     en:input_release_tag) template='Release tag (blank = latest)' ;;
     zh:input_release_tag) template='Release tag（留空则使用 latest）' ;;
     en:input_upgrade_tag) template='Upgrade tag (blank = latest)' ;;
@@ -221,6 +251,14 @@ trf() {
     zh:input_app_uri) template='app_uri' ;;
     en:input_http_listen) template='http_listen' ;;
     zh:input_http_listen) template='http_listen' ;;
+    en:input_scanner_listen) template='chainscanner listen address' ;;
+    zh:input_scanner_listen) template='chainscanner 监听地址' ;;
+    en:input_scanner_url) template='External scanner URL (leave empty to use the embedded scanner)' ;;
+    zh:input_scanner_url) template='外部扫描服务地址（留空使用内置扫描器）' ;;
+    en:input_scanner_token) template='chainscanner token (>=24 chars, blank = auto)' ;;
+    zh:input_scanner_token) template='chainscanner token（>=24位，留空自动生成/复用）' ;;
+    en:input_scanner_admin_token) template='chainscanner admin token (>=24 chars, blank = auto)' ;;
+    zh:input_scanner_admin_token) template='chainscanner admin token（>=24位，留空自动生成/复用）' ;;
     en:input_log_lines) template='Log lines' ;;
     zh:input_log_lines) template='日志行数' ;;
     en:press_enter_continue) template='Press Enter to return to the menu...' ;;
@@ -253,14 +291,14 @@ trf() {
     zh:action_download_title) template='下载 release 包' ;;
     en:action_download_desc) template='This will download the selected GitHub release archive into %s, and verify SHA256 when sha256sum is available. It will not install or start the service.' ;;
     zh:action_download_desc) template='此操作会把选定的 GitHub release 压缩包下载到 %s，并在本机有 sha256sum 时校验 SHA256。它不会安装，也不会启动服务。' ;;
-    en:action_install_title) template='Install or refresh the service' ;;
+    en:action_install_title) template='Install or refresh service(s)' ;;
     zh:action_install_title) template='安装或刷新服务' ;;
-    en:action_install_desc) template='This will install epusdt into %s, create or reuse %s, write %s, and enable %s through systemd. Existing .env will be kept.' ;;
-    zh:action_install_desc) template='此操作会把 epusdt 安装到 %s，创建或复用 %s，写入 %s，并通过 systemd 启用 %s。若已有 .env，则会保留。' ;;
-    en:action_upgrade_title) template='Upgrade the service' ;;
+    en:action_install_desc) template='This will install epusdt and/or chainscanner into %s, create or reuse %s, write systemd unit(s) under %s, and enable the selected service(s) (%s). Existing configuration will be kept.' ;;
+    zh:action_install_desc) template='此操作会把 epusdt 和/或 chainscanner 安装到 %s，创建或复用 %s，写入 %s 并通过 systemd 启用所选服务（%s）。若已有配置文件，则会保留。' ;;
+    en:action_upgrade_title) template='Upgrade service(s)' ;;
     zh:action_upgrade_title) template='升级服务' ;;
-    en:action_upgrade_desc) template='This will download and install a newer release into %s, keep the existing .env configuration, and then ask whether to restart %s. The direct CLI command restarts by default unless you pass --no-restart.' ;;
-    zh:action_upgrade_desc) template='此操作会下载并安装较新的 release 到 %s，保留现有 .env 配置，然后再询问是否重启 %s。直接执行 CLI 时默认会重启，除非显式传入 --no-restart。' ;;
+    en:action_upgrade_desc) template='This will download and install a newer release into %s, keep existing configuration files, and then ask whether to restart %s. The direct CLI command restarts by default unless you pass --no-restart.' ;;
+    zh:action_upgrade_desc) template='此操作会下载并安装较新的 release 到 %s，保留现有配置文件，然后再询问是否重启 %s。直接执行 CLI 时默认会重启，除非显式传入 --no-restart。' ;;
     en:action_upgrade_restart_notice) template='Restarting %s will briefly interrupt the service and switch the running process to the new binary.' ;;
     zh:action_upgrade_restart_notice) template='重启 %s 会带来短暂服务中断，并让运行中的进程切换到新的二进制文件。' ;;
     en:action_upgrade_restart_skipped) template='Release files for %s were updated, but the service was not restarted. Run `systemctl restart %s` manually to apply the new binary.' ;;
@@ -346,28 +384,36 @@ usage() {
   epctl en
   epctl [--lang zh|en] menu
   epctl [--lang zh|en] download [--tag <tag>]
-  epctl [--lang zh|en] install [--tag <tag>] [--app-uri URL] [--listen ADDR:PORT]
-  epctl [--lang zh|en] upgrade [--tag <tag>] [--prompt-restart|--no-restart]
+  epctl [--lang zh|en] install [--component all|epusdt|chainscanner] [--tag <tag>] \
+    [--app-uri URL] [--listen ADDR:PORT] [--scanner-listen ADDR:PORT] \
+    [--scanner-url URL] [--scanner-token TOKEN] [--scanner-admin-token TOKEN] \
+    [--scanner-transport ws|grpc|http]
+  epctl [--lang zh|en] upgrade [--component all|epusdt|chainscanner] [--tag <tag>] [--prompt-restart|--no-restart]
   epctl [--lang zh|en] self-install
-  epctl [--lang zh|en] show-config
+  epctl [--lang zh|en] show-config [--component all|epusdt|chainscanner]
   epctl [--lang zh|en] init-password
-  epctl [--lang zh|en] status
-  epctl [--lang zh|en] logs [--lines N]
+  epctl [--lang zh|en] status [--component all|epusdt|chainscanner]
+  epctl [--lang zh|en] logs [--component all|epusdt|chainscanner] [--lines N]
 
 全局选项：
   --lang zh|en    切换界面语言
   --no-color      禁用彩色输出
   快捷方式        `epctl zh` 直接进入中文；`epctl en` 直接进入英文
 
+组件选项（--component）：
+  all             同时部署或管理 epusdt 与 chainscanner（默认，同机自动配好内部连接与 Token）
+  epusdt          仅部署或管理 epusdt（可通过 --scanner-url / --scanner-token 对接远端 chainscanner）
+  chainscanner    仅部署或管理 chainscanner（可通过 --scanner-listen 指定监听地址并输出连接凭证）
+
 命令说明：
   menu            进入交互式菜单；直接执行 `epctl` 也会进入
   download        下载 GitHub Release 包到 /tmp/epusdt/<tag>/
-  install         安装或刷新 /opt/epusdt，并注册 epusdt.service
-  upgrade         升级到新的 release，保留现有 .env；默认直接重启，菜单会改为先询问
+  install         安装或刷新 /opt/epusdt，并注册 epusdt.service / chainscanner.service
+  upgrade         升级到新的 release，保留现有配置；默认直接重启，菜单会改为先询问
   self-install    安装 epctl 到 /usr/local/bin
-  show-config     输出当前生效的 /opt/epusdt/.env
+  show-config     输出当前生效的 /opt/epusdt/.env 或 /opt/epusdt/chainscanner.json
   init-password   通过本地 HTTP 路由请求初始化管理员密码
-  status          显示 epusdt 的 systemd 状态
+  status          显示 epusdt / chainscanner 的 systemd 状态
   logs            显示最近的服务日志
 
 说明：
@@ -377,7 +423,7 @@ usage() {
   - 需要提权的命令会自动通过 sudo 重新执行
   - tag 需要是真实的 GitHub release tag，例如 v1.0.6
   - 未提供 --tag 时，会自动解析 latest，并要求二次确认
-  - upgrade 只接受已有安装；不会创建新的 .env
+  - upgrade 只接受已有安装；不会创建新的配置文件
   - upgrade 默认会在文件替换后立即重启服务
   - upgrade --prompt-restart 会在交互终端下询问是否重启
   - upgrade --no-restart 只替换文件，不重启服务
@@ -390,28 +436,36 @@ Usage:
   epctl en
   epctl [--lang zh|en] menu
   epctl [--lang zh|en] download [--tag <tag>]
-  epctl [--lang zh|en] install [--tag <tag>] [--app-uri URL] [--listen ADDR:PORT]
-  epctl [--lang zh|en] upgrade [--tag <tag>] [--prompt-restart|--no-restart]
+  epctl [--lang zh|en] install [--component all|epusdt|chainscanner] [--tag <tag>] \
+    [--app-uri URL] [--listen ADDR:PORT] [--scanner-listen ADDR:PORT] \
+    [--scanner-url URL] [--scanner-token TOKEN] [--scanner-admin-token TOKEN] \
+    [--scanner-transport ws|grpc|http]
+  epctl [--lang zh|en] upgrade [--component all|epusdt|chainscanner] [--tag <tag>] [--prompt-restart|--no-restart]
   epctl [--lang zh|en] self-install
-  epctl [--lang zh|en] show-config
+  epctl [--lang zh|en] show-config [--component all|epusdt|chainscanner]
   epctl [--lang zh|en] init-password
-  epctl [--lang zh|en] status
-  epctl [--lang zh|en] logs [--lines N]
+  epctl [--lang zh|en] status [--component all|epusdt|chainscanner]
+  epctl [--lang zh|en] logs [--component all|epusdt|chainscanner] [--lines N]
 
 Global options:
   --lang zh|en    Select the interface language
   --no-color      Disable colored output
   Shortcut        `epctl zh` enters Chinese directly; `epctl en` enters English directly
 
+Component options (--component):
+  all             Deploy or manage both epusdt and the standalone chainscanner (auto-wires connection and tokens)
+  epusdt          Deploy or manage epusdt with the embedded scanner (default); specify --scanner-url to use a remote scanner
+  chainscanner    Deploy or manage chainscanner only (configure listen address via --scanner-listen and print tokens)
+
 Command summary:
   menu            Open the interactive menu; `epctl` with no arguments does this too
   download        Download a GitHub release archive into /tmp/epusdt/<tag>/
-  install         Install or refresh /opt/epusdt and register epusdt.service
-  upgrade         Upgrade to a newer release while keeping the existing .env; direct CLI restarts by default, menu mode asks first
+  install         Install or refresh /opt/epusdt and register epusdt.service / chainscanner.service
+  upgrade         Upgrade to a newer release while keeping existing config; direct CLI restarts by default, menu mode asks first
   self-install    Install epctl into /usr/local/bin
-  show-config     Print the active /opt/epusdt/.env file
+  show-config     Print the active /opt/epusdt/.env or /opt/epusdt/chainscanner.json
   init-password   Request the initial admin password from the local HTTP route
-  status          Show the systemd status of epusdt
+  status          Show the systemd status of epusdt / chainscanner
   logs            Show recent service logs
 
 Notes:
@@ -421,7 +475,7 @@ Notes:
   - privileged commands automatically re-exec through sudo
   - tags must match real GitHub release tags such as v1.0.6
   - if --tag is omitted, epctl resolves the latest release and asks for confirmation
-  - upgrade requires an existing install and does not create a new .env
+  - upgrade requires an existing install and does not create new config files
   - upgrade restarts the service by default after files are replaced
   - upgrade --prompt-restart asks whether to restart in an interactive terminal
   - upgrade --no-restart replaces files only and prints a manual restart warning
@@ -452,6 +506,49 @@ parse_global_options() {
         ;;
     esac
   done
+}
+
+normalize_component() {
+  local raw="${1:-${DEFAULT_COMPONENT}}"
+  case "${raw,,}" in
+    1|all|both)
+      printf 'all\n'
+      ;;
+    2|epusdt)
+      printf 'epusdt\n'
+      ;;
+    3|chainscanner|scanner)
+      printf 'chainscanner\n'
+      ;;
+    *)
+      die "$(trf invalid_component "${raw}")"
+      ;;
+  esac
+}
+
+component_includes_epusdt() {
+  local component="$1"
+  [[ "${component}" == "all" || "${component}" == "epusdt" ]]
+}
+
+component_includes_scanner() {
+  local component="$1"
+  [[ "${component}" == "all" || "${component}" == "chainscanner" ]]
+}
+
+component_display_services() {
+  local component="$1"
+  case "${component}" in
+    all)
+      printf '%s + %s\n' "${SERVICE_NAME}" "${SCANNER_SERVICE_NAME}"
+      ;;
+    epusdt)
+      printf '%s\n' "${SERVICE_NAME}"
+      ;;
+    chainscanner)
+      printf '%s\n' "${SCANNER_SERVICE_NAME}"
+      ;;
+  esac
 }
 
 require_linux() {
@@ -529,8 +626,8 @@ download_file() {
   local destination="$2"
   local partial="${destination}.part"
   rm -f "${partial}"
-  curl --fail --location --silent --show-error --output "${partial}" "${url}"
-  mv "${partial}" "${destination}"
+  curl --fail --location --silent --show-error --output "${partial}" "${url}" || return 1
+  mv "${partial}" "${destination}" || return 1
 }
 
 verify_checksum() {
@@ -670,6 +767,103 @@ set_env_key() {
   fi
 }
 
+read_env_key() {
+  local file="$1"
+  local key="$2"
+  if [[ ! -f "${file}" ]]; then
+    printf '\n'
+    return
+  fi
+  grep -E "^${key}=" "${file}" | tail -n 1 | cut -d'=' -f2- || true
+}
+
+read_scanner_json_field() {
+  local file="$1"
+  local field="$2"
+  if [[ ! -f "${file}" ]]; then
+    printf '\n'
+    return
+  fi
+  sed -n "s/^[[:space:]]*\"${field}\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*$/\1/p" "${file}" | head -n 1 || true
+}
+
+generate_random_token() {
+  local token=""
+  if [[ -r /dev/urandom ]] && have_command od; then
+    token="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+  elif have_command openssl; then
+    token="$(openssl rand -hex 24)"
+  else
+    token="$(date +%s%N)-$$-${RANDOM}-${RANDOM}-epusdt-scanner-token"
+  fi
+  printf '%s\n' "${token}"
+}
+
+derive_scanner_url_from_listen() {
+  local listen="$1"
+  local host port
+
+  if [[ "${listen}" =~ ^\[([^]]+)\]:(.+)$ ]]; then
+    host="${BASH_REMATCH[1]}"
+    port="${BASH_REMATCH[2]}"
+  elif [[ "${listen}" == :* ]]; then
+    host="127.0.0.1"
+    port="${listen#:}"
+  else
+    host="${listen%:*}"
+    port="${listen##*:}"
+  fi
+
+  case "${host}" in
+    ""|"0.0.0.0"|"::"|"[::]")
+      host="127.0.0.1"
+      ;;
+  esac
+
+  printf 'http://%s:%s\n' "${host}" "${port}"
+}
+
+resolve_scanner_credentials() {
+  local requested_token="$1"
+  local requested_admin_token="$2"
+  local token=""
+  local admin_token=""
+
+  if [[ -n "${requested_token}" ]]; then
+    token="${requested_token}"
+  else
+    token="$(read_env_key "${CONFIG_PATH}" "chainscanner_token")"
+    if [[ ${#token} -lt 24 ]]; then
+      token="$(read_scanner_json_field "${SCANNER_CONFIG_PATH}" "epusdt")"
+    fi
+    if [[ ${#token} -lt 24 ]]; then
+      token="$(generate_random_token)"
+    fi
+  fi
+
+  if [[ ${#token} -lt 24 ]]; then
+    die "$(trf invalid_scanner_token)"
+  fi
+
+  if [[ -n "${requested_admin_token}" ]]; then
+    admin_token="${requested_admin_token}"
+  else
+    admin_token="$(read_env_key "${CONFIG_PATH}" "chainscanner_admin_token")"
+    if [[ ${#admin_token} -lt 24 || "${admin_token}" == "${token}" ]]; then
+      admin_token="$(read_scanner_json_field "${SCANNER_CONFIG_PATH}" "admin_token")"
+    fi
+    while [[ ${#admin_token} -lt 24 || "${admin_token}" == "${token}" ]]; do
+      admin_token="$(generate_random_token)"
+    done
+  fi
+
+  if [[ ${#admin_token} -lt 24 || "${admin_token}" == "${token}" ]]; then
+    die "$(trf invalid_scanner_admin_token)"
+  fi
+
+  printf '%s\n%s\n' "${token}" "${admin_token}"
+}
+
 ensure_system_user() {
   if ! getent group "${SYSTEM_USER}" >/dev/null 2>&1; then
     groupadd --system "${SYSTEM_USER}"
@@ -682,23 +876,101 @@ ensure_system_user() {
 extract_release_archive() {
   local tag="$1"
   local archive_path="$2"
+  local component="${3:-${DEFAULT_COMPONENT}}"
   local extract_dir
 
   extract_dir="$(cache_dir_for_tag "${tag}")/extract"
   rm -rf "${extract_dir}"
   mkdir -p "${extract_dir}"
   tar -xzf "${archive_path}" -C "${extract_dir}"
-  [[ -f "${extract_dir}/epusdt" ]] || die "$(trf archive_missing_binary)"
-  [[ -f "${extract_dir}/.env.example" ]] || die "$(trf archive_missing_env_example)"
+  if component_includes_epusdt "${component}"; then
+    [[ -f "${extract_dir}/epusdt" ]] || die "$(trf archive_missing_binary)"
+    [[ -f "${extract_dir}/.env.example" ]] || die "$(trf archive_missing_env_example)"
+  fi
+  if [[ "${component}" == "chainscanner" ]]; then
+    [[ -f "${extract_dir}/chainscanner" ]] || die "$(trf archive_missing_scanner_binary)"
+  fi
   printf '%s\n' "${extract_dir}"
+}
+
+resolve_effective_component_for_extract() {
+  local requested_component="$1"
+  local explicit_component="$2"
+  local extract_dir="$3"
+
+  if [[ "${requested_component}" == "all" && ! -f "${extract_dir}/chainscanner" ]]; then
+    if [[ "${explicit_component}" == "1" ]]; then
+      die "$(trf archive_missing_scanner_binary)"
+    fi
+    warn "$(trf archive_missing_scanner_fallback)"
+    printf 'epusdt\n'
+    return
+  fi
+
+  printf '%s\n' "${requested_component}"
+}
+
+write_chainscanner_config() {
+  local listen="$1"
+  local token="$2"
+  local admin_token="$3"
+  local force_update="${4:-0}"
+
+  install -d -m 0755 "${RUNTIME_DIR}"
+
+  if [[ -f "${SCANNER_CONFIG_PATH}" && "${force_update}" != "1" ]]; then
+    log "$(trf keeping_existing_config "${SCANNER_CONFIG_PATH}")"
+    return
+  fi
+
+  cat > "${SCANNER_CONFIG_PATH}" <<EOF
+{
+  "listen": "${listen}",
+  "database": "${SCANNER_DB_PATH}",
+  "networks": [
+    {"name": "ethereum"},
+    {"name": "binance"},
+    {"name": "polygon"},
+    {"name": "plasma"},
+    {"name": "tron"},
+    {"name": "ton"},
+    {"name": "aptos"},
+    {"name": "solana"},
+    {"name": "sui"},
+    {"name": "arbitrum"},
+    {"name": "hyperevm"},
+    {"name": "monad"},
+    {"name": "arc"},
+    {"name": "avalanche"},
+    {"name": "optimism"},
+    {"name": "base"}
+  ],
+  "consumers": {
+    "epusdt": "${token}"
+  },
+  "admin_token": "${admin_token}"
+}
+EOF
+  chmod 0600 "${SCANNER_CONFIG_PATH}"
 }
 
 create_default_config_if_missing() {
   local app_uri="$1"
   local listen="$2"
+  local scanner_url="${3:-}"
+  local scanner_token="${4:-}"
+  local scanner_admin_token="${5:-}"
+  local scanner_transport="${6:-${DEFAULT_SCANNER_TRANSPORT}}"
+  local force_scanner_keys="${7:-0}"
 
   if [[ -f "${CONFIG_PATH}" ]]; then
     log "$(trf keeping_existing_config "${CONFIG_PATH}")"
+    if [[ "${force_scanner_keys}" == "1" ]]; then
+      [[ -n "${scanner_url}" ]] && set_env_key "${CONFIG_PATH}" "chainscanner_url" "${scanner_url}"
+      [[ -n "${scanner_token}" ]] && set_env_key "${CONFIG_PATH}" "chainscanner_token" "${scanner_token}"
+      [[ -n "${scanner_admin_token}" ]] && set_env_key "${CONFIG_PATH}" "chainscanner_admin_token" "${scanner_admin_token}"
+      [[ -n "${scanner_transport}" ]] && set_env_key "${CONFIG_PATH}" "chainscanner_transport" "${scanner_transport}"
+    fi
     return
   fi
 
@@ -706,15 +978,23 @@ create_default_config_if_missing() {
   set_env_key "${CONFIG_PATH}" "install" "false"
   set_env_key "${CONFIG_PATH}" "app_uri" "${app_uri}"
   set_env_key "${CONFIG_PATH}" "http_listen" "${listen}"
+  set_env_key "${CONFIG_PATH}" "chainscanner_url" "${scanner_url}"
+  if [[ -n "${scanner_token}" ]]; then
+    set_env_key "${CONFIG_PATH}" "chainscanner_token" "${scanner_token}"
+  fi
+  if [[ -n "${scanner_admin_token}" ]]; then
+    set_env_key "${CONFIG_PATH}" "chainscanner_admin_token" "${scanner_admin_token}"
+  fi
+  set_env_key "${CONFIG_PATH}" "chainscanner_transport" "${scanner_transport}"
   chmod 0644 "${CONFIG_PATH}"
 }
 
-write_systemd_unit() {
+write_epusdt_systemd_unit() {
   cat > "${SYSTEMD_UNIT_PATH}" <<EOF
 [Unit]
 Description=epusdt service
-After=network-online.target
-Wants=network-online.target
+After=network-online.target ${SCANNER_SERVICE_NAME}.service
+Wants=network-online.target ${SCANNER_SERVICE_NAME}.service
 
 [Service]
 Type=simple
@@ -730,26 +1010,72 @@ WantedBy=multi-user.target
 EOF
 }
 
+write_scanner_systemd_unit() {
+  cat > "${SCANNER_SYSTEMD_UNIT_PATH}" <<EOF
+[Unit]
+Description=epusdt chainscanner service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${SYSTEM_USER}
+Group=${SYSTEM_USER}
+WorkingDirectory=${INSTALL_DIR}
+ExecStart=${SCANNER_BIN_PATH} -config ${SCANNER_CONFIG_PATH}
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+write_systemd_unit() {
+  local component="${1:-epusdt}"
+  if component_includes_scanner "${component}"; then
+    write_scanner_systemd_unit
+  fi
+  if component_includes_epusdt "${component}"; then
+    write_epusdt_systemd_unit
+  fi
+}
+
 render_service_debug_info() {
-  systemctl status "${SERVICE_NAME}" --no-pager || true
-  journalctl -u "${SERVICE_NAME}" --no-pager -n 100 || true
+  local component="${1:-all}"
+  if component_includes_scanner "${component}" && [[ -f "${SCANNER_SYSTEMD_UNIT_PATH}" ]]; then
+    systemctl status "${SCANNER_SERVICE_NAME}" --no-pager || true
+    journalctl -u "${SCANNER_SERVICE_NAME}" --no-pager -n 100 || true
+  fi
+  if component_includes_epusdt "${component}" && [[ -f "${SYSTEMD_UNIT_PATH}" ]]; then
+    systemctl status "${SERVICE_NAME}" --no-pager || true
+    journalctl -u "${SERVICE_NAME}" --no-pager -n 100 || true
+  fi
 }
 
 prepare_release_extract() {
   local tag="$1"
+  local component="${2:-${DEFAULT_COMPONENT}}"
   local archive_path
 
   archive_path="$(download_release "${tag}")"
-  extract_release_archive "${tag}" "${archive_path}"
+  extract_release_archive "${tag}" "${archive_path}" "${component}"
 }
 
 deploy_release_payload() {
   local extract_dir="$1"
+  local component="${2:-${DEFAULT_COMPONENT}}"
 
   ensure_system_user
   install -d -m 0755 "${INSTALL_DIR}"
-  install -m 0755 "${extract_dir}/epusdt" "${BIN_PATH}"
-  install -m 0644 "${extract_dir}/.env.example" "${CONFIG_EXAMPLE_PATH}"
+  install -d -m 0755 "${RUNTIME_DIR}"
+  if component_includes_epusdt "${component}"; then
+    install -m 0755 "${extract_dir}/epusdt" "${BIN_PATH}"
+    install -m 0644 "${extract_dir}/.env.example" "${CONFIG_EXAMPLE_PATH}"
+  fi
+  if component_includes_scanner "${component}"; then
+    install -m 0755 "${extract_dir}/chainscanner" "${SCANNER_BIN_PATH}"
+  fi
 }
 
 finalize_install_dir_ownership() {
@@ -757,12 +1083,35 @@ finalize_install_dir_ownership() {
 }
 
 refresh_service_unit() {
-  write_systemd_unit
+  local component="${1:-epusdt}"
+  write_systemd_unit "${component}"
   systemctl daemon-reload
 }
 
+detect_installed_component() {
+  local has_epusdt=0
+  local has_scanner=0
+
+  [[ -f "${CONFIG_PATH}" ]] && has_epusdt=1
+  [[ -f "${SCANNER_CONFIG_PATH}" ]] && has_scanner=1
+
+  if [[ "${has_epusdt}" -eq 1 && "${has_scanner}" -eq 1 ]]; then
+    printf 'all\n'
+  elif [[ "${has_scanner}" -eq 1 ]]; then
+    printf 'chainscanner\n'
+  else
+    printf 'epusdt\n'
+  fi
+}
+
 ensure_existing_upgrade_config() {
-  [[ -f "${CONFIG_PATH}" ]] || die "$(trf upgrade_existing_config_required "${CONFIG_PATH}")"
+  local component="${1:-epusdt}"
+  if component_includes_epusdt "${component}"; then
+    [[ -f "${CONFIG_PATH}" ]] || die "$(trf upgrade_existing_config_required "${CONFIG_PATH}")"
+  fi
+  if [[ "${component}" == "chainscanner" ]]; then
+    [[ -f "${SCANNER_CONFIG_PATH}" ]] || die "$(trf upgrade_existing_config_required "${SCANNER_CONFIG_PATH}")"
+  fi
 }
 
 create_upgrade_backup_dir() {
@@ -779,8 +1128,11 @@ backup_release_files() {
   local backup_dir="$1"
 
   [[ -f "${BIN_PATH}" ]] && cp -p "${BIN_PATH}" "${backup_dir}/epusdt"
+  [[ -f "${SCANNER_BIN_PATH}" ]] && cp -p "${SCANNER_BIN_PATH}" "${backup_dir}/chainscanner"
   [[ -f "${CONFIG_EXAMPLE_PATH}" ]] && cp -p "${CONFIG_EXAMPLE_PATH}" "${backup_dir}/.env.example"
   [[ -f "${SYSTEMD_UNIT_PATH}" ]] && cp -p "${SYSTEMD_UNIT_PATH}" "${backup_dir}/${SERVICE_NAME}.service"
+  [[ -f "${SCANNER_SYSTEMD_UNIT_PATH}" ]] && cp -p "${SCANNER_SYSTEMD_UNIT_PATH}" "${backup_dir}/${SCANNER_SERVICE_NAME}.service"
+  return 0
 }
 
 restore_release_files() {
@@ -792,6 +1144,12 @@ restore_release_files() {
     install -m 0755 "${backup_dir}/epusdt" "${BIN_PATH}"
   else
     rm -f "${BIN_PATH}"
+  fi
+
+  if [[ -f "${backup_dir}/chainscanner" ]]; then
+    install -m 0755 "${backup_dir}/chainscanner" "${SCANNER_BIN_PATH}"
+  else
+    rm -f "${SCANNER_BIN_PATH}"
   fi
 
   if [[ -f "${backup_dir}/.env.example" ]]; then
@@ -806,74 +1164,102 @@ restore_release_files() {
     rm -f "${SYSTEMD_UNIT_PATH}"
   fi
 
+  if [[ -f "${backup_dir}/${SCANNER_SERVICE_NAME}.service" ]]; then
+    install -m 0644 "${backup_dir}/${SCANNER_SERVICE_NAME}.service" "${SCANNER_SYSTEMD_UNIT_PATH}"
+  else
+    rm -f "${SCANNER_SYSTEMD_UNIT_PATH}"
+  fi
+
   finalize_install_dir_ownership
   systemctl daemon-reload
 }
 
 apply_upgrade_release() {
   local extract_dir="$1"
+  local component="${2:-epusdt}"
 
-  deploy_release_payload "${extract_dir}"
+  deploy_release_payload "${extract_dir}" "${component}"
   finalize_install_dir_ownership
-  refresh_service_unit
+  refresh_service_unit "${component}"
+}
+
+restart_component_services() {
+  local component="$1"
+
+  if component_includes_scanner "${component}" && [[ -f "${SCANNER_SYSTEMD_UNIT_PATH}" ]]; then
+    systemctl restart "${SCANNER_SERVICE_NAME}" && systemctl is-active --quiet "${SCANNER_SERVICE_NAME}" || return 1
+  fi
+  if component_includes_epusdt "${component}" && [[ -f "${SYSTEMD_UNIT_PATH}" ]]; then
+    systemctl restart "${SERVICE_NAME}" && systemctl is-active --quiet "${SERVICE_NAME}" || return 1
+  fi
+  return 0
 }
 
 restart_service_and_verify() {
   local tag="$1"
   local backup_dir="${2:-}"
+  local component="${3:-epusdt}"
+  local label
+  label="$(component_display_services "${component}")"
 
-  if systemctl restart "${SERVICE_NAME}" && systemctl is-active --quiet "${SERVICE_NAME}"; then
-    log "$(trf service_upgraded_restarted "${SERVICE_NAME}" "${INSTALL_DIR}" "${tag}")"
+  if restart_component_services "${component}"; then
+    log "$(trf service_upgraded_restarted "${label}" "${INSTALL_DIR}" "${tag}")"
     return 0
   fi
 
-  render_service_debug_info
+  render_service_debug_info "${component}"
 
   if [[ -n "${backup_dir}" ]]; then
-    warn "$(trf upgrade_restart_failed_rollback_start "${SERVICE_NAME}")"
+    warn "$(trf upgrade_restart_failed_rollback_start "${label}")"
     if ! restore_release_files "${backup_dir}"; then
-      die "$(trf upgrade_restart_failed_rollback_failed "${SERVICE_NAME}" "${tag}")"
+      die "$(trf upgrade_restart_failed_rollback_failed "${label}" "${tag}")"
     fi
-    if systemctl restart "${SERVICE_NAME}" && systemctl is-active --quiet "${SERVICE_NAME}"; then
-      die "$(trf upgrade_restart_failed_rolled_back "${SERVICE_NAME}" "${tag}")"
+    if restart_component_services "${component}"; then
+      die "$(trf upgrade_restart_failed_rolled_back "${label}" "${tag}")"
     fi
-    render_service_debug_info
-    die "$(trf upgrade_restart_failed_rollback_failed "${SERVICE_NAME}" "${tag}")"
+    render_service_debug_info "${component}"
+    die "$(trf upgrade_restart_failed_rollback_failed "${label}" "${tag}")"
   fi
 
-  die "$(trf service_failed_active "${SERVICE_NAME}")"
+  die "$(trf service_failed_active "${label}")"
 }
 
 handle_upgrade_restart() {
   local tag="$1"
   local restart_mode="$2"
   local backup_dir="$3"
+  local component="${4:-epusdt}"
   local reply=""
+  local target_unit="${SERVICE_NAME}"
+
+  if [[ "${component}" == "chainscanner" ]]; then
+    target_unit="${SCANNER_SERVICE_NAME}"
+  fi
 
   case "${restart_mode}" in
     restart)
-      restart_service_and_verify "${tag}" "${backup_dir}"
+      restart_service_and_verify "${tag}" "${backup_dir}" "${component}"
       ;;
     prompt)
       if ! is_interactive_terminal; then
         die "$(trf action_upgrade_restart_no_tty)"
       fi
 
-      warn "$(trf action_upgrade_restart_notice "${SERVICE_NAME}")"
-      printf '%b[%s]%b %s' "${COLOR_BOLD}${COLOR_CYAN}" "${EPCTL_NAME}" "${COLOR_RESET}" "$(trf upgrade_restart_prompt "${SERVICE_NAME}")" >&2
+      warn "$(trf action_upgrade_restart_notice "${target_unit}")"
+      printf '%b[%s]%b %s' "${COLOR_BOLD}${COLOR_CYAN}" "${EPCTL_NAME}" "${COLOR_RESET}" "$(trf upgrade_restart_prompt "${target_unit}")" >&2
       if ! read -r reply; then
         reply="n"
       fi
 
       if [[ -z "${reply}" ]] || is_affirmative_reply "${reply}"; then
-        restart_service_and_verify "${tag}" "${backup_dir}"
+        restart_service_and_verify "${tag}" "${backup_dir}" "${component}"
         return 0
       fi
 
-      warn "$(trf action_upgrade_restart_skipped "${SERVICE_NAME}" "${SERVICE_NAME}")"
+      warn "$(trf action_upgrade_restart_skipped "${target_unit}" "${target_unit}")"
       ;;
     skip)
-      warn "$(trf action_upgrade_restart_skipped "${SERVICE_NAME}" "${SERVICE_NAME}")"
+      warn "$(trf action_upgrade_restart_skipped "${target_unit}" "${target_unit}")"
       ;;
     *)
       die "$(trf upgrade_restart_flag_conflict)"
@@ -913,14 +1299,36 @@ command_download() {
 
 command_install() {
   local tag=""
+  local component="${DEFAULT_COMPONENT}"
+  local explicit_component="0"
   local app_uri="${DEFAULT_APP_URI}"
   local listen="${DEFAULT_LISTEN}"
+  local scanner_listen=""
+  local scanner_url=""
+  local scanner_token=""
+  local scanner_admin_token=""
+  local scanner_transport="${DEFAULT_SCANNER_TRANSPORT}"
+  local force_scanner_config="0"
+  local force_epusdt_scanner_keys="0"
   local original_args=("$@")
   local effective_tag
   local extract_dir
+  local effective_component
+  local resolved_tokens=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --component|-c)
+        [[ $# -ge 2 ]] || die "$(trf arg_requires_value "$1")"
+        component="$(normalize_component "$2")"
+        explicit_component="1"
+        shift 2
+        ;;
+      --component=*)
+        component="$(normalize_component "${1#*=}")"
+        explicit_component="1"
+        shift
+        ;;
       --tag)
         [[ $# -ge 2 ]] || die "$(trf arg_requires_value "--tag")"
         tag="$2"
@@ -939,13 +1347,73 @@ command_install() {
         app_uri="${1#*=}"
         shift
         ;;
-      --listen)
-        [[ $# -ge 2 ]] || die "$(trf arg_requires_value "--listen")"
+      --listen|--http-listen)
+        [[ $# -ge 2 ]] || die "$(trf arg_requires_value "$1")"
         listen="$2"
         shift 2
         ;;
-      --listen=*)
+      --listen=*|--http-listen=*)
         listen="${1#*=}"
+        shift
+        ;;
+      --scanner-listen)
+        [[ $# -ge 2 ]] || die "$(trf arg_requires_value "--scanner-listen")"
+        scanner_listen="$2"
+        force_scanner_config="1"
+        shift 2
+        ;;
+      --scanner-listen=*)
+        scanner_listen="${1#*=}"
+        force_scanner_config="1"
+        shift
+        ;;
+      --scanner-url)
+        [[ $# -ge 2 ]] || die "$(trf arg_requires_value "--scanner-url")"
+        scanner_url="$2"
+        force_epusdt_scanner_keys="1"
+        shift 2
+        ;;
+      --scanner-url=*)
+        scanner_url="${1#*=}"
+        force_epusdt_scanner_keys="1"
+        shift
+        ;;
+      --scanner-token)
+        [[ $# -ge 2 ]] || die "$(trf arg_requires_value "--scanner-token")"
+        scanner_token="$2"
+        force_scanner_config="1"
+        force_epusdt_scanner_keys="1"
+        shift 2
+        ;;
+      --scanner-token=*)
+        scanner_token="${1#*=}"
+        force_scanner_config="1"
+        force_epusdt_scanner_keys="1"
+        shift
+        ;;
+      --scanner-admin-token)
+        [[ $# -ge 2 ]] || die "$(trf arg_requires_value "--scanner-admin-token")"
+        scanner_admin_token="$2"
+        force_scanner_config="1"
+        force_epusdt_scanner_keys="1"
+        shift 2
+        ;;
+      --scanner-admin-token=*)
+        scanner_admin_token="${1#*=}"
+        force_scanner_config="1"
+        force_epusdt_scanner_keys="1"
+        shift
+        ;;
+      --scanner-transport)
+        [[ $# -ge 2 ]] || die "$(trf arg_requires_value "--scanner-transport")"
+        scanner_transport="${2,,}"
+        force_epusdt_scanner_keys="1"
+        shift 2
+        ;;
+      --scanner-transport=*)
+        scanner_transport="${1#*=}"
+        scanner_transport="${scanner_transport,,}"
+        force_epusdt_scanner_keys="1"
         shift
         ;;
       -h|--help)
@@ -957,6 +1425,11 @@ command_install() {
         ;;
     esac
   done
+
+  case "${scanner_transport}" in
+    ws|grpc|http) ;;
+    *) die "$(trf invalid_scanner_transport)" ;;
+  esac
 
   ensure_root_via_sudo install "${original_args[@]}"
 
@@ -974,19 +1447,67 @@ command_install() {
   require_command chown
 
   effective_tag="$(resolve_effective_tag "${tag}")"
-  extract_dir="$(prepare_release_extract "${effective_tag}")"
-  deploy_release_payload "${extract_dir}"
-  create_default_config_if_missing "${app_uri}" "${listen}"
-  finalize_install_dir_ownership
-  refresh_service_unit
-  systemctl enable --now "${SERVICE_NAME}"
+  extract_dir="$(prepare_release_extract "${effective_tag}" "${component}")"
+  effective_component="$(resolve_effective_component_for_extract "${component}" "${explicit_component}" "${extract_dir}")"
 
-  if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
-    render_service_debug_info
-    die "$(trf service_failed_active "${SERVICE_NAME}")"
+
+  if [[ -z "${scanner_listen}" ]]; then
+    scanner_listen="$(read_scanner_json_field "${SCANNER_CONFIG_PATH}" "listen")"
+    [[ -n "${scanner_listen}" ]] || scanner_listen="${DEFAULT_SCANNER_LISTEN}"
   fi
 
-  log "$(trf service_installed "${SERVICE_NAME}" "${INSTALL_DIR}" "${effective_tag}")"
+  if [[ -z "${scanner_url}" ]]; then
+    scanner_url="$(read_env_key "${CONFIG_PATH}" "chainscanner_url")"
+    if [[ -z "${scanner_url}" ]] && component_includes_scanner "${effective_component}"; then
+      scanner_url="$(derive_scanner_url_from_listen "${scanner_listen}")"
+    fi
+  fi
+
+  if component_includes_scanner "${effective_component}" || [[ -n "${scanner_url}" ]]; then
+    mapfile -t resolved_tokens < <(resolve_scanner_credentials "${scanner_token}" "${scanner_admin_token}")
+    scanner_token="${resolved_tokens[0]}"
+    scanner_admin_token="${resolved_tokens[1]}"
+  fi
+
+  deploy_release_payload "${extract_dir}" "${effective_component}"
+
+  if component_includes_scanner "${effective_component}"; then
+    write_chainscanner_config "${scanner_listen}" "${scanner_token}" "${scanner_admin_token}" "${force_scanner_config}"
+  fi
+
+  if component_includes_epusdt "${effective_component}"; then
+    if [[ -f "${CONFIG_PATH}" ]]; then
+      if [[ -z "$(read_env_key "${CONFIG_PATH}" "chainscanner_url")" || -z "$(read_env_key "${CONFIG_PATH}" "chainscanner_token")" || -z "$(read_env_key "${CONFIG_PATH}" "chainscanner_admin_token")" ]]; then
+        force_epusdt_scanner_keys="1"
+      fi
+    fi
+    create_default_config_if_missing "${app_uri}" "${listen}" "${scanner_url}" "${scanner_token}" "${scanner_admin_token}" "${scanner_transport}" "${force_epusdt_scanner_keys}"
+  fi
+
+  finalize_install_dir_ownership
+  refresh_service_unit "${effective_component}"
+
+  if component_includes_scanner "${effective_component}"; then
+    systemctl enable --now "${SCANNER_SERVICE_NAME}"
+    if ! systemctl is-active --quiet "${SCANNER_SERVICE_NAME}"; then
+      render_service_debug_info "chainscanner"
+      die "$(trf service_failed_active "${SCANNER_SERVICE_NAME}")"
+    fi
+    log "$(trf service_installed "${SCANNER_SERVICE_NAME}" "${INSTALL_DIR}" "${effective_tag}")"
+  fi
+
+  if component_includes_epusdt "${effective_component}"; then
+    systemctl enable --now "${SERVICE_NAME}"
+    if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
+      render_service_debug_info "epusdt"
+      die "$(trf service_failed_active "${SERVICE_NAME}")"
+    fi
+    log "$(trf service_installed "${SERVICE_NAME}" "${INSTALL_DIR}" "${effective_tag}")"
+  fi
+
+  if [[ "${effective_component}" == "chainscanner" ]]; then
+    log "$(trf scanner_credentials_ready "${scanner_url}" "${scanner_token}" "${scanner_admin_token}")"
+  fi
 }
 
 command_self_install() {
@@ -1021,13 +1542,27 @@ command_self_install() {
 
 command_upgrade() {
   local tag=""
+  local component=""
+  local explicit_component="0"
   local restart_mode="restart"
   local original_args=("$@")
   local effective_tag
+  local effective_component
   local extract_dir backup_dir
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --component|-c)
+        [[ $# -ge 2 ]] || die "$(trf arg_requires_value "$1")"
+        component="$(normalize_component "$2")"
+        explicit_component="1"
+        shift 2
+        ;;
+      --component=*)
+        component="$(normalize_component "${1#*=}")"
+        explicit_component="1"
+        shift
+        ;;
       --tag)
         [[ $# -ge 2 ]] || die "$(trf arg_requires_value "--tag")"
         tag="$2"
@@ -1072,25 +1607,44 @@ command_upgrade() {
   require_command useradd
   require_command chown
 
+  if [[ -z "${component}" ]]; then
+    component="$(detect_installed_component)"
+  fi
+
   effective_tag="$(resolve_effective_tag "${tag}")"
-  ensure_existing_upgrade_config
-  extract_dir="$(prepare_release_extract "${effective_tag}")"
+  ensure_existing_upgrade_config "${component}"
+  extract_dir="$(prepare_release_extract "${effective_tag}" "${component}")"
+  effective_component="$(resolve_effective_component_for_extract "${component}" "${explicit_component}" "${extract_dir}")"
   backup_dir="$(create_upgrade_backup_dir "${effective_tag}")"
   backup_release_files "${backup_dir}"
-  if ! apply_upgrade_release "${extract_dir}"; then
+  if ! apply_upgrade_release "${extract_dir}" "${effective_component}"; then
     warn "$(trf upgrade_deploy_failed_rollback_start "${SERVICE_NAME}")"
     if restore_release_files "${backup_dir}"; then
       die "$(trf upgrade_deploy_failed_rolled_back "${SERVICE_NAME}" "${effective_tag}")"
     fi
     die "$(trf upgrade_deploy_failed_rollback_failed "${SERVICE_NAME}" "${effective_tag}")"
   fi
-  handle_upgrade_restart "${effective_tag}" "${restart_mode}" "${backup_dir}"
+  handle_upgrade_restart "${effective_tag}" "${restart_mode}" "${backup_dir}" "${effective_component}"
 }
 
 command_show_config() {
+  local component=""
+  local explicit_component="0"
+
   require_linux
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --component|-c)
+        [[ $# -ge 2 ]] || die "$(trf arg_requires_value "$1")"
+        component="$(normalize_component "$2")"
+        explicit_component="1"
+        shift 2
+        ;;
+      --component=*)
+        component="$(normalize_component "${1#*=}")"
+        explicit_component="1"
+        shift
+        ;;
       -h|--help)
         usage
         exit 0
@@ -1100,8 +1654,37 @@ command_show_config() {
         ;;
     esac
   done
-  [[ -f "${CONFIG_PATH}" ]] || die "$(trf config_not_found "${CONFIG_PATH}")"
-  cat "${CONFIG_PATH}"
+
+  if [[ -z "${component}" ]]; then
+    component="$(detect_installed_component)"
+  fi
+
+  case "${component}" in
+    epusdt)
+      [[ -f "${CONFIG_PATH}" ]] || die "$(trf config_not_found "${CONFIG_PATH}")"
+      cat "${CONFIG_PATH}"
+      ;;
+    chainscanner)
+      [[ -f "${SCANNER_CONFIG_PATH}" ]] || die "$(trf config_not_found "${SCANNER_CONFIG_PATH}")"
+      cat "${SCANNER_CONFIG_PATH}"
+      ;;
+    all)
+      if [[ "${explicit_component}" == "1" ]]; then
+        [[ -f "${CONFIG_PATH}" ]] || die "$(trf config_not_found "${CONFIG_PATH}")"
+        [[ -f "${SCANNER_CONFIG_PATH}" ]] || die "$(trf config_not_found "${SCANNER_CONFIG_PATH}")"
+      fi
+      if [[ -f "${CONFIG_PATH}" ]]; then
+        cat "${CONFIG_PATH}"
+      fi
+      if [[ -f "${SCANNER_CONFIG_PATH}" ]]; then
+        [[ -f "${CONFIG_PATH}" ]] && printf '\n# --- %s ---\n' "${SCANNER_CONFIG_PATH}"
+        cat "${SCANNER_CONFIG_PATH}"
+      fi
+      if [[ ! -f "${CONFIG_PATH}" && ! -f "${SCANNER_CONFIG_PATH}" ]]; then
+        die "$(trf config_not_found "${CONFIG_PATH}")"
+      fi
+      ;;
+  esac
 }
 
 resolve_http_listen() {
@@ -1189,11 +1772,21 @@ command_init_password() {
 }
 
 command_status() {
+  local component=""
   local original_args=("$@")
 
   require_linux
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --component|-c)
+        [[ $# -ge 2 ]] || die "$(trf arg_requires_value "$1")"
+        component="$(normalize_component "$2")"
+        shift 2
+        ;;
+      --component=*)
+        component="$(normalize_component "${1#*=}")"
+        shift
+        ;;
       -h|--help)
         usage
         exit 0
@@ -1207,15 +1800,46 @@ command_status() {
   ensure_root_via_sudo status "${original_args[@]}"
   require_root
   require_command systemctl
-  systemctl status "${SERVICE_NAME}" --no-pager
+
+  if [[ -z "${component}" ]]; then
+    component="$(detect_installed_component)"
+  fi
+
+  case "${component}" in
+    epusdt)
+      systemctl status "${SERVICE_NAME}" --no-pager
+      ;;
+    chainscanner)
+      systemctl status "${SCANNER_SERVICE_NAME}" --no-pager
+      ;;
+    all)
+      local units=()
+      [[ -f "${SCANNER_SYSTEMD_UNIT_PATH}" ]] && units+=("${SCANNER_SERVICE_NAME}")
+      [[ -f "${SYSTEMD_UNIT_PATH}" ]] && units+=("${SERVICE_NAME}")
+      if [[ ${#units[@]} -eq 0 ]]; then
+        units=("${SERVICE_NAME}")
+      fi
+      systemctl status "${units[@]}" --no-pager
+      ;;
+  esac
 }
 
 command_logs() {
   local lines="100"
+  local component=""
   local original_args=("$@")
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --component|-c)
+        [[ $# -ge 2 ]] || die "$(trf arg_requires_value "$1")"
+        component="$(normalize_component "$2")"
+        shift 2
+        ;;
+      --component=*)
+        component="$(normalize_component "${1#*=}")"
+        shift
+        ;;
       --lines)
         [[ $# -ge 2 ]] || die "$(trf arg_requires_value "--lines")"
         lines="$2"
@@ -1240,7 +1864,28 @@ command_logs() {
   ensure_root_via_sudo logs "${original_args[@]}"
   require_root
   require_command journalctl
-  journalctl -u "${SERVICE_NAME}" --no-pager -q -n "${lines}"
+
+  if [[ -z "${component}" ]]; then
+    component="$(detect_installed_component)"
+  fi
+
+  case "${component}" in
+    epusdt)
+      journalctl -u "${SERVICE_NAME}" --no-pager -q -n "${lines}"
+      ;;
+    chainscanner)
+      journalctl -u "${SCANNER_SERVICE_NAME}" --no-pager -q -n "${lines}"
+      ;;
+    all)
+      local unit_args=()
+      [[ -f "${SCANNER_SYSTEMD_UNIT_PATH}" ]] && unit_args+=(-u "${SCANNER_SERVICE_NAME}")
+      [[ -f "${SYSTEMD_UNIT_PATH}" ]] && unit_args+=(-u "${SERVICE_NAME}")
+      if [[ ${#unit_args[@]} -eq 0 ]]; then
+        unit_args=(-u "${SERVICE_NAME}")
+      fi
+      journalctl "${unit_args[@]}" --no-pager -q -n "${lines}"
+      ;;
+  esac
 }
 
 prompt_input() {
@@ -1371,8 +2016,11 @@ confirm_menu_action() {
   return 1
 }
 
-service_state_summary() {
-  if [[ ! -f "${SYSTEMD_UNIT_PATH}" ]]; then
+unit_state_summary() {
+  local unit_path="$1"
+  local unit_name="$2"
+
+  if [[ ! -f "${unit_path}" ]]; then
     printf '%s\n' "$(trf state_not_installed)"
     return
   fi
@@ -1387,7 +2035,7 @@ service_state_summary() {
     return
   fi
 
-  if systemctl is-active --quiet "${SERVICE_NAME}" >/dev/null 2>&1; then
+  if systemctl is-active --quiet "${unit_name}" >/dev/null 2>&1; then
     printf '%s\n' "$(trf state_active)"
     return
   fi
@@ -1395,8 +2043,16 @@ service_state_summary() {
   printf '%s\n' "$(trf state_inactive)"
 }
 
+service_state_summary() {
+  unit_state_summary "${SYSTEMD_UNIT_PATH}" "${SERVICE_NAME}"
+}
+
+scanner_service_state_summary() {
+  unit_state_summary "${SCANNER_SYSTEMD_UNIT_PATH}" "${SCANNER_SERVICE_NAME}"
+}
+
 print_menu_header() {
-  local current_lang_label service_state
+  local current_lang_label service_state scanner_state
 
   if [[ "${ACTIVE_LANG}" == "zh" ]]; then
     current_lang_label="$(trf language_name_zh)"
@@ -1405,6 +2061,7 @@ print_menu_header() {
   fi
 
   service_state="$(service_state_summary)"
+  scanner_state="$(scanner_service_state_summary)"
 
   printf '\n'
   print_rule "=" 64
@@ -1412,8 +2069,10 @@ print_menu_header() {
   printf '%b%s%b\n' "${COLOR_DIM}" "$(trf menu_subtitle)" "${COLOR_RESET}"
   print_rule "-" 64
   print_menu_meta_line "$(trf label_service)" "$(format_service_state_badge "${service_state}")"
+  print_menu_meta_line "$(trf label_scanner_service)" "$(format_service_state_badge "${scanner_state}")"
   print_menu_meta_line "$(trf label_install_dir)" "${INSTALL_DIR}"
   print_menu_meta_line "$(trf label_config)" "${CONFIG_PATH}"
+  print_menu_meta_line "$(trf label_scanner_config)" "${SCANNER_CONFIG_PATH}"
   print_menu_meta_line "$(trf current_language)" "$(format_badge "${current_lang_label}" "${COLOR_CYAN}")"
   print_rule "-" 64
 }
@@ -1471,47 +2130,77 @@ interactive_download() {
 }
 
 interactive_install() {
-  local tag app_uri listen
+  local raw_component component tag app_uri listen scanner_listen scanner_url scanner_token scanner_admin_token
+  local args=()
 
   confirm_menu_action \
     "$(trf action_install_title)" \
-    "$(trf action_install_desc "${INSTALL_DIR}" "${SYSTEM_USER}" "${SYSTEMD_UNIT_PATH}" "${SERVICE_NAME}")" || return 0
+    "$(trf action_install_desc "${INSTALL_DIR}" "${SYSTEM_USER}" "/etc/systemd/system" "${SERVICE_NAME} / ${SCANNER_SERVICE_NAME}")" || return 0
+
+  raw_component="$(prompt_input "$(trf input_component)" "${DEFAULT_COMPONENT}")" || return 0
+  component="$(normalize_component "${raw_component}")"
+  args+=(--component "${component}")
 
   tag="$(prompt_input "$(trf input_release_tag)")" || return 0
-  app_uri="$(prompt_input "$(trf input_app_uri)" "${DEFAULT_APP_URI}")" || return 0
-  listen="$(prompt_input "$(trf input_http_listen)" "${DEFAULT_LISTEN}")" || return 0
+  [[ -n "${tag}" ]] && args+=(--tag "${tag}")
 
-  if [[ -n "${tag}" ]]; then
-    run_menu_command install --tag "${tag}" --app-uri "${app_uri}" --listen "${listen}"
-  else
-    run_menu_command install --app-uri "${app_uri}" --listen "${listen}"
+  if component_includes_epusdt "${component}"; then
+    app_uri="$(prompt_input "$(trf input_app_uri)" "${DEFAULT_APP_URI}")" || return 0
+    listen="$(prompt_input "$(trf input_http_listen)" "${DEFAULT_LISTEN}")" || return 0
+    args+=(--app-uri "${app_uri}" --listen "${listen}")
   fi
+
+  if component_includes_scanner "${component}"; then
+    scanner_listen="$(prompt_input "$(trf input_scanner_listen)" "${DEFAULT_SCANNER_LISTEN}")" || return 0
+    args+=(--scanner-listen "${scanner_listen}")
+  fi
+
+  if [[ "${component}" == "epusdt" ]]; then
+    scanner_url="$(prompt_input "$(trf input_scanner_url)")" || return 0
+    [[ -z "${scanner_url}" ]] || args+=(--scanner-url "${scanner_url}")
+  fi
+
+  if component_includes_scanner "${component}" || [[ -n "${scanner_url:-}" ]]; then
+    scanner_token="$(prompt_input "$(trf input_scanner_token)")" || return 0
+    [[ -n "${scanner_token}" ]] && args+=(--scanner-token "${scanner_token}")
+
+    scanner_admin_token="$(prompt_input "$(trf input_scanner_admin_token)")" || return 0
+    [[ -n "${scanner_admin_token}" ]] && args+=(--scanner-admin-token "${scanner_admin_token}")
+  fi
+
+  run_menu_command install "${args[@]}"
 }
 
 interactive_upgrade() {
-  local tag
+  local raw_component component default_component tag
 
+  default_component="$(detect_installed_component)"
   confirm_menu_action \
     "$(trf action_upgrade_title)" \
-    "$(trf action_upgrade_desc "${INSTALL_DIR}" "${SERVICE_NAME}")" || return 0
+    "$(trf action_upgrade_desc "${INSTALL_DIR}" "${SERVICE_NAME} / ${SCANNER_SERVICE_NAME}")" || return 0
 
+  raw_component="$(prompt_input "$(trf input_component)" "${default_component}")" || return 0
+  component="$(normalize_component "${raw_component}")"
   tag="$(prompt_input "$(trf input_upgrade_tag)")" || return 0
   if [[ -n "${tag}" ]]; then
-    run_menu_command upgrade --tag "${tag}" --prompt-restart
+    run_menu_command upgrade --component "${component}" --tag "${tag}" --prompt-restart
   else
-    run_menu_command upgrade --prompt-restart
+    run_menu_command upgrade --component "${component}" --prompt-restart
   fi
 }
 
 interactive_logs() {
-  local lines
+  local raw_component component default_component lines
 
+  default_component="$(detect_installed_component)"
   print_menu_action_preview \
     "$(trf action_logs_title)" \
-    "$(trf action_logs_desc "${SERVICE_NAME}")"
+    "$(trf action_logs_desc "${SERVICE_NAME} / ${SCANNER_SERVICE_NAME}")"
 
+  raw_component="$(prompt_input "$(trf input_component)" "${default_component}")" || return 0
+  component="$(normalize_component "${raw_component}")"
   lines="$(prompt_input "$(trf input_log_lines)" "100")" || return 0
-  run_menu_command logs --lines "${lines}"
+  run_menu_command logs --component "${component}" --lines "${lines}"
 }
 
 interactive_switch_language() {
@@ -1569,7 +2258,7 @@ interactive_menu() {
       5)
         print_menu_action_preview \
           "$(trf action_show_config_title)" \
-          "$(trf action_show_config_desc "${CONFIG_PATH}")"
+          "$(trf action_show_config_desc "${CONFIG_PATH} / ${SCANNER_CONFIG_PATH}")"
         run_menu_command show-config
         ;;
       6)
@@ -1582,7 +2271,7 @@ interactive_menu() {
       7)
         print_menu_action_preview \
           "$(trf action_status_title)" \
-          "$(trf action_status_desc "${SERVICE_NAME}")"
+          "$(trf action_status_desc "${SERVICE_NAME} / ${SCANNER_SERVICE_NAME}")"
         run_menu_command status
         ;;
       8)

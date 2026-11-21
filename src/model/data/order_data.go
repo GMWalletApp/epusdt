@@ -473,6 +473,22 @@ func refreshOrderExpirationWithTransaction(tx *gorm.DB, tradeID string, updates 
 	return result.RowsAffected > 0, result.Error
 }
 
+func ExtendOrderTransactionLock(order *mdb.Orders, expiresAt time.Time) error {
+	if order == nil || strings.TrimSpace(order.TradeId) == "" {
+		return nil
+	}
+	now := time.Now()
+	renewed, err := renewOrderTransactionLock(order, now, expiresAt)
+	if err != nil || renewed {
+		return err
+	}
+	err = LockTransaction(order.Network, order.ReceiveAddress, order.Token, order.TradeId, order.ActualAmount, expiresAt.Sub(now))
+	if errors.Is(err, ErrTransactionLocked) {
+		return nil
+	}
+	return err
+}
+
 func renewOrderTransactionLock(order *mdb.Orders, now, expiresAt time.Time) (bool, error) {
 	var locks []mdb.TransactionLock
 	if err := activeLocksForAddress(dao.RuntimeDB, order.Network, order.ReceiveAddress, order.Token, now).

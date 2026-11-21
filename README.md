@@ -231,6 +231,8 @@ Good Morning Technology, LLC 为依据美国法律设立的主体，并将在适
 
 EPUSDT 默认在同一进程启动 ChainScanner，自动生成内部凭据，通过随机的本机回环端口通信。扫描游标、订阅和节点设置保存在运行目录的 `chainscanner.sqlite`。区块读取、节点发现、故障转移、缺块补扫和游标均由 ChainScanner 负责。EPUSDT 将启用的收款地址按具体链订阅，在展示新付款地址前检查订阅回执。每条链独立接收活动，按收款地址、资产、原始金额和订单时间窗匹配候选订单。确认任务落库后才 ACK；断线后允许重复投递。建议独立服务配置持久化 `database`，升级时为现有待付订单设置交接回看窗口并核对覆盖范围。
 
+Docker Compose 默认启动内置扫描器。原先使用独立扫描容器的部署可保留 `./runtime/chainscanner`、既有令牌和连接地址，使用 `docker compose --profile scanner up -d` 继续读取原有订阅和游标。新建独立扫描容器时设置两枚不同的令牌，支付服务使用 `CHAINSCANNER_URL=http://chainscanner:9081`。
+
 使用独立扫描服务时，在 EPUSDT 进程环境或启动用的 `.env` 填写以下设置，重启后生效。留空 `CHAINSCANNER_URL` 即使用内置扫描器。
 
 | 配置 | 用途 |
