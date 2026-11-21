@@ -128,3 +128,74 @@ func TestVerificationPolicySurvivesSettingChangeAndReplay(t *testing.T) {
 		t.Fatal(jobs, err)
 	}
 }
+
+type staticHeightFeed struct {
+	scanner.Feed
+	height int64
+}
+
+func (f staticHeightFeed) Height(context.Context, string) (int64, error) {
+	return f.height, nil
+}
+
+func TestConfirmingOrderRenewsLockAndWaitingBlockDepthReleasesLease(t *testing.T) {
+	defer testutil.SetupTestDatabases(t)()
+	if err := data.ReloadSettings(); err != nil {
+		t.Fatal(err)
+	}
+	if err := dao.Mdb.Model(&mdb.Chain{}).Where("network = ?", mdb.NetworkEthereum).Update("min_confirmations", 3).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkEthereum, "0x1111111111111111111111111111111111111111"); err != nil {
+		t.Fatal(err)
+	}
+	req := newCreateTransactionRequest("confirming-lock-order", 10)
+	req.Network = mdb.NetworkEthereum
+	req.Token = "USDT"
+	resp, err := CreateTransaction(req, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	soon := time.Now().Add(2 * time.Second)
+	if err := dao.RuntimeDB.Model(&mdb.TransactionLock{}).Where("trade_id = ?", resp.TradeId).UpdateColumn("expires_at", soon).Error; err != nil {
+		t.Fatal(err)
+	}
+	order, err := data.GetOrderInfoByTradeId(resp.TradeId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := scanner.Activity{
+		Network:       mdb.NetworkEthereum,
+		TxID:          "0x" + "1111111111111111111111111111111111111111111111111111111111111111",
+		Height:        10,
+		Confirmations: 1,
+	}
+	if err := queueConfirmation(order, e); err != nil {
+		t.Fatal(err)
+	}
+	var lock mdb.TransactionLock
+	if err := dao.RuntimeDB.Where("trade_id = ?", resp.TradeId).Take(&lock).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !lock.ExpiresAt.After(soon.Add(30 * time.Second)) {
+		t.Fatalf("confirming order lock was not renewed: expires_at=%v", lock.ExpiresAt)
+	}
+	lookupCalls := 0
+	ok, err := processDueConfirmation(t.Context(), staticHeightFeed{height: 10}, func(context.Context, string, string, string) (json.RawMessage, string, error) {
+		lookupCalls++
+		return nil, "", nil
+	})
+	if !ok || !errors.Is(err, errWaitingBlockDepth) || lookupCalls != 0 {
+		t.Fatalf("ok=%v err=%v lookupCalls=%d", ok, err, lookupCalls)
+	}
+	var job mdb.PaymentConfirmation
+	if err := dao.Mdb.Where("order_id = ?", order.ID).Take(&job).Error; err != nil {
+		t.Fatal(err)
+	}
+	if job.Attempts != 0 {
+		t.Fatalf("waiting for block depth consumed attempts: %d", job.Attempts)
+	}
+	if job.RetryAt > time.Now().Add(5*time.Second).UnixMilli() {
+		t.Fatalf("waiting for block depth left 60s lease: retry_at=%d", job.RetryAt)
+	}
+}

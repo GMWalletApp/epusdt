@@ -108,11 +108,53 @@ func CountOrdersByStatus() (map[int]int64, error) {
 // CloseOrderManually transitions a pending order to expired. It covers both
 // payable orders and placeholder orders waiting for token/network selection.
 func CloseOrderManually(tradeID string) (bool, error) {
-	result := dao.Mdb.Model(&mdb.Orders{}).
-		Where("trade_id = ?", tradeID).
-		Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusWaitSelect}).
-		Update("status", mdb.StatusExpired)
-	return result.RowsAffected > 0, result.Error
+	closable := []int{mdb.StatusWaitPay, mdb.StatusWaitSelect, mdb.StatusConfirming, mdb.StatusManualReview}
+	var closed bool
+	err := dao.Mdb.Transaction(func(tx *gorm.DB) error {
+		var order mdb.Orders
+		if err := tx.Where("trade_id = ?", tradeID).Limit(1).Find(&order).Error; err != nil {
+			return err
+		}
+		if order.ID == 0 {
+			return nil
+		}
+		result := tx.Model(&mdb.Orders{}).
+			Where("id = ?", order.ID).
+			Where("status IN ?", closable).
+			Updates(map[string]interface{}{
+				"status":                  mdb.StatusExpired,
+				"review_transaction_hash": "",
+			})
+		if result.Error != nil || result.RowsAffected == 0 {
+			return result.Error
+		}
+		closed = true
+		orderIDs := []uint64{order.ID}
+		if order.ParentTradeId == "" {
+			var subs []mdb.Orders
+			if err := tx.Where("parent_trade_id = ? AND status IN ?", order.TradeId, closable).Find(&subs).Error; err != nil {
+				return err
+			}
+			if len(subs) > 0 {
+				if err := tx.Model(&mdb.Orders{}).
+					Where("parent_trade_id = ? AND status IN ?", order.TradeId, closable).
+					Updates(map[string]interface{}{
+						"status":                  mdb.StatusExpired,
+						"review_transaction_hash": "",
+					}).Error; err != nil {
+					return err
+				}
+				for _, s := range subs {
+					orderIDs = append(orderIDs, s.ID)
+				}
+			}
+		}
+		if !tx.Migrator().HasTable(&mdb.PaymentConfirmation{}) {
+			return nil
+		}
+		return tx.Where("order_id IN ?", orderIDs).Delete(&mdb.PaymentConfirmation{}).Error
+	})
+	return closed, err
 }
 
 // ReopenOrderCallback flips callback_confirm back to NO so the mq

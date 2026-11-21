@@ -112,8 +112,14 @@ func (c *BaseAdminController) CloseOrder(ctx echo.Context) error {
 	if order.ID == 0 {
 		return c.FailJson(ctx, constant.OrderNotExists)
 	}
-	if order.Status != mdb.StatusWaitPay && order.Status != mdb.StatusWaitSelect {
+	switch order.Status {
+	case mdb.StatusWaitPay, mdb.StatusWaitSelect, mdb.StatusConfirming, mdb.StatusManualReview:
+	default:
 		return c.FailJson(ctx, constant.OrderNotWaitPay)
+	}
+	var subs []mdb.Orders
+	if order.ParentTradeId == "" {
+		subs, _ = data.GetAllSubOrders(order.TradeId)
 	}
 	ok, err := data.CloseOrderManually(tradeID)
 	if err != nil {
@@ -122,15 +128,19 @@ func (c *BaseAdminController) CloseOrder(ctx echo.Context) error {
 	if !ok {
 		return c.FailJson(ctx, constant.OrderStatusConflict)
 	}
-	// Release only concrete on-chain locks. Placeholder orders and provider-only
-	// orders do not reserve a local wallet amount.
-	if order.Status == mdb.StatusWaitPay &&
-		(strings.TrimSpace(order.PayProvider) == "" || order.PayProvider == mdb.PaymentProviderOnChain) &&
-		strings.TrimSpace(order.Network) != "" &&
-		strings.TrimSpace(order.ReceiveAddress) != "" &&
-		strings.TrimSpace(order.Token) != "" &&
-		order.ActualAmount > 0 {
-		_ = data.UnLockTransactionByTradeId(order.TradeId)
+	releaseOnChainOrderLock := func(o *mdb.Orders) {
+		if o.Status != mdb.StatusWaitSelect &&
+			(strings.TrimSpace(o.PayProvider) == "" || o.PayProvider == mdb.PaymentProviderOnChain) &&
+			strings.TrimSpace(o.Network) != "" &&
+			strings.TrimSpace(o.ReceiveAddress) != "" &&
+			strings.TrimSpace(o.Token) != "" &&
+			o.ActualAmount > 0 {
+			_ = data.UnLockTransactionByTradeId(o.TradeId)
+		}
+	}
+	releaseOnChainOrderLock(order)
+	for i := range subs {
+		releaseOnChainOrderLock(&subs[i])
 	}
 	return c.SucJson(ctx, nil)
 }

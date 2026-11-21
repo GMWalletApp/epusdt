@@ -178,7 +178,11 @@ func confirmManualTransfer(ctx context.Context, order *mdb.Orders, id string, lo
 		return err
 	}
 	v := gjson.ParseBytes(raw)
-	e := scanner.Activity{Network: order.Network, TxID: hash, Addresses: []string{dest}, TimeMS: order.CreatedAt.TimestampMilli()}
+	timeMS := order.CreatedAt.TimestampMilli()
+	if timeMS <= 0 {
+		timeMS = 1
+	}
+	e := scanner.Activity{Network: order.Network, TxID: hash, Addresses: []string{dest}, TimeMS: timeMS}
 	switch {
 	case scanner.IsEVM(order.Network):
 		e.Height, err = strconv.ParseInt(v.Get("receipt.blockNumber").String(), 0, 64)
@@ -196,6 +200,9 @@ func confirmManualTransfer(ctx context.Context, order *mdb.Orders, id string, lo
 		e.TimeMS = v.Get("blockTime").Int() * 1000
 	case order.Network == "sui":
 		e.Height = v.Get("checkpoint").Int()
+	}
+	if e.TimeMS < order.CreatedAt.TimestampMilli() {
+		return errors.New("transaction predates the order")
 	}
 	verified, err := strictActivity(e, raw)
 	if err != nil {

@@ -75,7 +75,16 @@ func SetManualOrderPaymentValidatorForTest(fn func(*mdb.Orders, string) (string,
 func validateManualOrderPaymentDefault(order *mdb.Orders, blockTransactionID string) (string, error) {
 	id, err := validateManualTransfer(order, blockTransactionID)
 	if err != nil {
-		return "", err
+		if StrictTransaction == nil {
+			return "", err
+		}
+		id, err = canonicalManualStrictTxID(order, blockTransactionID)
+		if err != nil {
+			return "", err
+		}
+		if err := ensureManualBlockTransactionUnused(order, id); err != nil {
+			return "", err
+		}
 	}
 	if StrictTransaction == nil {
 		return "", fmt.Errorf("strict lookup unavailable")
@@ -86,6 +95,30 @@ func validateManualOrderPaymentDefault(order *mdb.Orders, blockTransactionID str
 		return "", err
 	}
 	return id, nil
+}
+
+func canonicalManualStrictTxID(order *mdb.Orders, blockTransactionID string) (string, error) {
+	if order == nil || order.ID == 0 {
+		return "", fmt.Errorf("order not found")
+	}
+	txID := strings.TrimSpace(blockTransactionID)
+	if txID == "" {
+		return "", fmt.Errorf("block_transaction_id is required")
+	}
+	network := strings.ToLower(strings.TrimSpace(order.Network))
+	switch {
+	case scanner.IsEVM(network):
+		_, canonicalTxID, err := canonicalEvmHash(txID)
+		return canonicalTxID, err
+	case network == mdb.NetworkTron:
+		return normalizeTronTxID(txID)
+	case network == mdb.NetworkAptos:
+		return normalizeAptosTxID(txID), nil
+	case network == mdb.NetworkSolana, network == mdb.NetworkSui:
+		return txID, nil
+	default:
+		return "", fmt.Errorf("unsupported manual payment verification network: %s", order.Network)
+	}
 }
 
 func validateManualTransfer(order *mdb.Orders, blockTransactionID string) (string, error) {
