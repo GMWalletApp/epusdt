@@ -171,6 +171,16 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 		return buildCreateTransactionResponse(order), nil
 	}
 
+	// X Layer is a hosted checkout (OKX Onchain OS Payment), not a scanned
+	// on-chain network, even though a chains row exists since the
+	// admin-integration change (XLAYER-ADMIN-INTEGRATION-DESIGN.md). Concrete
+	// orders must keep being rejected here exactly as they were before that
+	// row existed — X Layer orders only ever come into being as status=4
+	// placeholders completed via /pay/switch-network, which routes
+	// network="xlayer" to the provider flow before reaching this code.
+	if network == mdb.PaymentProviderXLayer {
+		return nil, constant.ChainNotEnabled
+	}
 	if !data.IsChainEnabled(network) {
 		return nil, constant.ChainNotEnabled
 	}
@@ -588,6 +598,10 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 
 	if network == mdb.PaymentProviderOkPay {
 		return switchToOkPay(parent, token)
+	}
+
+	if network == mdb.PaymentProviderXLayer {
+		return switchToXLayer(parent, token)
 	}
 
 	if parent.Status == mdb.StatusWaitSelect {
@@ -1043,4 +1057,263 @@ func okPayTokenAllowed(token string) bool {
 		}
 	}
 	return false
+}
+
+// completeWaitSelectXLayerOrder completes a status=4 placeholder parent in
+// place as an X Layer order: it creates the provider order (fiat amount is
+// converted to the token's smallest units), then stores the returned
+// paymentIntentId + checkoutUrl. The cashier renders the hosted panel
+// because the order carries a payment_url and an empty receive address.
+func completeWaitSelectXLayerOrder(parent *mdb.Orders, token string) (*response.CheckoutCounterResponse, error) {
+	token = normalizeXLayerToken(token)
+	displayAmount, tokenAmount, tokenAmountBaseUnits, err := xlayerAmounts(parent.Amount, parent.Currency)
+	if err != nil {
+		return nil, err
+	}
+	// return_url sent to OKX is derived at create time, never admin-entered
+	// (2026-11-20 review): prefer the merchant's own redirect_url, else fall
+	// back to this order's cashier page. The legacy xlayer.return_url
+	// settings key no longer participates — the settings page no longer
+	// shows or writes it.
+	returnURL := strings.TrimSpace(parent.RedirectUrl)
+	if returnURL == "" {
+		returnURL = fmt.Sprintf("%s/cashier/%s", config.GetAppUri(), parent.TradeId)
+	}
+	toAddress := data.GetXLayerToAddress()
+	fiatAmount := fmt.Sprintf("%.2f", parent.Amount)
+	fiatCurrency := strings.ToUpper(strings.TrimSpace(parent.Currency))
+	if fiatCurrency == "" {
+		fiatCurrency = "CNY"
+	}
+
+	tx := dao.Mdb.Begin()
+	providerRow := &mdb.ProviderOrder{
+		TradeId:         parent.TradeId,
+		Provider:        mdb.PaymentProviderXLayer,
+		ProviderOrderID: "",
+		PayURL:          "",
+		Amount:          tokenAmount.InexactFloat64(),
+		Coin:            normalizeXLayerToken(token),
+		Status:          mdb.ProviderOrderStatusCreating,
+		NotifyRaw:       "",
+	}
+	if err := data.UpsertProviderOrderCreatingWithTransaction(tx, providerRow); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	xlayerOrder, err := createXLayerOrder(parent.TradeId, toAddress, fiatAmount, fiatCurrency, token, tokenAmountBaseUnits, returnURL, data.GetBrandCashierName(), parent.Name, xlayerExpireSeconds())
+	if err != nil {
+		_ = data.MarkProviderOrderFailed(parent.TradeId, mdb.PaymentProviderXLayer)
+		return nil, constant.PaymentProviderCreateErr
+	}
+
+	finalizeTx := dao.Mdb.Begin()
+	if err = data.UpdateProviderOrderCreatedWithTransaction(finalizeTx, parent.TradeId, mdb.PaymentProviderXLayer, xlayerOrder.PaymentIntentID, xlayerOrder.CheckoutURL); err != nil {
+		finalizeTx.Rollback()
+		_ = data.MarkProviderOrderFailed(parent.TradeId, mdb.PaymentProviderXLayer)
+		return nil, err
+	}
+	updated, err := data.CompleteWaitSelectXLayerOrderWithTransaction(finalizeTx, parent.TradeId, token, displayAmount)
+	if err != nil {
+		finalizeTx.Rollback()
+		_ = data.MarkProviderOrderFailed(parent.TradeId, mdb.PaymentProviderXLayer)
+		return nil, err
+	}
+	if !updated {
+		finalizeTx.Rollback()
+		_ = data.MarkProviderOrderFailed(parent.TradeId, mdb.PaymentProviderXLayer)
+		return nil, constant.OrderStatusConflict
+	}
+	if err = finalizeTx.Commit().Error; err != nil {
+		finalizeTx.Rollback()
+		_ = data.MarkProviderOrderFailed(parent.TradeId, mdb.PaymentProviderXLayer)
+		return nil, err
+	}
+
+	order, err := data.GetOrderInfoByTradeId(parent.TradeId)
+	if err != nil {
+		return nil, err
+	}
+	resp := buildCheckoutResponse(order)
+	resp.PaymentUrl = xlayerOrder.CheckoutURL
+	return resp, nil
+}
+
+func switchToXLayer(parent *mdb.Orders, token string) (*response.CheckoutCounterResponse, error) {
+	token = normalizeXLayerToken(token)
+	if !data.GetXLayerEnabled() {
+		return nil, constant.PaymentProviderNotEnabled
+	}
+	if data.GetXLayerAPIKey() == "" || data.GetXLayerAPISecret() == "" || data.GetXLayerPassphrase() == "" || data.GetXLayerToAddress() == "" {
+		return nil, constant.PaymentProviderConfigErr
+	}
+	if !xlayerTokenAllowed(token) {
+		return nil, constant.PaymentProviderNotSupport
+	}
+
+	if parent.Status == mdb.StatusWaitSelect {
+		return completeWaitSelectXLayerOrder(parent, token)
+	}
+
+	if parent.PayProvider == mdb.PaymentProviderXLayer && strings.EqualFold(parent.Token, token) {
+		providerRow, err := data.GetProviderOrderByTradeIDAndProvider(parent.TradeId, mdb.PaymentProviderXLayer)
+		if err != nil {
+			return nil, err
+		}
+		if providerRow.ID == 0 || strings.TrimSpace(providerRow.PayURL) == "" {
+			return nil, constant.SystemErr
+		}
+		_ = data.MarkOrderSelected(parent.TradeId)
+		_ = data.RefreshOrderExpiration(parent.TradeId)
+		order, err := data.GetOrderInfoByTradeId(parent.TradeId)
+		if err != nil {
+			return nil, err
+		}
+		resp := buildCheckoutResponse(order)
+		resp.PaymentUrl = providerRow.PayURL
+		return resp, nil
+	}
+
+	existing, err := data.GetSubOrderByTokenPayProvider(parent.TradeId, token, mdb.PaymentProviderXLayer)
+	if err != nil {
+		return nil, err
+	}
+	if existing.ID > 0 {
+		providerRow, err := data.GetProviderOrderByTradeIDAndProvider(existing.TradeId, mdb.PaymentProviderXLayer)
+		if err != nil {
+			return nil, err
+		}
+		if providerRow.ID == 0 || strings.TrimSpace(providerRow.PayURL) == "" {
+			return nil, constant.SystemErr
+		}
+		updated, markErr := data.MarkProviderSwitchParentSelectedWithTransaction(dao.Mdb, parent.TradeId)
+		if markErr != nil {
+			return nil, markErr
+		}
+		if !updated {
+			return nil, constant.OrderStatusConflict
+		}
+		_ = data.MarkOrderSelected(existing.TradeId)
+		existing.IsSelected = true
+		resp := buildCheckoutResponse(existing)
+		resp.PaymentUrl = providerRow.PayURL
+		return resp, nil
+	}
+
+	count, err := data.CountSubOrders(parent.TradeId)
+	if err != nil {
+		return nil, err
+	}
+	if count >= MaxSubOrders {
+		return nil, constant.SubOrderLimitExceeded
+	}
+
+	displayAmount, tokenAmount, tokenAmountBaseUnits, err := xlayerAmounts(parent.Amount, parent.Currency)
+	if err != nil {
+		return nil, err
+	}
+
+	subTradeID := GenerateCode()
+	// return_url sent to OKX is derived at create time, never admin-entered
+	// (2026-11-20 review): prefer the merchant's own redirect_url, else fall
+	// back to this order's cashier page. The legacy xlayer.return_url
+	// settings key no longer participates — the settings page no longer
+	// shows or writes it.
+	returnURL := strings.TrimSpace(parent.RedirectUrl)
+	if returnURL == "" {
+		returnURL = fmt.Sprintf("%s/cashier/%s", config.GetAppUri(), parent.TradeId)
+	}
+	toAddress := data.GetXLayerToAddress()
+	fiatAmount := fmt.Sprintf("%.2f", parent.Amount)
+	fiatCurrency := strings.ToUpper(strings.TrimSpace(parent.Currency))
+	if fiatCurrency == "" {
+		fiatCurrency = "CNY"
+	}
+
+	tx := dao.Mdb.Begin()
+	subOrder := &mdb.Orders{
+		TradeId:         subTradeID,
+		OrderId:         subTradeID,
+		ParentTradeId:   parent.TradeId,
+		Amount:          parent.Amount,
+		Currency:        parent.Currency,
+		ActualAmount:    displayAmount,
+		ReceiveAddress:  "",
+		Token:           normalizeXLayerToken(token),
+		Network:         mdb.PaymentProviderXLayer,
+		Status:          mdb.StatusWaitPay,
+		IsSelected:      true,
+		NotifyUrl:       "",
+		RedirectUrl:     parent.RedirectUrl,
+		Name:            parent.Name,
+		EpayType:        parent.EpayType,
+		CallBackConfirm: mdb.CallBackConfirmOk,
+		PaymentType:     parent.PaymentType,
+		PayProvider:     mdb.PaymentProviderXLayer,
+		ApiKeyID:        parent.ApiKeyID,
+	}
+	if err = data.CreateOrderWithTransaction(tx, subOrder); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	providerRow := &mdb.ProviderOrder{
+		TradeId:         subTradeID,
+		Provider:        mdb.PaymentProviderXLayer,
+		ProviderOrderID: "",
+		PayURL:          "",
+		Amount:          tokenAmount.InexactFloat64(),
+		Coin:            normalizeXLayerToken(token),
+		Status:          mdb.ProviderOrderStatusCreating,
+	}
+	if err = data.CreateProviderOrderWithTransaction(tx, providerRow); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	if err = tx.Commit().Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	xlayerOrder, err := createXLayerOrder(subTradeID, toAddress, fiatAmount, fiatCurrency, token, tokenAmountBaseUnits, returnURL, data.GetBrandCashierName(), parent.Name, xlayerExpireSeconds())
+	if err != nil {
+		_ = data.MarkProviderOrderFailed(subTradeID, mdb.PaymentProviderXLayer)
+		_ = data.ExpireOrderByTradeID(subTradeID)
+		return nil, constant.PaymentProviderCreateErr
+	}
+
+	finalizeTx := dao.Mdb.Begin()
+	if err = data.UpdateProviderOrderCreatedWithTransaction(finalizeTx, subTradeID, mdb.PaymentProviderXLayer, xlayerOrder.PaymentIntentID, xlayerOrder.CheckoutURL); err != nil {
+		finalizeTx.Rollback()
+		_ = data.MarkProviderOrderFailed(subTradeID, mdb.PaymentProviderXLayer)
+		_ = data.ExpireOrderByTradeID(subTradeID)
+		return nil, err
+	}
+	updated, err := data.MarkProviderSwitchParentSelectedWithTransaction(finalizeTx, parent.TradeId)
+	if err != nil {
+		finalizeTx.Rollback()
+		_ = data.MarkProviderOrderFailed(subTradeID, mdb.PaymentProviderXLayer)
+		_ = data.ExpireOrderByTradeID(subTradeID)
+		return nil, err
+	}
+	if !updated {
+		finalizeTx.Rollback()
+		_ = data.MarkProviderOrderFailed(subTradeID, mdb.PaymentProviderXLayer)
+		_ = data.ExpireOrderByTradeID(subTradeID)
+		return nil, err
+	}
+	if err = finalizeTx.Commit().Error; err != nil {
+		finalizeTx.Rollback()
+		_ = data.MarkProviderOrderFailed(subTradeID, mdb.PaymentProviderXLayer)
+		_ = data.ExpireOrderByTradeID(subTradeID)
+		return nil, err
+	}
+
+	resp := buildCheckoutResponse(subOrder)
+	resp.PaymentUrl = xlayerOrder.CheckoutURL
+	return resp, nil
 }

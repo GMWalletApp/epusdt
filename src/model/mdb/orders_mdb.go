@@ -33,6 +33,13 @@ const (
 	// parent is already concrete. Merchant callback shape is still controlled by
 	// PaymentType, not by this provider value.
 	PaymentProviderOkPay = "okpay"
+	// PaymentProviderXLayer means this concrete order record is settled through
+	// the OKX Onchain OS Payment hosted checkout on X Layer (chainId 196).
+	// Same shape as OkPay: a status=4 parent completed in place, or a
+	// switch-network-created child order. Unlike OkPay there is no server
+	// callback; settlement is confirmed by polling the provider query API
+	// until status=settled.
+	PaymentProviderXLayer = "xlayer"
 )
 
 type Orders struct {

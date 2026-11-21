@@ -72,6 +72,17 @@ func HttpServerStart() {
 			wwwRoot = filepath.Join(filepath.Dir(exePath), "www")
 		}
 	}
+	// X Layer patches edit the built SPA chunks in place without changing
+	// their Vite-hashed filenames, so browsers must revalidate /assets/
+	// on every load instead of serving stale cached copies.
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if strings.HasPrefix(c.Request().URL.Path, "/assets/") {
+				c.Response().Header().Set("Cache-Control", "no-cache")
+			}
+			return next(c)
+		}
+	})
 	e.Use(echoMiddleware.StaticWithConfig(echoMiddleware.StaticConfig{
 		Skipper: func(c echo.Context) bool {
 			path := c.Request().URL.Path

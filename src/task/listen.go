@@ -40,6 +40,15 @@ func Start() {
 	}
 	log.Sugar.Info("[task] RpcHealthJob scheduled successfully (@every 30s)")
 
+	// X Layer hosted-checkout polling (OKX Onchain OS Payment has no
+	// webhook, so pending provider orders must be queried until settled).
+	_, err = c.AddJob("@every 10s", XLayerPollJob{})
+	if err != nil {
+		log.Sugar.Errorf("[task] Failed to add XLayerPollJob: %v", err)
+		return
+	}
+	log.Sugar.Info("[task] XLayerPollJob scheduled successfully (@every 10s)")
+
 	c.Start()
 	log.Sugar.Info("[task] Task scheduler started")
 }

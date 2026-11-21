@@ -14,6 +14,12 @@ const (
 	NetworkPlasma   = "plasma"
 	NetworkTon      = "ton"
 	NetworkAptos    = "aptos"
+	// NetworkXLayer is the hosted-checkout pseudo-network (OKX Onchain OS
+	// Payment). There is no on-chain scanner for it: the chains/chain_tokens
+	// rows exist so the admin chains/addresses pages can manage it like any
+	// other network, and the wallet row is the single source of the
+	// receiving address. See XLAYER-ADMIN-INTEGRATION-DESIGN.md.
+	NetworkXLayer = "xlayer"
 )
 
 const (

@@ -370,6 +370,28 @@ func CompleteWaitSelectOkPayOrderWithTransaction(tx *gorm.DB, tradeID string, to
 	return result.RowsAffected > 0, result.Error
 }
 
+// CompleteWaitSelectXLayerOrderWithTransaction converts a placeholder parent
+// directly into an X Layer order. It intentionally does not create a local
+// chain lock because the provider owns the hosted payment target, and the
+// receive address stays empty so the cashier renders the hosted panel
+// (payment_url set, no address) instead of the on-chain address panel.
+func CompleteWaitSelectXLayerOrderWithTransaction(tx *gorm.DB, tradeID string, token string, actualAmount float64) (bool, error) {
+	result := tx.Model(&mdb.Orders{}).
+		Where("trade_id = ?", tradeID).
+		Where("status = ?", mdb.StatusWaitSelect).
+		Updates(map[string]interface{}{
+			"status":          mdb.StatusWaitPay,
+			"network":         mdb.PaymentProviderXLayer,
+			"token":           strings.ToUpper(strings.TrimSpace(token)),
+			"receive_address": "",
+			"actual_amount":   actualAmount,
+			"is_selected":     false,
+			"pay_provider":    mdb.PaymentProviderXLayer,
+			"created_at":      time.Now(),
+		})
+	return result.RowsAffected > 0, result.Error
+}
+
 // MarkProviderSwitchParentSelectedWithTransaction marks a switch-network parent
 // as selected for a hosted payment provider, preserving any existing on-chain
 // reservation while extending the parent's payment window.
