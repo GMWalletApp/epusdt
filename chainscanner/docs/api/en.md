@@ -308,6 +308,7 @@ Choose a node interface for the specific network. A new head wakes the scanner. 
 | Network | Notifications | Historical data |
 | --- | --- | --- |
 | EVM networks | WebSocket JSON-RPC · `eth_subscribe("newHeads")` | Execution RPC on the same node |
+| Avalanche | Official C-Chain WebSocket · `newHeads` | The built-in HTTP companion verifies chain ID `43114` and serves block and transaction reads |
 | Solana | WebSocket · `rootSubscribe`, or Yellowstone gRPC finalized slot stream | HTTP JSON-RPC in `history_url` |
 | Sui | gRPC · `SubscribeCheckpoints` | Checkpoint reads on the same gRPC node |
 | Aptos | RawData gRPC transaction stream | Fullnode REST in `history_url` |

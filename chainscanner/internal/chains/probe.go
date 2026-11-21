@@ -19,6 +19,17 @@ func NodeHead(ctx context.Context, src Source, n Network) (int64, error) {
 	var height int64
 	accept := func(h int64) bool { height = h; return true }
 	switch {
+	case n.Name == "avalanche" && n.Protocol == "ws":
+		for {
+			if h := pair.wsHeight.Load(); h > 0 {
+				return h, nil
+			}
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			case <-Wakeups(pair):
+			}
+		}
 	case n.Protocol == "sse":
 		err := beaconHeads(ctx, n, accept)
 		return height, err

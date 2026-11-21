@@ -308,6 +308,7 @@ PY
 | 网络 | 新区块或进度通知 | 历史数据来源 |
 | --- | --- | --- |
 | 各 EVM 网络 | WebSocket JSON-RPC · `eth_subscribe("newHeads")` | 同一节点的执行层 RPC |
+| Avalanche | 官方 C-Chain WebSocket · `newHeads` | 配套的官方 HTTP 接口校验链 ID `43114`，读取区块和交易 |
 | Solana | WebSocket · `rootSubscribe` 或 Yellowstone gRPC 的最终确认 slot 通知 | 在 `history_url` 配置 HTTP JSON-RPC |
 | Sui | gRPC · `SubscribeCheckpoints` | 用同一 gRPC 节点读取检查点 |
 | Aptos | RawData gRPC 交易流 | 在 `history_url` 配置全节点 REST |

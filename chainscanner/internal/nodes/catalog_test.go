@@ -102,6 +102,24 @@ func TestAptosLabsHostsUseSeparateReadLanes(t *testing.T) {
 	}
 }
 
+func TestAvalancheBuiltinSharesHistoryAndLookupVote(t *testing.T) {
+	ws := NodeEndpoint{"avalanche", "ws", "wss://api.avax.network/ext/bc/C/ws"}
+	history := chains.Network{Name: ws.Network, Protocol: "http", URL: "https://api.avax.network/ext/bc/C/rpc"}
+	pair := chains.Network{Name: ws.Network, Protocol: ws.Protocol, URL: ws.URL, HistoryURL: builtinHistory[ws]}
+	pool := NewSourcePool(t.Context(), ws.Network)
+	defer pool.Close()
+	if err := pool.SetNodes([]chains.Network{pair, history}); err != nil {
+		t.Fatal(err)
+	}
+	if len(pool.nodes) != 2 || pool.nodes[0].historyKey != pool.nodes[1].historyKey {
+		t.Fatal("Avalanche WS and HTTP must share one history lane")
+	}
+	lookup, ok := chains.LookupRoute(pair)
+	if !ok || lookup != history || providerKey(pair) != providerKey(history) {
+		t.Fatal("expected one lookup provider", lookup)
+	}
+}
+
 func TestPublicNodeHistoryLane(t *testing.T) {
 	if historyLane("base", "wss://base-rpc.publicnode.com:443/") != historyLane("base", "https://base-rpc.publicnode.com") {
 		t.Fatal("duplicate history lanes")

@@ -310,6 +310,7 @@ Elige la interfaz del nodo para la red concreta. Al recibir un aviso de cabecera
 | Red | Avisos de avance | Fuente del historial |
 | --- | --- | --- |
 | Redes EVM | WebSocket JSON-RPC · `eth_subscribe("newHeads")` | RPC de ejecución del mismo nodo |
+| Avalanche | WebSocket oficial de C-Chain · `newHeads` | El nodo HTTP integrado verifica el ID de cadena `43114` y lee bloques y transacciones |
 | Solana | WebSocket · `rootSubscribe` o flujo de slots finalizados de Yellowstone gRPC | HTTP JSON-RPC en `history_url` |
 | Sui | gRPC · `SubscribeCheckpoints` | Lectura de checkpoints en el mismo nodo gRPC |
 | Aptos | Flujo de transacciones RawData gRPC | REST de un nodo completo en `history_url` |

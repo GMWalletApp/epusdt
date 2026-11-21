@@ -310,6 +310,7 @@ Chọn giao thức nút theo từng mạng. Khi nhận thông báo về đầu c
 | Mạng | Thông báo tiến độ | Nguồn dữ liệu lịch sử |
 | --- | --- | --- |
 | Các mạng EVM | WebSocket JSON-RPC · `eth_subscribe("newHeads")` | RPC thực thi trên cùng nút |
+| Avalanche | WebSocket C-Chain chính thức · `newHeads` | Nút HTTP đi kèm xác minh ID mạng `43114` và đọc khối, giao dịch |
 | Solana | WebSocket · `rootSubscribe` hoặc luồng slot đã hoàn tất của Yellowstone gRPC | HTTP JSON-RPC trong `history_url` |
 | Sui | gRPC · `SubscribeCheckpoints` | Đọc checkpoint từ cùng nút gRPC |
 | Aptos | Luồng giao dịch RawData gRPC | REST của fullnode trong `history_url` |

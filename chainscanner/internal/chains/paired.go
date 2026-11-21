@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
@@ -22,6 +23,7 @@ import (
 type pairedSource struct {
 	*jsonSource
 	verifiedVersion int64
+	wsHeight        atomic.Int64
 	tip             *rpc.Client
 	conn            *grpc.ClientConn
 	indexer         *graphSource
@@ -51,7 +53,23 @@ func newPaired(ctx context.Context, n Network, u *url.URL, p string) (Source, er
 	}()
 	probe, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	if n.Name == "aptos" && p == "graphql" {
+	if n.Name == "avalanche" && p == "ws" {
+		s.heads = startSignals(ctx, func(ctx context.Context, wake func()) error {
+			var opts []rpc.ClientOption
+			if n.APIKey != "" {
+				opts = append(opts, rpc.WithHeader("Authorization", "Bearer "+n.APIKey))
+			}
+			client, err := rpc.DialOptions(ctx, n.URL, opts...)
+			if err != nil {
+				return err
+			}
+			defer client.Close()
+			return evmHeads(ctx, client, func(height int64) {
+				s.wsHeight.Store(height)
+				wake()
+			})
+		})
+	} else if n.Name == "aptos" && p == "graphql" {
 		s.indexer = &graphSource{&jsonSource{n: n, http: s.http}}
 		if _, err = s.Head(probe); err != nil {
 			return nil, err

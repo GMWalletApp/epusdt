@@ -49,7 +49,7 @@ func newRegistryPool(ctx context.Context, r *NodeRegistry, n chains.Network) *no
 		node, ok := p.inventory[cfg]
 		// Paired transports obtain their scan height from the companion history API.
 		// The admin height of their primary transport has different semantics.
-		if !ok || chains.NeedsHistory(cfg.Name, node.Protocol) {
+		if !ok || cfg.UsesHistory(node.Protocol) {
 			return
 		}
 		if err := r.saveHead(ctx, node, h); err != nil && ctx.Err() == nil {

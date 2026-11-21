@@ -239,6 +239,7 @@ var builtinNodes = append([]NodeEndpoint{
 	{"monad", "http", "https://rpc-mainnet.monadinfra.com"},
 	{"monad", "http", "https://rpc.ankr.com/monad_mainnet"},
 	{"monad", "http", "https://rpc.sentio.xyz/monad-mainnet"},
+	{"avalanche", "ws", "wss://api.avax.network/ext/bc/C/ws"},
 	{"avalanche", "http", "https://avalanche-c-chain-rpc.publicnode.com"},
 	{"avalanche", "ws", "wss://avalanche-c-chain-rpc.publicnode.com"},
 	{"avalanche", "http", "https://public-avax-mainnet.rpcnode.dev"},
@@ -286,6 +287,7 @@ var builtinNodes = append([]NodeEndpoint{
 // These transports notify the scanner or supply headers. Their HTTP companions
 // provide complete history and share a read lane with the standalone HTTP entry.
 var builtinHistory = map[NodeEndpoint]string{
+	{"avalanche", "ws", "wss://api.avax.network/ext/bc/C/ws"}:            "https://api.avax.network/ext/bc/C/rpc",
 	{"solana", "ws", "wss://api.mainnet.solana.com"}:                     "https://api.mainnet.solana.com",
 	{"aptos", "graphql", "https://api.mainnet.aptoslabs.com/v1/graphql"}: "https://api.mainnet.aptoslabs.com/v1",
 	{"solana", "ws", "wss://solana-rpc.publicnode.com"}:                  "https://solana-rpc.publicnode.com",

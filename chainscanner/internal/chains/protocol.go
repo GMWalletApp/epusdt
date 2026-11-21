@@ -46,6 +46,12 @@ func NeedsHistory(network, protocol string) bool {
 	}
 }
 
+// Avalanche WebSockets may either serve execution RPC directly or supply
+// only newHeads, with an HTTP companion performing all execution reads.
+func (n Network) UsesHistory(protocol string) bool {
+	return NeedsHistory(n.Name, protocol) || (n.Name == "avalanche" && protocol == "ws" && n.HistoryURL != "")
+}
+
 func (n Network) endpoint() (*url.URL, string, error) {
 	u, err := url.Parse(n.URL)
 	if err != nil || u.User != nil || u.Fragment != "" {
@@ -104,7 +110,7 @@ func ValidateNetwork(n Network) error {
 	if err != nil {
 		return err
 	}
-	if NeedsHistory(n.Name, p) {
+	if n.UsesHistory(p) {
 		u, e := url.Parse(n.HistoryURL)
 		if e != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.Fragment != "" {
 			return errors.New("a separate HTTP history_url is required for this protocol")

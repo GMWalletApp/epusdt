@@ -314,3 +314,71 @@ func TestTONCenterRejectsChangedBlock(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+type avalancheHeadFixture struct{}
+
+func (avalancheHeadFixture) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
+	n, ok := rpc.NotifierFromContext(ctx)
+	if !ok {
+		return nil, rpc.ErrNotificationsUnsupported
+	}
+	sub := n.CreateSubscription()
+	return sub, n.Notify(sub.ID, map[string]string{"number": "0x65"})
+}
+
+func TestAvalancheSubscriptionOnlyWS(t *testing.T) {
+	srv := rpc.NewServer()
+	defer srv.Stop()
+	if err := srv.RegisterName("eth", avalancheHeadFixture{}); err != nil {
+		t.Fatal(err)
+	}
+	ws := httptest.NewServer(srv.WebsocketHandler([]string{"*"}))
+	defer ws.Close()
+	history := testutil.RPCServer(t, func(r testutil.RPCRequest) (any, error) {
+		switch r.Method {
+		case "eth_chainId":
+			return "0xa86a", nil
+		case "eth_blockNumber":
+			return "0x64", nil
+		case "eth_getBlockByNumber":
+			return map[string]any{"number": "0x64", "hash": "block100", "parentHash": "block99", "transactions": []any{}, "timestamp": "0x1"}, nil
+		case "eth_getBlockReceipts", "eth_getLogs":
+			return []any{}, nil
+		default:
+			return nil, fmt.Errorf("unexpected HTTP method %s", r.Method)
+		}
+	})
+	defer history.Close()
+	cfg := Network{Name: "avalanche", Protocol: "ws", URL: "ws" + strings.TrimPrefix(ws.URL, "http"), HistoryURL: history.URL}
+	ctx, cancel := context.WithTimeout(t.Context(), 4*time.Second)
+	defer cancel()
+	src, err := NewSource(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	select {
+	case <-Wakeups(src):
+	case <-ctx.Done():
+		t.Fatal("no newHeads notification")
+	}
+	if h, err := NodeHead(ctx, src, cfg); err != nil || h != 101 {
+		t.Fatal("WS height", h, err)
+	}
+	if h, err := src.Head(ctx); err != nil || h != 100 {
+		t.Fatal("HTTP height", h, err)
+	}
+	if _, link, _, err := ReadSpan(ctx, "avalanche", src, Span{First: 100, Last: 100}); err != nil || link.Hash != "block100" || link.Parent != "block99" {
+		t.Fatal("HTTP block", link, err)
+	}
+	if route, ok := LookupRoute(cfg); !ok || route.URL != history.URL || route.Protocol != "http" {
+		t.Fatal("lookup route", route, ok)
+	}
+	wrong := testutil.RPCServer(t, func(testutil.RPCRequest) (any, error) { return "0xa869", nil })
+	defer wrong.Close()
+	cfg.HistoryURL = wrong.URL
+	if s, err := NewSource(ctx, cfg); err == nil {
+		s.Close()
+		t.Fatal("accepted Fuji history")
+	}
+}

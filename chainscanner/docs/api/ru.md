@@ -310,6 +310,7 @@ PY
 | Сеть | Уведомления | Источник исторических данных |
 | --- | --- | --- |
 | Сети EVM | WebSocket JSON-RPC · `eth_subscribe("newHeads")` | RPC уровня исполнения того же узла |
+| Avalanche | Официальный WebSocket C-Chain · `newHeads` | Встроенный HTTP-узел проверяет ID сети `43114` и читает блоки и транзакции |
 | Solana | WebSocket · `rootSubscribe` или поток финализированных слотов Yellowstone gRPC | HTTP JSON-RPC в `history_url` |
 | Sui | gRPC · `SubscribeCheckpoints` | Чтение контрольных точек через тот же узел gRPC |
 | Aptos | Поток транзакций RawData gRPC | REST полного узла в `history_url` |

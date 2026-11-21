@@ -57,7 +57,11 @@ func TransactionHash(network, raw string) (string, error) {
 // LookupRoute resolves paired interfaces to the actual history endpoint. Stream
 // aliases must neither receive duplicate work nor count as additional votes.
 func LookupRoute(n Network) (Network, bool) {
-	if n.HistoryURL != "" && NeedsHistory(n.Name, n.Protocol) {
+	if n.HistoryURL != "" {
+		protocol, err := EndpointProtocol(n)
+		if err != nil || !n.UsesHistory(protocol) {
+			return n, false
+		}
 		n = Network{Name: n.Name, URL: n.HistoryURL, APIKey: n.HistoryAPIKey, Protocol: "http"}
 	}
 	switch {

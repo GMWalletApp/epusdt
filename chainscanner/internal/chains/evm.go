@@ -7,11 +7,38 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 )
+
+// Head notifications only wake the scheduler. The read endpoint supplies
+// the chain ID, authoritative height and block contents.
+func evmHeads(ctx context.Context, c *rpc.Client, observe func(int64)) error {
+	headers := make(chan struct{ Number hexutil.Uint64 }, 8)
+	setup, cancel := context.WithTimeout(ctx, 8*time.Second)
+	sub, err := c.EthSubscribe(setup, headers, "newHeads")
+	cancel()
+	if err != nil {
+		return err
+	}
+	defer sub.Unsubscribe()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-sub.Err():
+			return err
+		case h := <-headers:
+			if height := int64(h.Number); height > 0 {
+				observe(height)
+			}
+		}
+	}
+}
 
 // BlockLink identifies the exact EVM block whose transactions were decoded.
 type BlockLink struct{ Hash, Parent string }

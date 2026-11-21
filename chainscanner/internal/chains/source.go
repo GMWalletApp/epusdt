@@ -105,7 +105,7 @@ func newSource(ctx context.Context, n Network, discovered, watch bool) (Source, 
 	if p == "graphql" && n.Name != "aptos" {
 		return newGraph(ctx, n)
 	}
-	if NeedsHistory(n.Name, p) {
+	if n.UsesHistory(p) {
 		return newPaired(ctx, n, u, p)
 	}
 	if n.Name == "sui" {
@@ -161,24 +161,7 @@ func newSource(ctx context.Context, n Network, discovered, watch bool) (Source, 
 			}
 			if watch && (p == "ws" || p == "ipc") {
 				s.heads = startSignals(ctx, func(ctx context.Context, wake func()) error {
-					heads := make(chan json.RawMessage, 8)
-					setup, cancel := context.WithTimeout(ctx, 8*time.Second)
-					sub, err := c.EthSubscribe(setup, heads, "newHeads")
-					cancel()
-					if err != nil {
-						return err
-					}
-					defer sub.Unsubscribe()
-					for {
-						select {
-						case <-ctx.Done():
-							return ctx.Err()
-						case err := <-sub.Err():
-							return err
-						case <-heads:
-							wake()
-						}
-					}
+					return evmHeads(ctx, c, func(int64) { wake() })
 				})
 			}
 		}
