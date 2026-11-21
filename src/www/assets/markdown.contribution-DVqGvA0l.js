@@ -1,1 +1,0 @@
-import{t as e}from"./preload-helper-DoS0eHac.js";import{t}from"./_.contribution-CFlVh426.js";t({id:`markdown`,extensions:[`.md`,`.markdown`,`.mdown`,`.mkdn`,`.mkd`,`.mdwn`,`.mdtxt`,`.mdtext`],aliases:[`Markdown`,`markdown`],loader:()=>e(()=>import(`./markdown-DRRv5D9_.js`),[])});
