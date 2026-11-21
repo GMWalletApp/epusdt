@@ -25,6 +25,16 @@
 
 ---
 
+## 部署或迁移到 EPUSDT
+
+点击提示词右上角的复制按钮，粘贴到 Codex、Claude Code、Cursor 或 OpenCode 的对话框中。
+
+```text
+读取 https://epusdt.com/agent-setup/prompt.md。先检查我的目标环境，按现状用 Docker 新装、升级或从 bepusdt、TokenPay 迁移到 EPUSDT（GMPay），保全原有数据。新实例请打开初始化页面，由我自己完成密码设置。
+```
+
+[查看完整部署清单](https://epusdt.com/agent-setup/prompt.md)
+
 ## 项目介绍
 
 EPUSDT 是用 Go 编写的自托管加密支付网关。商户通过 GMPay 或易支付兼容接口创建订单，买家向商户钱包转账，EPUSDT 核验到账后回调商户。支持多个收款地址轮换，也可以通过 Telegram Bot 接收支付通知。
