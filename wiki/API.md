@@ -1,8 +1,14 @@
 # Epusdt API 文档
 
+[文档目录](README.zh_CN.md) · [English](API.en.md)
+
+[Python 创建订单示例](../sdk/python/gmpay_create_order.py) · [OpenAPI 规范](../src/docs/swagger.json)
+
 开发者可通过 Epusdt 提供的 HTTP API 将收款能力集成到业务系统。本文档以当前代码路由为准。
 
 > 旧版 `POST /api/v1/order/create-transaction` 已不再注册；创建订单请使用 `POST /payments/gmpay/v1/order/create-transaction`。
+
+[签名规则](#signing) · [创建 GMPay 交易](#create) · [查询支付状态](#status) · [商户异步回调](#callbacks)
 
 ## 接口总览
 
@@ -15,6 +21,8 @@
 | 查询支付状态 | GET | `/pay/check-status/{trade_id}` | 否 |
 | 切换支付网络/通道 | POST | `/pay/switch-network` | 否 |
 | EPay 兼容创建交易 | GET/POST | `/payments/epay/v1/order/create-transaction/submit.php` | 是 |
+| 提交交易哈希核验 | POST | `/pay/submit-tx-hash/{trade_id}` | 否，提交 `block_transaction_id` |
+| 收银台返回商户 | GET | `/pay/return/{trade_id}` | 否，返回 HTTP 302 |
 | OkPay 平台回调 | POST | `/payments/okpay/v1/notify` | OkPay 签名 |
 
 ## 统一响应格式
@@ -40,6 +48,8 @@
 | `request_id` | string | 请求 ID，服务端自动生成。 |
 
 签名错误会返回 HTTP 401；业务错误通常返回 HTTP 400，并在 `status_code` 中给出具体业务码。
+
+<a id="signing"></a>
 
 ## 签名规则
 
@@ -133,6 +143,8 @@ function epaySign(array $params, string $secretKey): string
 }
 ```
 
+<a id="create"></a>
+
 ## 创建 GMPay 交易
 
 `POST /payments/gmpay/v1/order/create-transaction`
@@ -167,7 +179,7 @@ function epaySign(array $params, string $secretKey): string
 | `order_id` | string | 是 | 商户订单号，最长 32 字符，不能重复。 |
 | `currency` | string | 是 | 法币币种，如 `cny`、`usd`。 |
 | `token` | string | 条件必填 | 收款币种，如 `usdt`、`trx`、`usdc`、`sol`。GMPay 可与 `network` 同时省略以创建状态 `4` 占位订单。 |
-| `network` | string | 条件必填 | 收款网络，如 `tron`、`solana`、`ethereum`、`bsc`、`polygon`、`plasma`。GMPay 可与 `token` 同时省略以创建状态 `4` 占位订单。 |
+| `network` | string | 条件必填 | 收款网络，如 `tron`、`solana`、`ethereum`、`binance`、`polygon`、`plasma`。GMPay 可与 `token` 同时省略以创建状态 `4` 占位订单。 |
 | `amount` | number | 是 | 法币金额，必须大于 `0.01`。 |
 | `notify_url` | string | 是 | 支付成功异步回调地址。 |
 | `redirect_url` | string | 否 | 支付完成后的同步跳转地址。 |
@@ -220,7 +232,7 @@ function epaySign(array $params, string $secretKey): string
 
 `GET /payments/gmpay/v1/config`
 
-返回收银台展示配置、可用链/币种、EPay 默认配置和 OkPay 公共配置。
+返回收银台展示配置、可用链/币种、EPay 默认配置和托管收银台的公共配置（`okpay`、`xlayer`）。
 
 ### 成功响应示例
 
@@ -259,7 +271,11 @@ function epaySign(array $params, string $secretKey): string
       "enabled": false,
       "allow_tokens": ["USDT", "TRX"]
     },
-    "version": "v1.0.1"
+    "xlayer": {
+      "enabled": false,
+      "allow_tokens": ["USDC", "USDT0", "USDG"]
+    },
+    "version": "v2.1.0"
   },
   "request_id": "b1344d70-ff19-4543-b601-37abfb3b3686"
 }
@@ -363,6 +379,8 @@ function epaySign(array $params, string $secretKey): string
 
 前端看到 `status=4` 时，应展示选择网络和币种/支付通道的界面，并在用户选择后调用 `/pay/switch-network`。选择链上支付成功后，该父订单会变为 `status=1`，`actual_amount`、`token`、`network`、`receive_address` 会被补全，但 `is_selected` 保持 `false`，由后续同目标选择流程标记为已选中。选择 OkPay 成功后，接口返回同一个父订单 `trade_id` 和第三方 `payment_url`；父订单会变为 `status=1`、`is_selected=false`、`pay_provider=okpay`、`network=okpay`、`receive_address=OKPAY`。
 
+<a id="status"></a>
+
 ## 查询支付状态
 
 `GET /pay/check-status/{trade_id}`
@@ -410,6 +428,8 @@ function epaySign(array $params, string $secretKey): string
 }
 ```
 
+托管收银台使用 `okpay` 或 `xlayer` 及该服务商允许的币种。使用响应中的 `payment_url` 打开付款页。X Layer 由 EPUSDT 查询 OKX 订单并在核对 `settled` 后确认到账。
+
 切换到 OkPay：
 
 ```json
@@ -426,7 +446,7 @@ function epaySign(array $params, string $secretKey): string
 | --- | --- | --- | --- |
 | `trade_id` | string | 是 | 父订单交易号。 |
 | `token` | string | 是 | 目标币种。 |
-| `network` | string | 是 | 目标网络，或特殊值 `okpay`。 |
+| `network` | string | 是 | 目标网络，或托管通道 `okpay`、`xlayer`。 |
 
 ### 成功响应
 
@@ -502,6 +522,8 @@ EPay 接口解析 `type/token/network/currency` 的规则：
 
 后台默认配置可通过 `/payments/gmpay/v1/config` 的 `epay` 字段查看；新安装默认只预置 `epay.default_currency=cny`，`epay.default_token` 和 `epay.default_network` 为空，因此 EPay 未显式传 token/network 时会创建状态 `4` 占位订单。已有数据库的配置不会被 seed 覆盖，删除或置空 `epay.default_token` 和 `epay.default_network` 后，这两个字段会返回空字符串。
 
+<a id="callbacks"></a>
+
 ## 商户异步回调
 
 订单支付成功后，Epusdt 会向订单的 `notify_url` 发送异步通知。目标服务器处理完成后需返回 HTTP 200，响应体为 `ok` 或 `success`（大小写不敏感）。否则会按队列配置重试：首次失败后最多重试 `order_notice_max_retry` 次，重试间隔按 `callback_retry_base_seconds` 指数退避，最大 5 分钟。
@@ -556,7 +578,7 @@ type=alipay
 name=VIP
 money=100.0000
 trade_status=TRADE_SUCCESS
-sign=a1b2c3d4...
+sign=cc44fab3f264615d859f8a1fd36d2f08
 sign_type=MD5
 ```
 
@@ -607,3 +629,12 @@ Epusdt 会按配置的 OkPay shop token 验证 OkPay 签名，成功后将对应
 | `10017` | 400 | 支付服务商未启用 |
 | `10018` | 400 | 支付服务商配置不完整 |
 | `10019` | 400 | 支付服务商不支持该币种或网络 |
+| `10038` | 400 | 交易哈希核验失败 |
+| `10039` | 400 | 仅支持对链上订单进行人工核验 |
+| `10041` | 400 | 通知地址无效 |
+| `10042` | 400 | 支付服务商创建订单失败 |
+| `10044` | 400 | 订单跳转地址无效 |
+| `10045` | 400 | 订单对应的商户密钥不可用 |
+| `10046` | 400 | 无法生成 EPay 返回签名 |
+
+[完整业务错误码](../src/util/constant/errno.go)
