@@ -1,0 +1,62 @@
+name: Compose first-run setup
+
+on:
+  pull_request:
+    paths:
+      - docker-compose.yaml
+      - .github/workflows/compose-install.yml
+
+permissions:
+  contents: read
+
+jobs:
+  install-and-restart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      APP_URI: http://127.0.0.1:18000
+      EPUSDT_PORT: 127.0.0.1:18000
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Compose with an empty runtime directory
+        run: |
+          # Use the released v2.1.1 image with the Compose file under review.
+          image=gmwallet/epusdt@sha256:4b3af69cf238d7abc04e87a8ee23b65ba3eb6cf2ab8ad4f62f046b7b437b4ec3
+          docker pull "$image"
+          docker tag "$image" gmwallet/epusdt:latest
+          test ! -e runtime/epusdt
+          docker compose up -d --no-build --pull never epusdt
+
+      - name: Open the first-run page and complete setup
+        run: |
+          curl -fsS --retry 30 --retry-connrefused --retry-delay 1 "$APP_URI/api/install/defaults" | jq -e '.http_bind_port == 8000'
+          test "$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' "$APP_URI/")" = "302 $APP_URI/install"
+          curl -fsS "$APP_URI/install" -o "$RUNNER_TEMP/install.html"
+          grep -iq '<!doctype html>' "$RUNNER_TEMP/install.html"
+          umask 077
+          jq -n --arg uri "$APP_URI" '{app_uri: $uri, http_bind_addr: "0.0.0.0", runtime_root_path: "/app/runtime"}' |
+            curl -fsS --json @- "$APP_URI/api/install" |
+            jq -e 'select(.init_password | type == "string" and length > 0) | {username: "admin", password: .init_password}' > "$RUNNER_TEMP/login.json"
+
+      - name: Verify the same admin can log in before and after restart
+        run: |
+          verify_login() {
+            for attempt in {1..30}; do
+              if curl -fsS --json @"$RUNNER_TEMP/login.json" "$APP_URI/admin/api/v1/auth/login" |
+                jq -e '.data.username == "admin" and (.data.token | type == "string" and length > 0)' >/dev/null; then
+                return 0
+              fi
+              sleep 1
+            done
+            return 1
+          }
+          verify_login
+          docker compose restart epusdt
+          verify_login
+          docker compose exec -T epusdt grep -Fxq 'install=false' /app/runtime/.env
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$APP_URI/api/install/defaults")" = 404
+
+      - name: Stop test containers
+        if: always()
+        run: docker compose down
