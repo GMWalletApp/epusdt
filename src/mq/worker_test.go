@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"sync"
+
 	"sync/atomic"
 	"testing"
 	"time"
@@ -179,7 +179,7 @@ func TestDispatchPendingCallbacksHonorsBackoffAndPersistsSuccess(t *testing.T) {
 	defer cleanup()
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	callbackInflight.Clear()
 
 	var requestCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -236,7 +236,7 @@ func TestDispatchPendingCallbacksResumesRetryAfterRestart(t *testing.T) {
 	defer cleanup()
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	callbackInflight.Clear()
 
 	var requestCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -283,7 +283,7 @@ func TestDispatchPendingCallbacksResumesRetryAfterRestart(t *testing.T) {
 	}
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	callbackInflight.Clear()
 
 	if err := dao.Mdb.Model(order).UpdateColumn("updated_at", time.Now().Add(-2*time.Second)).Error; err != nil {
 		t.Fatalf("age callback order for retry: %v", err)
@@ -309,7 +309,7 @@ func TestDispatchPendingCallbacksEpayRequiresAck(t *testing.T) {
 	defer cleanup()
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	callbackInflight.Clear()
 
 	epayKey, err := data.GetEnabledApiKey("1001")
 	if err != nil || epayKey == nil || epayKey.ID == 0 {
@@ -363,7 +363,7 @@ func TestDispatchPendingCallbacksEpayAcceptsTrimmedOk(t *testing.T) {
 	defer cleanup()
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	callbackInflight.Clear()
 
 	epayKey, err := data.GetEnabledApiKey("1001")
 	if err != nil || epayKey == nil || epayKey.ID == 0 {
@@ -731,7 +731,7 @@ func TestDispatchPendingCallbacksEpayAcceptsSuccessAck(t *testing.T) {
 	defer cleanup()
 
 	callbackLimiter = make(chan struct{}, 1)
-	callbackInflight = sync.Map{}
+	callbackInflight.Clear()
 
 	epayKey, err := data.GetEnabledApiKey("1001")
 	if err != nil || epayKey == nil || epayKey.ID == 0 {

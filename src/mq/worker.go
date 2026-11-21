@@ -157,7 +157,7 @@ func dispatchPendingCallbacks() {
 
 		select {
 		case callbackLimiter <- struct{}{}:
-			go processCallback(tradeID)
+			go processCallback(tradeID, callbackLimiter)
 		default:
 			callbackInflight.Delete(tradeID)
 			return
@@ -165,9 +165,9 @@ func dispatchPendingCallbacks() {
 	}
 }
 
-func processCallback(tradeID string) {
+func processCallback(tradeID string, limiter <-chan struct{}) {
 	defer func() {
-		<-callbackLimiter
+		<-limiter
 		callbackInflight.Delete(tradeID)
 	}()
 

@@ -1,6 +1,7 @@
 package service
 
 import (
+	scanner "github.com/GMWalletApp/ChainScanner"
 	"strings"
 
 	"github.com/GMWalletApp/epusdt/model/mdb"
@@ -19,6 +20,9 @@ func ChainTokenReadyForPayment(token mdb.ChainToken) bool {
 func chainTokenRequiresAssetID(token mdb.ChainToken) bool {
 	network := strings.ToLower(strings.TrimSpace(token.Network))
 	symbol := strings.ToUpper(strings.TrimSpace(token.Symbol))
+	if native := scanner.NativeAsset(network); native != "" {
+		return symbol != native
+	}
 	switch network {
 	case mdb.NetworkTron:
 		return symbol != "TRX"

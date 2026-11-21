@@ -1,6 +1,8 @@
 package data
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
@@ -51,7 +53,7 @@ func normalizeLockAddress(network, address string) string {
 			return raw
 		}
 	}
-	if network == mdb.NetworkAptos {
+	if network == mdb.NetworkAptos || network == mdb.NetworkSui {
 		if normalized, err := addressutil.NormalizeMoveAddress(address); err == nil {
 			return normalized
 		}
@@ -192,13 +194,16 @@ func OrderSuccessWithStatusesWithTransaction(tx *gorm.DB, req *request.OrderProc
 	if len(allowedStatuses) == 0 {
 		return false, nil
 	}
+	key := sha256.Sum256([]byte(req.BlockTransactionId))
 	result := tx.Model(&mdb.Orders{}).
 		Where("trade_id = ?", req.TradeId).
 		Where("status IN ?", allowedStatuses).
 		Updates(map[string]interface{}{
-			"block_transaction_id": req.BlockTransactionId,
-			"status":               mdb.StatusPaySuccess,
-			"callback_confirm":     mdb.CallBackConfirmNo,
+			"review_transaction_hash": "",
+			"settlement_key":          hex.EncodeToString(key[:]),
+			"block_transaction_id":    req.BlockTransactionId,
+			"status":                  mdb.StatusPaySuccess,
+			"callback_confirm":        mdb.CallBackConfirmNo,
 		})
 	return result.RowsAffected > 0, result.Error
 }
@@ -307,9 +312,10 @@ func MarkParentOrderSuccessWithStatusesWithTransaction(tx *gorm.DB, parentTradeI
 		Where("trade_id = ?", parentTradeId).
 		Where("status IN ?", allowedStatuses).
 		Updates(map[string]interface{}{
-			"status":           mdb.StatusPaySuccess,
-			"callback_confirm": mdb.CallBackConfirmNo,
-			"pay_by_sub_id":    sub.ID,
+			"status":                  mdb.StatusPaySuccess,
+			"callback_confirm":        mdb.CallBackConfirmNo,
+			"review_transaction_hash": "",
+			"pay_by_sub_id":           sub.ID,
 		})
 	return result.RowsAffected > 0, result.Error
 }
@@ -550,7 +556,7 @@ func GetOnChainOrderByWalletAddressAndAmountAndTokenBeforeTime(network string, a
 		Where("token = ?", token).
 		Where("actual_amount = ?", amount).
 		Where("created_at <= ?", before).
-		Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusExpired}).
+		Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusExpired, mdb.StatusConfirming}).
 		Where("(pay_provider = ? OR pay_provider = '')", mdb.PaymentProviderOnChain)
 	query = applyOrderReceiveAddressFilter(query, network, address)
 	err := query.Order("created_at desc, id desc").Limit(1).Find(order).Error

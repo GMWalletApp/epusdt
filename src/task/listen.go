@@ -1,45 +1,44 @@
 package task
 
 import (
+	"context"
+	"errors"
+	"time"
+
+	scanner "github.com/GMWalletApp/ChainScanner"
+	"github.com/GMWalletApp/epusdt/config"
+	"github.com/GMWalletApp/epusdt/model/service"
 	"github.com/GMWalletApp/epusdt/util/log"
-	"github.com/robfig/cron/v3"
 )
 
 func Start() {
-	log.Sugar.Info("[task] Starting task scheduler...")
-	// The ETH listener short-circuits internally when chain is disabled
-	// or no tokens are configured, so always launch the goroutine.
-	go StartEthereumWebSocketListener()
-	go StartBscWebSocketListener()
-	go StartPolygonWebSocketListener()
-	go StartPlasmaWebSocketListener()
-	go StartEthereumBackfillScannerListener()
-	go StartBscBackfillScannerListener()
-	go StartPolygonBackfillScannerListener()
-	go StartPlasmaBackfillScannerListener()
-	go StartTronBlockScannerListener()
-	go StartTonBlockScannerListener()
-	go StartAptosLedgerScannerListener()
-
-	c := cron.New()
-
-	// Solana polling
-	_, err := c.AddJob("@every 5s", ListenSolJob{})
-	if err != nil {
-		log.Sugar.Errorf("[task] Failed to add ListenSolJob: %v", err)
+	url, err := config.ScannerEndpoint()
+	token, tokenErr := config.ScannerToken(false)
+	transport := config.ScannerTransport()
+	if err != nil || tokenErr != nil || (transport != "" && transport != "ws" && transport != "grpc" && transport != "http") {
+		err := errors.New("configure CHAINSCANNER_URL, CHAINSCANNER_TOKEN and a supported event transport")
+		service.EnsurePaymentWatch = func(string, string) error { return err }
+		log.Sugar.Errorf("[ChainScanner] %v", err)
 		return
 	}
-
-	log.Sugar.Info("[task] ListenSolJob scheduled successfully (@every 5s)")
-
-	// RPC node health checks
-	_, err = c.AddJob("@every 30s", RpcHealthJob{})
-	if err != nil {
-		log.Sugar.Errorf("[task] Failed to add RpcHealthJob: %v", err)
-		return
+	ctx := context.Background()
+	client := scanner.Client{URL: url, Token: token}
+	verifier := newStrictClient(client)
+	service.StrictTransaction = verifier.full
+	subscriptions := &paymentSubscriptions{feed: client}
+	service.EnsurePaymentWatch = subscriptions.ensure
+	for range 4 {
+		go service.RunPaymentConfirmations(ctx, client, verifier.round)
 	}
-	log.Sugar.Info("[task] RpcHealthJob scheduled successfully (@every 30s)")
-
-	c.Start()
-	log.Sugar.Info("[task] Task scheduler started")
+	for _, network := range scannerNetworks {
+		go runScannerFeed(ctx, client, network, transport)
+	}
+	go func() {
+		for {
+			if err := subscriptions.refresh(ctx); err != nil {
+				log.Sugar.Errorf("[ChainScanner] subscribe: %v", err)
+			}
+			time.Sleep(5 * time.Second)
+		}
+	}()
 }

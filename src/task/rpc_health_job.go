@@ -3,16 +3,15 @@ package task
 import (
 	"context"
 	"fmt"
+	scanner "github.com/GMWalletApp/ChainScanner"
 	"math/big"
 	"net"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
-	"github.com/GMWalletApp/epusdt/util/log"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -21,40 +20,21 @@ import (
 
 const rpcProbeTimeout = 5 * time.Second
 
-// RpcHealthJob periodically probes enabled general/both rpc_nodes rows.
-// Manual verification nodes are left for on-demand admin checks so paid
-// endpoints are not consumed by the scheduler.
-type RpcHealthJob struct{}
-
-var gRpcHealthJobLock sync.Mutex
-
-func (r RpcHealthJob) Run() {
-	gRpcHealthJobLock.Lock()
-	defer gRpcHealthJobLock.Unlock()
-
-	nodes, err := data.ListRpcNodesForHealth()
-	if err != nil {
-		log.Sugar.Errorf("[rpc-health] list nodes err=%v", err)
-		return
-	}
-	var wg sync.WaitGroup
-	for i := range nodes {
-		if !nodes[i].Enabled {
-			continue
+func scannerNodeConfig(node mdb.RpcNode, candidates []mdb.RpcNode) (scanner.Network, bool) {
+	n := scanner.Network{Name: node.Network, Protocol: node.Type, URL: node.Url, APIKey: node.ApiKey}
+	if scanner.NeedsHistory(n.Name, n.Protocol) {
+		for _, other := range candidates {
+			if other.ID == node.ID || other.Network != node.Network {
+				continue
+			}
+			if other.Type == mdb.RpcNodeTypeHttp || other.Type == "rest" || (n.Name == "solana" && other.Type == "jsonrpc") {
+				n.HistoryURL = other.Url
+				n.HistoryAPIKey = other.ApiKey
+				break
+			}
 		}
-		wg.Add(1)
-		go func(n mdb.RpcNode) {
-			defer wg.Done()
-			status, latency, probeErr := probeRpcNode(n)
-			if status == mdb.RpcNodeStatusDown && n.Status != mdb.RpcNodeStatusDown {
-				log.Sugar.Errorf("[rpc-health] capability probe failed node=%s err=%v", data.RpcNodeLogLabel(n), probeErr)
-			}
-			if err := data.UpdateRpcNodeHealth(n.ID, status, latency); err != nil {
-				log.Sugar.Warnf("[rpc-health] update node %d err=%v", n.ID, err)
-			}
-		}(nodes[i])
 	}
-	wg.Wait()
+	return n, scanner.ValidateNetwork(n) == nil
 }
 
 // ProbeRpcNode verifies the capability required by the configured node. EVM
@@ -79,6 +59,32 @@ func probeRpcNode(node mdb.RpcNode) (string, int, error) {
 		return mdb.RpcNodeStatusOk, int(time.Since(start).Milliseconds()), nil
 	}
 
+	if node.Type != "http" && node.Type != "lite" || node.Network == "sui" {
+		start := time.Now()
+		var candidates []mdb.RpcNode
+		if scanner.NeedsHistory(node.Network, node.Type) {
+			var err error
+			candidates, err = data.GeneralScannerNodes(node.Network, scanner.Protocols(node.Network))
+			if err != nil {
+				return mdb.RpcNodeStatusDown, -1, err
+			}
+		}
+		n, ok := scannerNodeConfig(node, candidates)
+		if !ok {
+			return mdb.RpcNodeStatusDown, -1, fmt.Errorf("invalid or missing scanner endpoint")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		src, err := scanner.NewSource(ctx, n)
+		if err != nil {
+			return mdb.RpcNodeStatusDown, -1, fmt.Errorf("%s %s node open failed (%T)", node.Network, node.Type, err)
+		}
+		defer src.Close()
+		if _, err = src.Head(ctx); err != nil {
+			return mdb.RpcNodeStatusDown, -1, fmt.Errorf("%s %s head check failed (%T)", node.Network, node.Type, err)
+		}
+		return mdb.RpcNodeStatusOk, int(time.Since(start).Milliseconds()), nil
+	}
 	addr, err := ParseAddress(node.Url)
 	if err != nil {
 		return mdb.RpcNodeStatusDown, -1, err
@@ -90,15 +96,18 @@ func probeRpcNode(node mdb.RpcNode) (string, int, error) {
 	return mdb.RpcNodeStatusOk, int(dur.Milliseconds()), nil
 }
 
-func isEvmRpcNetwork(network string) bool {
-	switch network {
-	case mdb.NetworkEthereum, mdb.NetworkBsc, mdb.NetworkPolygon, mdb.NetworkPlasma:
-		return true
-	default:
-		return false
-	}
-}
+func isEvmRpcNetwork(network string) bool { return scanner.IsEVM(network) }
 
+func verifyProbeChain(ctx context.Context, client *ethclient.Client, name string) error {
+	id, err := client.ChainID(ctx)
+	if err != nil {
+		return err
+	}
+	if id.Cmp(big.NewInt(scanner.EVMChainID(name))) != 0 {
+		return fmt.Errorf("node chain ID %s differs from %s", id, name)
+	}
+	return nil
+}
 func probeEvmRpcNode(ctx context.Context, node mdb.RpcNode) error {
 	client, err := ethclient.DialContext(ctx, strings.TrimSpace(node.Url))
 	if err != nil {
@@ -106,6 +115,9 @@ func probeEvmRpcNode(ctx context.Context, node mdb.RpcNode) error {
 	}
 	defer client.Close()
 
+	if err = verifyProbeChain(ctx, client, node.Network); err != nil {
+		return err
+	}
 	// Manual verification reads receipts and block headers and does not scan logs.
 	if data.NormalizeRpcNodePurpose(node.Purpose) == mdb.RpcNodePurposeManualVerify {
 		_, err := client.HeaderByNumber(ctx, nil)

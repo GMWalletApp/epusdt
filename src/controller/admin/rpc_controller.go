@@ -1,6 +1,7 @@
 package admin
 
 import (
+	scanner "github.com/GMWalletApp/ChainScanner"
 	"net/url"
 	"strconv"
 	"strings"
@@ -17,7 +18,7 @@ type CreateRpcNodeRequest struct {
 	Network string `json:"network" validate:"required" example:"tron"`
 	Url     string `json:"url" validate:"required" example:"https://api.trongrid.io"`
 	// 连接类型 http=HTTP请求 ws=WebSocket长连接 lite=TON liteserver配置
-	Type    string `json:"type" validate:"required|in:http,ws,lite" enums:"http,ws,lite" example:"http"`
+	Type    string `json:"type" validate:"required|in:http,ws,lite,grpc,jsonrpc,rest,graphql,ipc,sse,solidity-grpc,solidity-http" enums:"http,ws,lite,grpc,jsonrpc,rest,graphql,ipc,sse,solidity-grpc,solidity-http" example:"http"`
 	Weight  int    `json:"weight" example:"1"`
 	ApiKey  string `json:"api_key" example:""`
 	Enabled *bool  `json:"enabled" example:"true"`
@@ -87,7 +88,7 @@ func (c *BaseAdminController) CreateRpcNode(ctx echo.Context) error {
 	}
 	nodeURL := strings.TrimSpace(req.Url)
 	nodeType := strings.ToLower(strings.TrimSpace(req.Type))
-	if err := validateRpcNodeURLForType(nodeURL, nodeType); err != nil {
+	if err := validateNodeEndpoint(req.Network, nodeURL, nodeType); err != nil {
 		return c.FailJson(ctx, err)
 	}
 	row := &mdb.RpcNode{
@@ -138,7 +139,7 @@ func (c *BaseAdminController) UpdateRpcNode(ctx echo.Context) error {
 			return c.FailJson(ctx, constant.RpcNodeNotFoundErr)
 		}
 		nodeURL := strings.TrimSpace(*req.Url)
-		if err := validateRpcNodeURLForType(nodeURL, row.Type); err != nil {
+		if err := validateNodeEndpoint(row.Network, nodeURL, row.Type); err != nil {
 			return c.FailJson(ctx, err)
 		}
 		fields["url"] = nodeURL
@@ -233,6 +234,24 @@ func rpcNodePurposeFromRequest(raw string) (string, error) {
 	}
 }
 
+func validateNodeEndpoint(network, rawURL, kind string) error {
+	network = strings.ToLower(strings.TrimSpace(network))
+	if !scanner.Supported(network) {
+		return constant.RpcNodeTypeErr
+	}
+	if kind == "http" || kind == "ws" || kind == "lite" {
+		if err := validateRpcNodeURLForType(rawURL, kind); err != nil {
+			return err
+		}
+		if kind == "http" && network == "ton" {
+			return nil
+		}
+	}
+	if err := scanner.ValidateEndpoint(scanner.Network{Name: network, Protocol: kind, URL: rawURL}); err != nil {
+		return constant.RpcNodeTypeErr
+	}
+	return nil
+}
 func validateRpcNodeURLForType(rawURL string, nodeType string) error {
 	rawURL = strings.TrimSpace(rawURL)
 	nodeType = strings.ToLower(strings.TrimSpace(nodeType))

@@ -247,7 +247,8 @@ function epaySign(array $params, string $secretKey): string
       "website_title": "Acme Payments",
       "support_link": "https://example.com/support",
       "background_color": "#0f172a",
-      "background_image_url": "https://cdn.example.com/background.png"
+      "background_image_url": "https://cdn.example.com/background.png",
+      "withdrawal_reminder_enabled": true
     },
     "epay": {
       "default_token": "",
@@ -269,6 +270,22 @@ function epaySign(array $params, string $secretKey): string
 - 链已启用。
 - 该链有可用钱包地址。
 - 该链至少有一个启用中的 token。
+
+### 交易所提现提醒
+
+收银台从公共配置读取 `data.site.withdrawal_reminder_enabled`（布尔值，默认 `true`）。等配置返回后，仅在开关开启、订单处于链上待支付状态、已有收款地址且 `actual_amount > 0` 时，于到账金额下显示提醒。关闭时整块隐藏。对接旧版本后端时，已加载的配置缺少该字段可按默认开启处理。
+
+建议标题为「交易所提现提醒」，正文为「请核对交易所显示的实际到账数量。扣除手续费后，应为 **14.2857 USDT**。」其中金额与币种复用页面上方展示的订单金额（`actual_amount`）与 `token`，保留相同的小数位。提醒可使用浅琥珀色底、深色模式下使用深琥珀色底，并配图标与文字。各语言使用收银台当前语言。
+
+前端对接效果参考（示例订单）：[浅色预览](img/withdrawal-reminder-light.png) · [深色预览](img/withdrawal-reminder-dark.png)。
+
+后台可在品牌设置中添加「显示交易所提现提醒」开关，读取 `GET /admin/api/v1/settings?group=brand`，检查键 `brand.withdrawal_reminder_enabled` 的字符串值 `"true"` 或 `"false"`。缺少设置时默认开启。保存时调用已鉴权的 `PUT /admin/api/v1/settings`：
+
+```json
+{"items":[{"group":"brand","key":"brand.withdrawal_reminder_enabled","type":"bool","value":false}]}
+```
+
+响应中对应项的 `ok` 为 `true` 表示保存成功。重新打开收银台即可读取新值。
 
 ## 收银台页面
 
@@ -372,6 +389,10 @@ function epaySign(array $params, string $secretKey): string
 | `2` | 支付成功 |
 | `3` | 已过期 |
 | `4` | 等待选择支付网络/币种 |
+| `5` | 已发现匹配的链上转账，正在确认 |
+| `6` | 两轮严格核验未通过，等待管理员复核 |
+
+收到状态 `5` 后，收银台应显示“确认中”，继续轮询，无需用户再次付款。EPUSDT 持久化候选交易，达到链配置的确认深度后，调用 ChainScanner 的严格哈希查询。两个节点返回一致结果且转账与订单匹配后，订单才进入状态 `2` 并触发到账回调。首次失败后再查一轮。尝试次数和首轮节点标识保存在数据库中；两轮失败后进入状态 `6`，停止自动查询。管理员可在订单详情中查看 `review_transaction_hash`，修复节点或核对交易后，通过原有后台补单接口重新严格核验。等待区块确认深度不占用尝试次数。
 
 ## 切换支付网络/通道
 

@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/base64"
 	"fmt"
+	scanner "github.com/GMWalletApp/ChainScanner"
 	"io"
 	"math/big"
 	"net/http"
@@ -813,7 +814,7 @@ func TestSwitchNetworkRejectsUnsupportedTonToken(t *testing.T) {
 	}
 }
 
-func TestTryProcessTonTransferMarksOrderPaidAndReleasesRawLock(t *testing.T) {
+func TestTonCreditQueuesConfirmationAndKeepsReservation(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
@@ -842,28 +843,28 @@ func TestTryProcessTonTransferMarksOrderPaidAndReleasesRawLock(t *testing.T) {
 		TxHashHex:      strings.Repeat("1", 64),
 		BlockID:        TonCanonicalBlockTransactionID(addr.StringRaw(), 100, strings.Repeat("1", 64)),
 	}
-	TryProcessTonTransfer(transfer)
+	queueTestTonCredit(t, transfer)
 
 	order, err := data.GetOrderInfoByTradeId(resp.TradeId)
 	if err != nil {
 		t.Fatalf("reload order: %v", err)
 	}
-	if order.Status != mdb.StatusPaySuccess {
-		t.Fatalf("order status = %d, want %d", order.Status, mdb.StatusPaySuccess)
+	if order.Status != mdb.StatusConfirming {
+		t.Fatalf("order status = %d, want %d", order.Status, mdb.StatusConfirming)
 	}
-	if order.BlockTransactionId != transfer.BlockID {
-		t.Fatalf("block transaction id = %q, want %q", order.BlockTransactionId, transfer.BlockID)
+	if order.BlockTransactionId != "" {
+		t.Fatalf("block transaction id = %q, want empty", order.BlockTransactionId)
 	}
 	lock, err := data.GetTradeIdByWalletAddressAndAmountAndToken(mdb.NetworkTon, addr.StringRaw(), "TON", resp.ActualAmount)
 	if err != nil {
 		t.Fatalf("lookup ton lock: %v", err)
 	}
-	if lock != "" {
-		t.Fatalf("TON lock still exists after payment: %s", lock)
+	if lock != resp.TradeId {
+		t.Fatalf("TON reservation owner changed: %s", lock)
 	}
 }
 
-func TestTryProcessTonJettonTransferMarksUSDTOrderPaid(t *testing.T) {
+func TestJettonCreditQueuesUSDTOrder(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
@@ -892,28 +893,28 @@ func TestTryProcessTonJettonTransferMarksUSDTOrderPaid(t *testing.T) {
 		TxHashHex:      strings.Repeat("4", 64),
 		BlockID:        TonCanonicalBlockTransactionID(addr.StringRaw(), 110, strings.Repeat("4", 64)),
 	}
-	TryProcessTonTransfer(transfer)
+	queueTestTonCredit(t, transfer)
 
 	order, err := data.GetOrderInfoByTradeId(resp.TradeId)
 	if err != nil {
 		t.Fatalf("reload order: %v", err)
 	}
-	if order.Status != mdb.StatusPaySuccess {
-		t.Fatalf("order status = %d, want %d", order.Status, mdb.StatusPaySuccess)
+	if order.Status != mdb.StatusConfirming {
+		t.Fatalf("order status = %d, want %d", order.Status, mdb.StatusConfirming)
 	}
-	if order.BlockTransactionId != transfer.BlockID {
-		t.Fatalf("block transaction id = %q, want %q", order.BlockTransactionId, transfer.BlockID)
+	if order.BlockTransactionId != "" {
+		t.Fatalf("block transaction id = %q, want empty", order.BlockTransactionId)
 	}
 	lock, err := data.GetTradeIdByWalletAddressAndAmountAndToken(mdb.NetworkTon, addr.StringRaw(), "USDT", resp.ActualAmount)
 	if err != nil {
 		t.Fatalf("lookup TON USDT lock: %v", err)
 	}
-	if lock != "" {
-		t.Fatalf("TON USDT lock still exists after payment: %s", lock)
+	if lock != resp.TradeId {
+		t.Fatalf("TON USDT reservation owner changed: %s", lock)
 	}
 }
 
-func TestTryProcessTonTransferSkipsTransfersBeforeOrderCreation(t *testing.T) {
+func TestTonCreditSkipsTransfersBeforeOrderCreation(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
@@ -936,7 +937,7 @@ func TestTryProcessTonTransferSkipsTransfersBeforeOrderCreation(t *testing.T) {
 		t.Fatalf("load order: %v", err)
 	}
 
-	TryProcessTonTransfer(&TonObservedTransfer{
+	queueTestTonCredit(t, &TonObservedTransfer{
 		ReceiveAddress: resp.ReceiveAddress,
 		Token:          mdb.ChainToken{BaseModel: mdb.BaseModel{ID: 1}, Network: mdb.NetworkTon, Symbol: "TON", Decimals: 9, Enabled: true},
 		RawAmount:      big.NewInt(5_000_000_000),
@@ -959,7 +960,7 @@ func TestTryProcessTonTransferSkipsTransfersBeforeOrderCreation(t *testing.T) {
 	}
 }
 
-func TestTryProcessTonSubOrderPaysParentAndReleasesLocks(t *testing.T) {
+func TestTonCreditConfirmsParentAndChildTogether(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
@@ -989,7 +990,7 @@ func TestTryProcessTonSubOrderPaysParentAndReleasesLocks(t *testing.T) {
 		t.Fatalf("switch to TON: %v", err)
 	}
 
-	TryProcessTonTransfer(&TonObservedTransfer{
+	queueTestTonCredit(t, &TonObservedTransfer{
 		ReceiveAddress: subResp.ReceiveAddress,
 		Token:          mdb.ChainToken{BaseModel: mdb.BaseModel{ID: 1}, Network: mdb.NetworkTon, Symbol: "TON", Decimals: 9, Enabled: true},
 		RawAmount:      big.NewInt(5_000_000_000),
@@ -1004,29 +1005,29 @@ func TestTryProcessTonSubOrderPaysParentAndReleasesLocks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload parent order: %v", err)
 	}
-	if parent.Status != mdb.StatusPaySuccess {
-		t.Fatalf("parent status = %d, want paid", parent.Status)
+	if parent.Status != mdb.StatusConfirming {
+		t.Fatalf("parent status = %d, want confirming", parent.Status)
 	}
 	sub, err := data.GetOrderInfoByTradeId(subResp.TradeId)
 	if err != nil {
 		t.Fatalf("reload sub order: %v", err)
 	}
-	if sub.Status != mdb.StatusPaySuccess {
-		t.Fatalf("sub status = %d, want paid", sub.Status)
+	if sub.Status != mdb.StatusConfirming {
+		t.Fatalf("sub status = %d, want confirming", sub.Status)
 	}
 	parentLock, err := data.GetTradeIdByWalletAddressAndAmountAndToken(mdb.NetworkTron, parentResp.ReceiveAddress, parentResp.Token, parentResp.ActualAmount)
 	if err != nil {
 		t.Fatalf("lookup parent lock: %v", err)
 	}
-	if parentLock != "" {
-		t.Fatalf("parent lock still exists: %s", parentLock)
+	if parentLock != parentResp.TradeId {
+		t.Fatalf("parent reservation owner changed: %s", parentLock)
 	}
 	subLock, err := data.GetTradeIdByWalletAddressAndAmountAndToken(mdb.NetworkTon, addr.StringRaw(), "TON", subResp.ActualAmount)
 	if err != nil {
 		t.Fatalf("lookup sub lock: %v", err)
 	}
-	if subLock != "" {
-		t.Fatalf("TON sub-order lock still exists: %s", subLock)
+	if subLock != subResp.TradeId {
+		t.Fatalf("TON sub-order reservation owner changed: %s", subLock)
 	}
 }
 
@@ -1632,5 +1633,17 @@ func TestOrderProcessingSubOrderExpiresSiblingsAndReleasesLocks(t *testing.T) {
 	}
 	if ethLock != "" {
 		t.Fatalf("eth sub-order runtime lock still held: trade_id=%s", ethLock)
+	}
+}
+
+func queueTestTonCredit(t *testing.T, tr *TonObservedTransfer) {
+	t.Helper()
+	addr, err := scanner.Canonical("ton", tr.ReceiveAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := scanner.Activity{Network: "ton", TxID: tr.TxHashHex, TimeMS: tr.BlockTimeMs, Addresses: []string{addr}}
+	if err := observeCredit(e, addr, tr.Token, tr.RawAmount, tr.BlockID); err != nil {
+		t.Fatal(err)
 	}
 }

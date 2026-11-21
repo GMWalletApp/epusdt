@@ -7,9 +7,11 @@ const (
 	// StatusWaitSelect is a placeholder order waiting for the payer to choose
 	// token+network or a hosted provider such as OkPay. It is not payable until
 	// switch-network moves it to StatusWaitPay.
-	StatusWaitSelect  = 4
-	CallBackConfirmOk = 1
-	CallBackConfirmNo = 2
+	StatusWaitSelect   = 4
+	StatusConfirming   = 5
+	StatusManualReview = 6
+	CallBackConfirmOk  = 1
+	CallBackConfirmNo  = 2
 )
 
 const (
@@ -36,9 +38,13 @@ const (
 )
 
 type Orders struct {
-	TradeId            string  `gorm:"column:trade_id;uniqueIndex:orders_trade_id_uindex" json:"trade_id" example:"3nQ9pL2xV7sK1mR8cT4yB_aZ"`
-	OrderId            string  `gorm:"column:order_id;uniqueIndex:orders_order_id_uindex" json:"order_id" example:"ORD20260416001"`
-	ParentTradeId      string  `gorm:"column:parent_trade_id;index:idx_orders_parent_trade_id;default:''" json:"parent_trade_id"`
+	TradeId               string `gorm:"column:trade_id;uniqueIndex:orders_trade_id_uindex" json:"trade_id" example:"3nQ9pL2xV7sK1mR8cT4yB_aZ"`
+	OrderId               string `gorm:"column:order_id;uniqueIndex:orders_order_id_uindex" json:"order_id" example:"ORD20260416001"`
+	ParentTradeId         string `gorm:"column:parent_trade_id;index:idx_orders_parent_trade_id;default:''" json:"parent_trade_id"`
+	ReviewTransactionHash string `gorm:"size:128" json:"review_transaction_hash,omitempty"`
+	// Existing orders retain their historical transaction IDs. New settlements
+	// also acquire a unique key inside the payment transaction across instances.
+	SettlementKey      *string `gorm:"size:64;uniqueIndex:idx_order_settlement_key" json:"-"`
 	BlockTransactionId string  `gorm:"index:orders_block_transaction_id_index;column:block_transaction_id" json:"block_transaction_id" example:"0xabc123..."`
 	Amount             float64 `gorm:"column:amount" json:"amount" example:"100.0000"`
 	Currency           string  `gorm:"column:currency" json:"currency" example:"CNY"`
@@ -46,8 +52,8 @@ type Orders struct {
 	ReceiveAddress     string  `gorm:"column:receive_address" json:"receive_address" example:"TTestTronAddress001"`
 	Token              string  `gorm:"column:token" json:"token" example:"USDT"`
 	Network            string  `gorm:"column:network" json:"network" example:"tron"`
-	// 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种
-	Status      int    `gorm:"column:status;default:1" json:"status" enums:"1,2,3,4" example:"1"`
+	// 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
+	Status      int    `gorm:"column:status;default:1" json:"status" enums:"1,2,3,4,5,6" example:"1"`
 	NotifyUrl   string `gorm:"column:notify_url" json:"notify_url" example:"https://example.com/notify"`
 	RedirectUrl string `gorm:"column:redirect_url" json:"redirect_url" example:"https://example.com/success"`
 	Name        string `gorm:"column:name" json:"name" example:"VIP月卡"`

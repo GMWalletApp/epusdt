@@ -2,7 +2,7 @@ package mq
 
 import (
 	"errors"
-	"math/big"
+
 	"testing"
 	"time"
 
@@ -74,8 +74,14 @@ func TestExpiredOrderCleanupPreservesNewReservation(t *testing.T) {
 		}
 	}
 	const txID = "audit-one-chain-payment"
-	service.TryProcessTronTRC20Transfer(mdb.ChainToken{Symbol: "USDT", Decimals: 6},
-		second.ReceiveAddress, big.NewInt(1_000_000), txID, time.Now().UnixMilli())
+	// Settle the order that owns the reservation and exercise cross-order replay protection.
+	owner, err = data.GetTradeIdByWalletAddressAndAmountAndToken(mdb.NetworkTron, second.ReceiveAddress, second.Token, second.ActualAmount)
+	if err != nil || owner != second.TradeId {
+		t.Fatal(owner, err)
+	}
+	if err := service.OrderProcessing(&request.OrderProcessingRequest{TradeId: owner, Network: mdb.NetworkTron, Token: second.Token, ReceiveAddress: second.ReceiveAddress, Amount: second.ActualAmount, BlockTransactionId: txID}); err != nil {
+		t.Fatal(err)
+	}
 	secondPaid, err := data.GetOrderInfoByTradeId(second.TradeId)
 	if err != nil || secondPaid.Status != mdb.StatusPaySuccess {
 		t.Fatalf("payment was not credited to the reservation owner: order=%+v err=%v", secondPaid, err)
