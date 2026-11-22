@@ -148,7 +148,7 @@ func (c *BaseAdminController) UpsertSettings(ctx echo.Context) error {
 		code, msg := constant.ResolveErrno(err)
 		return result{Key: key, OK: false, ErrorCode: code, Error: msg}
 	}
-	reloadCommandBot, syncTelegramChannel := false, false
+	var telegramChanges telegramSettingChanges
 	for _, item := range req.Items {
 		key := strings.TrimSpace(item.Key)
 		if key == "" {
@@ -215,13 +215,7 @@ func (c *BaseAdminController) UpsertSettings(ctx echo.Context) error {
 			}
 		}
 		if telegramChanged {
-			switch key {
-			case "system.telegram_bot_token", "system.telegram_chat_id":
-				reloadCommandBot = true
-				syncTelegramChannel = true
-			case "system.telegram_payment_notice_enabled", "system.telegram_abnormal_notice_enabled":
-				syncTelegramChannel = true
-			}
+			telegramChanges.record(key)
 		}
 		out = append(out, result{Key: key, OK: true})
 	}
@@ -229,14 +223,34 @@ func (c *BaseAdminController) UpsertSettings(ctx echo.Context) error {
 		out = append(out, errorResult(mdb.SettingKeyRateForcedRateList, err))
 	}
 
-	if syncTelegramChannel {
-		dao.SyncTelegramChannelFromSettings()
-	}
-	if reloadCommandBot {
-		telegram.ReloadBotAsync("command bot settings changed")
-	}
+	telegramChanges.apply()
 
 	return c.SucJson(ctx, out)
+}
+
+// Push notification preferences and the command bot share only the system credentials.
+type telegramSettingChanges struct {
+	credentials   bool
+	notifications bool
+}
+
+func (changes *telegramSettingChanges) record(key string) {
+	switch key {
+	case "system.telegram_bot_token", "system.telegram_chat_id":
+		changes.credentials = true
+		changes.notifications = true
+	case "system.telegram_payment_notice_enabled", "system.telegram_abnormal_notice_enabled":
+		changes.notifications = true
+	}
+}
+
+func (changes telegramSettingChanges) apply() {
+	if changes.notifications {
+		dao.SyncTelegramChannelFromSettings()
+	}
+	if changes.credentials {
+		telegram.ReloadBotAsync("command bot settings changed")
+	}
 }
 
 func normalizeSettingValue(value interface{}) (string, error) {
@@ -508,9 +522,14 @@ func (c *BaseAdminController) DeleteSetting(ctx echo.Context) error {
 	if key == "" {
 		return c.SucJson(ctx, nil)
 	}
+	var telegramChanges telegramSettingChanges
+	if strings.HasPrefix(key, "system.telegram_") && data.GetSettingString(key, "") != "" {
+		telegramChanges.record(key)
+	}
 	if err := data.DeleteSetting(key); err != nil {
 		return c.FailJson(ctx, err)
 	}
+	telegramChanges.apply()
 	if key == mdb.SettingKeyRateForcedRateList {
 		if err := data.EnsureDefaultForcedRateList(); err != nil {
 			return c.FailJson(ctx, err)
