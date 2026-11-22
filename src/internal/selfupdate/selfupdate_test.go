@@ -266,6 +266,7 @@ func TestManagerUpdateReportsProgressAndCompletes(t *testing.T) {
 
 func TestManagerFailureCanBeRetried(t *testing.T) {
 	manager := newTestManager(t)
+	manager.restart = func() {}
 	manager.updater = testUpdater(func(context.Context, *version.Release, string, func(string, int)) error {
 		return context.DeadlineExceeded
 	})

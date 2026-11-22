@@ -515,19 +515,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/response.ApiResponse"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/selfupdate.Capability"
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/response.ApiResponse"
                         }
                     }
                 }
@@ -3092,7 +3080,7 @@
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/selfupdate.State"
+                                            "$ref": "#/definitions/selfupdate.Capability"
                                         }
                                     }
                                 }
@@ -3156,39 +3144,6 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/response.ApiResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/admin/api/v1/system/version/current": {
-            "get": {
-                "security": [
-                    {
-                        "AdminJWT": []
-                    }
-                ],
-                "description": "Report the running build version without contacting GitHub.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Admin System"
-                ],
-                "summary": "Confirm the running system version",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Version expected after update",
-                        "name": "target_version",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
                             "allOf": [
                                 {
                                     "$ref": "#/definitions/response.ApiResponse"
@@ -3197,7 +3152,7 @@
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/admin.CurrentVersionResult"
+                                            "$ref": "#/definitions/selfupdate.State"
                                         }
                                     }
                                 }
@@ -3269,6 +3224,50 @@
                         "description": "Gateway Timeout",
                         "schema": {
                             "$ref": "#/definitions/response.ApiResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/system/version/current": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin System"
+                ],
+                "summary": "Confirm the running system version",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Version expected after update",
+                        "name": "target_version",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.ApiResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/admin.CurrentVersionResult"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     }
                 }
@@ -4707,6 +4706,20 @@
                         "email"
                     ],
                     "example": "telegram"
+                }
+            }
+        },
+        "admin.CurrentVersionResult": {
+            "type": "object",
+            "properties": {
+                "confirmed": {
+                    "type": "boolean"
+                },
+                "current_version": {
+                    "type": "string"
+                },
+                "target_version": {
+                    "type": "string"
                 }
             }
         },
@@ -6740,62 +6753,94 @@
                 }
             }
         },
-        "admin.CurrentVersionResult": {
-            "type": "object",
-            "properties": {
-                "confirmed": {
-                    "type": "boolean"
-                },
-                "current_version": {
-                    "type": "string"
-                },
-                "target_version": {
-                    "type": "string"
-                }
-            }
-        },
         "scanneradmin.ConnectionInfo": {
             "type": "object",
             "properties": {
-                "embedded": {"type": "boolean"},
-                "migration": {"type": "boolean"},
-                "node_settings": {"type": "boolean"},
+                "embedded": {
+                    "type": "boolean"
+                },
+                "migration": {
+                    "type": "boolean"
+                },
+                "node_settings": {
+                    "type": "boolean"
+                },
                 "protocols": {
                     "type": "object",
                     "additionalProperties": {
                         "type": "array",
-                        "items": {"type": "string"}
+                        "items": {
+                            "type": "string"
+                        }
                     }
                 },
-                "target": {"type": "string"}
+                "target": {
+                    "type": "string"
+                }
             }
         },
         "selfupdate.Capability": {
             "type": "object",
             "properties": {
-                "asset_name": {"type": "string"},
-                "block_reason": {"type": "string"},
-                "build_type": {"type": "string"},
-                "can_restart": {"type": "boolean"},
-                "can_update": {"type": "boolean"},
-                "deployment": {"type": "string"},
-                "exec_path": {"type": "string"},
-                "platform": {"type": "string"},
-                "supervisor": {"type": "string"}
+                "asset_name": {
+                    "type": "string"
+                },
+                "block_reason": {
+                    "type": "string"
+                },
+                "build_type": {
+                    "type": "string"
+                },
+                "can_restart": {
+                    "type": "boolean"
+                },
+                "can_update": {
+                    "type": "boolean"
+                },
+                "deployment": {
+                    "type": "string"
+                },
+                "exec_path": {
+                    "type": "string"
+                },
+                "platform": {
+                    "type": "string"
+                },
+                "supervisor": {
+                    "type": "string"
+                }
             }
         },
         "selfupdate.State": {
             "type": "object",
             "properties": {
-                "error": {"type": "string"},
-                "finished_at": {"type": "string"},
-                "percent": {"type": "integer"},
-                "restart_required": {"type": "boolean"},
-                "stage": {"type": "string"},
-                "started_at": {"type": "string"},
-                "status": {"type": "string"},
-                "target_version": {"type": "string"},
-                "timeout_seconds": {"type": "integer"}
+                "error": {
+                    "type": "string"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "percent": {
+                    "type": "integer"
+                },
+                "restart_required": {
+                    "type": "boolean"
+                },
+                "stage": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "target_version": {
+                    "type": "string"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                }
             }
         },
         "version.CheckResult": {

@@ -184,6 +184,15 @@ definitions:
     required:
     - config
     type: object
+  admin.CurrentVersionResult:
+    properties:
+      confirmed:
+        type: boolean
+      current_version:
+        type: string
+      target_version:
+        type: string
+    type: object
   admin.LoginRequest:
     properties:
       password:
@@ -1712,15 +1721,6 @@ definitions:
         type: integer
       to_address:
         example: "0x0000000000000000000000000000000000000000"
-        type: string
-    type: object
-  admin.CurrentVersionResult:
-    properties:
-      confirmed:
-        type: boolean
-      current_version:
-        type: string
-      target_version:
         type: string
     type: object
   scanneradmin.ConnectionInfo:
@@ -3741,31 +3741,6 @@ paths:
       summary: Get update status
       tags:
       - Admin System
-  /admin/api/v1/system/version/current:
-    get:
-      description: Report the running build version without contacting GitHub.
-      parameters:
-      - description: Version expected after update
-        in: query
-        name: target_version
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.ApiResponse'
-            - properties:
-                data:
-                  $ref: '#/definitions/admin.CurrentVersionResult'
-              type: object
-      security:
-      - AdminJWT: []
-      summary: Confirm the running system version
-      tags:
-      - Admin System
   /admin/api/v1/system/version/check:
     get:
       description: Compare the running build version with the latest stable GitHub
@@ -3805,6 +3780,30 @@ paths:
       security:
       - AdminJWT: []
       summary: Check for a stable release
+      tags:
+      - Admin System
+  /admin/api/v1/system/version/current:
+    get:
+      parameters:
+      - description: Version expected after update
+        in: query
+        name: target_version
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.CurrentVersionResult'
+              type: object
+      security:
+      - AdminJWT: []
+      summary: Confirm the running system version
       tags:
       - Admin System
   /admin/api/v1/wallets:
