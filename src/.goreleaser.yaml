@@ -15,7 +15,7 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - -s -w -X github.com/GMWalletApp/epusdt/config.BuildVersion={{ .Tag }} -X github.com/GMWalletApp/epusdt/config.BuildCommit={{ .Commit }} -X github.com/GMWalletApp/epusdt/config.BuildDate={{ .Date }}
+      - -s -w -X github.com/GMWalletApp/epusdt/config.BuildVersion={{ .Tag }} -X github.com/GMWalletApp/epusdt/config.BuildCommit={{ .Commit }} -X github.com/GMWalletApp/epusdt/config.BuildDate={{ .Date }} -X github.com/GMWalletApp/epusdt/config.BuildType=release
     goos:
       - linux
       - darwin

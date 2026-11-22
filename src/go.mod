@@ -10,6 +10,7 @@ require (
 	github.com/gagliardetto/solana-go v1.16.0
 	github.com/go-resty/resty/v2 v2.11.0
 	github.com/golang-jwt/jwt/v4 v4.5.1
+	github.com/gofrs/flock v0.8.1
 	github.com/gookit/color v1.5.0
 	github.com/gookit/goutil v0.4.6
 	github.com/gookit/validate v1.3.1

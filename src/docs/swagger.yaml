@@ -184,6 +184,15 @@ definitions:
     required:
     - config
     type: object
+  admin.CurrentVersionResult:
+    properties:
+      confirmed:
+        type: boolean
+      current_version:
+        type: string
+      target_version:
+        type: string
+    type: object
   admin.LoginRequest:
     properties:
       password:
@@ -1729,6 +1738,67 @@ definitions:
           type: array
         type: object
       target:
+        type: string
+    type: object
+  selfupdate.Capability:
+    properties:
+      asset_name:
+        type: string
+      block_reason:
+        type: string
+      build_type:
+        type: string
+      can_restart:
+        type: boolean
+      can_update:
+        type: boolean
+      deployment:
+        type: string
+      exec_path:
+        type: string
+      platform:
+        type: string
+      supervisor:
+        type: string
+    type: object
+  selfupdate.State:
+    properties:
+      error:
+        type: string
+      finished_at:
+        type: string
+      percent:
+        type: integer
+      restart_required:
+        type: boolean
+      stage:
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+      target_version:
+        type: string
+      timeout_seconds:
+        type: integer
+    type: object
+  version.CheckResult:
+    properties:
+      current_version:
+        type: string
+      has_update:
+        type: boolean
+      latest_version:
+        type: string
+      published_at:
+        type: string
+      release_name:
+        type: string
+      release_notes:
+        type: string
+      release_url:
+        type: string
+      source:
         type: string
     type: object
 info:
@@ -3614,6 +3684,141 @@ paths:
       summary: Get rate cache status
       tags:
       - Admin Settings
+  /admin/api/v1/system/update/capability:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/selfupdate.Capability'
+              type: object
+      security:
+      - AdminJWT: []
+      summary: Get update capability
+      tags:
+      - Admin System
+  /admin/api/v1/system/update/start:
+    post:
+      parameters:
+      - description: Release tag confirmed by the administrator
+        in: query
+        name: target_version
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/selfupdate.State'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Start system update
+      tags:
+      - Admin System
+  /admin/api/v1/system/update/status:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/selfupdate.State'
+              type: object
+      security:
+      - AdminJWT: []
+      summary: Get update status
+      tags:
+      - Admin System
+  /admin/api/v1/system/version/check:
+    get:
+      description: Compare the running build version with the latest stable GitHub
+        Release.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/version.CheckResult'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+      security:
+      - AdminJWT: []
+      summary: Check for a stable release
+      tags:
+      - Admin System
+  /admin/api/v1/system/version/current:
+    get:
+      parameters:
+      - description: Version expected after update
+        in: query
+        name: target_version
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.ApiResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.CurrentVersionResult'
+              type: object
+      security:
+      - AdminJWT: []
+      summary: Confirm the running system version
+      tags:
+      - Admin System
   /admin/api/v1/wallets:
     get:
       description: Returns wallets with per-wallet order counts
