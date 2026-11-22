@@ -1891,7 +1891,7 @@ func TestGMPayReplayAfterConcurrentOrderInsertReleasesOnlyLosingReservation(t *t
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 	owner := &mdb.ApiKey{BaseModel: mdb.BaseModel{ID: 1}}
-	if _, err := data.AddWalletAddress("TTestTronAddress001"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatal(err)
 	}
 	request := newCreateTransactionRequest("competing-checkouts", 12.34)
@@ -1906,7 +1906,7 @@ func TestGMPayReplayAfterConcurrentOrderInsertReleasesOnlyLosingReservation(t *t
 		winner = &mdb.Orders{TradeId: "winning-trade", OrderId: request.OrderId, ApiKeyID: owner.ID,
 			Amount: 12.34, Currency: "CNY", Token: "USDT", Network: "tron",
 			PayProvider: mdb.PaymentProviderOnChain, PaymentType: mdb.PaymentTypeGmpay, NotifyUrl: request.NotifyUrl,
-			ReceiveAddress: "TTestTronAddress001", ActualAmount: 12.34, Status: mdb.StatusWaitPay}
+			ReceiveAddress: testutil.TronAddress, ActualAmount: 12.34, Status: mdb.StatusWaitPay}
 		winner.CreateRequestHash = gmpayCreateRequestHash(winner, request.Amount)
 		if err := data.LockTransaction(winner.Network, winner.ReceiveAddress, winner.Token, winner.TradeId, winner.ActualAmount, time.Hour); err != nil {
 			t.Fatal(err)
