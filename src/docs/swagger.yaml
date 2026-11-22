@@ -3844,6 +3844,10 @@ paths:
             asset, 10003 no wallet, 10005 no amount channel'
           schema:
             $ref: '#/definitions/response.ApiResponse'
+        "401":
+          description: Invalid merchant signature (status_code=401)
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
       summary: Create transaction and redirect (EPAY compat)
       tags:
       - Payment
@@ -3943,6 +3947,10 @@ paths:
           description: 'Stable errno in status_code: 10009 invalid params, 10041 invalid
             notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported
             asset, 10003 no wallet, 10005 no amount channel'
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "401":
+          description: Invalid merchant signature (status_code=401)
           schema:
             $ref: '#/definitions/response.ApiResponse'
       summary: Create transaction and redirect (EPAY compat)
@@ -4047,6 +4055,10 @@ paths:
           description: 'Stable errno in status_code: 10009 invalid params, 10041 invalid
             notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported
             asset, 10003 no wallet, 10005 no amount channel'
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "401":
+          description: Invalid merchant signature (status_code=401)
           schema:
             $ref: '#/definitions/response.ApiResponse'
       summary: Create transaction

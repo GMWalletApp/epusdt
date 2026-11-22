@@ -59,3 +59,38 @@ func TestFailJsonPreservesWrappedRspErrorErrno(t *testing.T) {
 		t.Fatalf("message = %q, want %q", got, constant.Errno[10008])
 	}
 }
+
+func TestHandleErrorContract(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		err          error
+		status, code int
+		message      string
+	}{
+		{"signature", fmt.Errorf("auth: %w", constant.SignatureErr), 401, 401, "signature verification failed"},
+		{"unknown order", fmt.Errorf("lookup: %w", constant.OrderNotExists), 400, 10008, "order does not exist"},
+		{"framework", fmt.Errorf("route: %w", echo.ErrMethodNotAllowed), 405, 405, "Method Not Allowed"},
+		{"server", errors.New("private detail"), 500, 500, "server error"},
+		{"unregistered", constant.Err(123456), 500, 500, "server error"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRecorder()
+			req := httptest.NewRequest("GET", "/", nil)
+			req.Header.Set(echo.HeaderXRequestID, "trace")
+			ctx := echo.New().NewContext(req, r)
+			HandleError(tc.err, ctx)
+			var got Response
+			if err := json.Unmarshal(r.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if r.Code != tc.status || got.StatusCode != tc.code || got.Message != tc.message || got.RequestID != "trace" || got.Data != nil {
+				t.Fatalf("HTTP %d, %+v", r.Code, got)
+			}
+			before := r.Body.String()
+			HandleError(errors.New("late"), ctx)
+			if r.Body.String() != before {
+				t.Fatal("appended a second response")
+			}
+		})
+	}
+}
