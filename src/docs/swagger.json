@@ -6091,6 +6091,11 @@
                     "type": "boolean",
                     "example": false
                 },
+                "merchant_home_url": {
+                    "description": "EPay merchant homepage for leaving checkout before payment succeeds",
+                    "type": "string",
+                    "example": "https://merchant.example/"
+                },
                 "network": {
                     "description": "网络 TRON ETH；status=4 占位订单为空",
                     "type": "string",

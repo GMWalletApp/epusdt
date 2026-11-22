@@ -816,20 +816,21 @@ func buildCheckoutResponse(order *mdb.Orders) *response.CheckoutCounterResponse 
 		paymentType = mdb.PaymentTypeEpay
 	}
 	return &response.CheckoutCounterResponse{
-		TradeId:        order.TradeId,
-		Amount:         order.Amount,
-		ActualAmount:   order.ActualAmount,
-		Token:          order.Token,
-		Currency:       order.Currency,
-		ReceiveAddress: order.ReceiveAddress,
-		Network:        order.Network,
-		Status:         order.Status,
-		PaymentType:    strings.ToLower(paymentType),
-		ExpirationTime: order.CreatedAt.AddMinutes(config.GetOrderExpirationTime()).TimestampMilli(),
-		RedirectUrl:    buildPublicRedirectURL(order),
-		CreatedAt:      order.CreatedAt.TimestampMilli(),
-		ServerTime:     carbon.Now().TimestampMilli(),
-		IsSelected:     order.IsSelected,
+		TradeId:         order.TradeId,
+		Amount:          order.Amount,
+		ActualAmount:    order.ActualAmount,
+		Token:           order.Token,
+		Currency:        order.Currency,
+		ReceiveAddress:  order.ReceiveAddress,
+		Network:         order.Network,
+		Status:          order.Status,
+		PaymentType:     strings.ToLower(paymentType),
+		ExpirationTime:  order.CreatedAt.AddMinutes(config.GetOrderExpirationTime()).TimestampMilli(),
+		RedirectUrl:     buildPublicRedirectURL(order),
+		MerchantHomeURL: epayMerchantHome(order),
+		CreatedAt:       order.CreatedAt.TimestampMilli(),
+		ServerTime:      carbon.Now().TimestampMilli(),
+		IsSelected:      order.IsSelected,
 	}
 }
 

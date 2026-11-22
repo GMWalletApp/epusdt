@@ -328,6 +328,8 @@ function epaySign(array $params, string $secretKey): string
 
 用于前端收银台读取订单展示数据。该接口只确认订单存在并返回基础数据；当前支付状态请调用 `/pay/check-status/{trade_id}`。
 
+EPay 订单的 `redirect_url` 用于支付成功后的签名回跳。付款人提前离开时可使用 `merchant_home_url` 返回商户首页。该字段仅在商户提供有效的 HTTP(S) 回跳地址时返回。
+
 ### 成功响应示例
 
 ```json

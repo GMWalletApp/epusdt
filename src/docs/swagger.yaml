@@ -1418,6 +1418,10 @@ definitions:
         description: 是否已选择当前支付方式；status=4 占位订单和刚补全的占位父单为 false
         example: false
         type: boolean
+      merchant_home_url:
+        description: EPay merchant homepage for leaving checkout before payment succeeds
+        example: https://merchant.example/
+        type: string
       network:
         description: 网络 TRON ETH；status=4 占位订单为空
         example: tron

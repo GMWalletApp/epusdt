@@ -252,6 +252,8 @@ The `payment_url` returned at creation points to `GET /pay/checkout-counter/{tra
 
 Fetch `GET /pay/checkout-counter-resp/{trade_id}` for display details. This response uses **milliseconds** for `created_at` and `expiration_time`. Poll the status endpoint for subsequent changes.
 
+For EPay orders, use `redirect_url` after successful payment to obtain the signed return. Buyers leaving before payment can use `merchant_home_url`, which contains the merchant homepage when a valid HTTP(S) return URL is available.
+
 ```json
 {
   "status_code": 200,

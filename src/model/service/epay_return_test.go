@@ -40,6 +40,22 @@ func TestBuildPublicRedirectURLRewritesOnlyEpayOrders(t *testing.T) {
 	}
 }
 
+func TestEPayMerchantHome(t *testing.T) {
+	for _, tc := range []struct{ paymentType, raw, want string }{
+		{mdb.PaymentTypeEpay, "https://shop.example:8443/pay/result?order=123#success", "https://shop.example:8443/"},
+		{mdb.PaymentTypeEpay, "/return", ""},
+		{mdb.PaymentTypeEpay, "javascript:alert(1)", ""},
+		{mdb.PaymentTypeEpay, "https://user@shop.example/return", ""},
+		{mdb.PaymentTypeEpay, "", ""},
+		{mdb.PaymentTypeGmpay, "https://shop.example/result", ""},
+	} {
+		order := &mdb.Orders{PaymentType: tc.paymentType, RedirectUrl: tc.raw}
+		if got := epayMerchantHome(order); got != tc.want {
+			t.Errorf("merchant home for %q = %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+}
+
 func TestEPaySuccessSigningEligibility(t *testing.T) {
 	for _, tc := range []struct {
 		name, paymentType, key string

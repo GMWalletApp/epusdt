@@ -46,6 +46,18 @@ func buildEPayReturnPath(tradeID string) string {
 	return "/pay/return/" + tradeID
 }
 
+// epayMerchantHome gives an unpaid buyer a destination outside the signed success flow.
+func epayMerchantHome(order *mdb.Orders) string {
+	if !isEPayOrder(order) {
+		return ""
+	}
+	target, err := url.Parse(strings.TrimSpace(order.RedirectUrl))
+	if err != nil || target.Hostname() == "" || target.User != nil || (target.Scheme != "https" && target.Scheme != "http") {
+		return ""
+	}
+	return (&url.URL{Scheme: target.Scheme, Host: target.Host, Path: "/"}).String()
+}
+
 func buildPublicRedirectURL(order *mdb.Orders) string {
 	if order == nil {
 		return ""
