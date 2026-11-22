@@ -24,6 +24,8 @@
 
 ## ChainScanner
 
+使用 EPUSDT 管理员 JWT 请求 `GET /admin/api/v1/chainscanner/admin/scan-retry-rate` 可查询各链扫块重试率。加 `?network=base` 只查 Base。`retry_rate` 等于重试读取次数除以总读取次数，尚未扫块时为 `null`，扫描器重启后重新计数。旧版外部扫描器缺少此接口时返回 HTTP 404。[扫块统计口径](../chainscanner/docs/api/zh-CN.md#scan-retry-rate)
+
 扫描器另有[西班牙语](../chainscanner/README.es.md)、[俄语](../chainscanner/README.ru.md)和[越南语](../chainscanner/README.vi.md)版本。
 
 - [扫描器概览](../chainscanner/README.zh-CN.md)

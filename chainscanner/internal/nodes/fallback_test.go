@@ -161,13 +161,23 @@ func TestFallbackRepairsFailedBlocksAndResumesAfterRestart(t *testing.T) {
 		}
 		t.Fatal("height not reached", height)
 	}
+	checkAttempts := func(total, retries uint64) {
+		t.Helper()
+		stats := registry.scanAttempts["base"].snapshot("base")
+		if stats.TotalAttempts != total || stats.RetryAttempts != retries {
+			t.Fatalf("got %+v, want %d attempts and %d retries", stats, total, retries)
+		}
+	}
+	checkAttempts(0, 0) // subscription boundary and node probes only
 	head.Store(41)
 	pumpTo(41)
+	checkAttempts(1, 0)
 	if paidCalls.Load() != 0 {
 		t.Fatal("paid endpoint used for healthy block or height polling", paidCalls.Load())
 	}
 	head.Store(43)
 	pumpTo(43)
+	checkAttempts(4, 1)
 	mu.Lock()
 	first := slices.Clone(paidBlocks)
 	mu.Unlock()
@@ -202,7 +212,9 @@ func TestFallbackRepairsFailedBlocksAndResumesAfterRestart(t *testing.T) {
 	paidDown.Store(false)
 	head.Store(500)
 	open()
+	checkAttempts(0, 0)
 	pumpTo(44)
+	checkAttempts(1, 1)
 	mu.Lock()
 	all := slices.Clone(paidBlocks)
 	mu.Unlock()
@@ -214,6 +226,7 @@ func TestFallbackRepairsFailedBlocksAndResumesAfterRestart(t *testing.T) {
 func TestFallbackChecksConfirmationsAndCoolsAfterFailedRepairs(t *testing.T) {
 	ctx := context.Background()
 	p := NewSourcePool(ctx, "base")
+	p.scanAttempts = new(scanAttempts)
 	defer p.Close()
 	cfg := []chains.Network{{Name: "base", URL: "https://ordinary.test", Confirmations: 3}, {Name: "base", URL: "https://paid.test", Confirmations: 3}}
 	if err := p.SetNodes(cfg); err != nil {
@@ -246,6 +259,9 @@ func TestFallbackChecksConfirmationsAndCoolsAfterFailedRepairs(t *testing.T) {
 		}
 	}
 	repair() // 100 with three confirmations needs head 102.
+	if stats := p.scanAttempts.snapshot("base"); stats.TotalAttempts != 1 || stats.RetryAttempts != 1 {
+		t.Fatalf("height check counted as a block read: %+v", stats)
+	}
 	if calls != 0 || paid.readFailures != (failureStreak{}) {
 		t.Fatal("charged an unconfirmed block or penalized a lagging provider")
 	}

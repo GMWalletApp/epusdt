@@ -67,6 +67,22 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	if err := json.Unmarshal([]byte(call("GET", "/admin/progress", "", 200)), &progress); err != nil || len(progress) != 1 || progress[0].Network != "solana" || progress[0].Status != "idle" {
 		t.Fatalf("scanner progress: %+v, %v", progress, err)
 	}
+	const retryPath = "/admin/scan-retry-rate"
+	if w := doGetAdmin(e, base+retryPath, ""); w.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated retry statistics: %d", w.Code)
+	}
+	for _, suffix := range []string{"", "?network=solana"} {
+		var rows []map[string]json.RawMessage
+		raw := call("GET", retryPath+suffix, "", 200)
+		if err := json.Unmarshal([]byte(raw), &rows); err != nil || len(rows) != 1 {
+			t.Fatalf("invalid retry statistics: %s", raw)
+		}
+		row := rows[0]
+		if string(row["network"]) != `"solana"` || string(row["total_attempts"]) != "0" || string(row["retry_attempts"]) != "0" || string(row["retry_rate"]) != "null" {
+			t.Fatalf("invalid idle retry statistics: %s", raw)
+		}
+	}
+	call("GET", retryPath+"?network=unknown", "", 400)
 	const host = "provider.example"
 	for i, endpoint := range []string{"/admin/nodes", "/admin/nodes/fallback"} {
 		b := call("POST", endpoint, `{"network":"solana","protocol":"http","url":"https://`+[]string{"ordinary.", "fallback."}[i]+host+`"}`, 201)
@@ -149,4 +165,23 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	call("GET", "/transactions/solana/invalid", "", 400)
 	call("GET", "/transactions/solana/invalid/strict", "", 400)
 	call("GET", "/heights/solana", "", 200)
+}
+
+func TestScanRetryRateLegacyScanner(t *testing.T) {
+	legacy := http.NewServeMux()
+	legacy.HandleFunc("GET /v1/admin/progress", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, "[]")
+	})
+	server := httptest.NewServer(legacy)
+	defer server.Close()
+	t.Setenv("CHAINSCANNER_URL", server.URL)
+	t.Setenv("CHAINSCANNER_ADMIN_TOKEN", strings.Repeat("a", 32))
+	e, jwt := setupAdminTestEnv(t)
+	const base = "/admin/api/v1/chainscanner/admin/"
+	if w := doGetAdmin(e, base+"scan-retry-rate", jwt); w.Code != http.StatusNotFound {
+		t.Fatalf("missing upstream metric: %d %s", w.Code, w.Body)
+	}
+	if w := doGetAdmin(e, base+"progress", jwt); w.Code != http.StatusOK || w.Body.String() != "[]" {
+		t.Fatalf("legacy progress: %d %s", w.Code, w.Body)
+	}
 }

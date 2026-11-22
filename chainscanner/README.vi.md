@@ -2,7 +2,7 @@
 <h1 align="center">ChainScanner</h1>
 <p align="center"><strong>Theo dõi địa chỉ trên chuỗi và nhận giao dịch qua WebSocket, gRPC hoặc HTTP.</strong></p>
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <strong>Tiếng Việt</strong> · <a href="README.es.md">Español</a> · <a href="README.ru.md">Русский</a></p>
-<p align="center">Go 1.25+ &nbsp;·&nbsp; <a href="LICENSE">MIT</a> &nbsp;·&nbsp; 17 mạng</p>
+<p align="center">Go 1.25+ &nbsp;·&nbsp; <a href="LICENSE">AGPL-3.0</a> &nbsp;·&nbsp; 17 mạng</p>
 <p align="center"><a href="docs/guide/vi.md#quick-start">Khởi động nhanh</a> &nbsp;·&nbsp; <a href="docs/guide/vi.md#networks">Mạng hỗ trợ</a> &nbsp;·&nbsp; <a href="docs/api/vi.md">Tài liệu API</a></p>
 
 ---

@@ -10,6 +10,7 @@ import (
 )
 
 type segment struct {
+	readStarted                 bool // this work item has already entered a block read
 	behind                      map[*endpoint]bool
 	from, to                    int64
 	running, done               bool
@@ -36,6 +37,10 @@ func (p *SourcePool) fetch(ctx context.Context, n *endpoint, j *segment, oneRead
 			return errNodeBehind
 		}
 	}
+	// Count a provider's range read only after its head is eligible. A single
+	// attempt may require several RPCs to read the range.
+	p.scanAttempts.record(j.readStarted)
+	j.readStarted = true
 	j.events = nil
 	j.first, j.last = chains.BlockLink{}, chains.BlockLink{}
 	for start := j.from; start <= j.to; {

@@ -33,11 +33,12 @@ type liveQueue struct {
 	fresh      bool
 }
 type liveJob struct {
-	span     chains.Span
-	active   bool
-	tried    map[*endpoint]bool
-	failures int
-	cause    error
+	readStarted bool // owned by the active worker until its completion
+	span        chains.Span
+	active      bool
+	tried       map[*endpoint]bool
+	failures    int
+	cause       error
 }
 type liveCall struct {
 	cancel  context.CancelFunc
@@ -123,7 +124,7 @@ func (p *SourcePool) startLive(n *endpoint, j *liveJob) {
 	q.running[n] = c
 	q.busy[n.historyKey] = true
 	// The registry can publish a new factory between Pump calls.
-	reader := &SourcePool{lanes: p.lanes, life: p.life, network: p.network, now: p.now, open: p.open}
+	reader := &SourcePool{scanAttempts: p.scanAttempts, lanes: p.lanes, life: p.life, network: p.network, now: p.now, open: p.open}
 	if j == nil {
 		q.probing++
 	} else {
@@ -137,8 +138,9 @@ func (p *SourcePool) startLive(n *endpoint, j *liveJob) {
 		if j == nil {
 			r.height, r.err = reader.height(call, n)
 		} else {
-			part := segment{from: j.span.First, to: j.span.Last}
+			part := segment{from: j.span.First, to: j.span.Last, readStarted: j.readStarted}
 			r.err = reader.fetch(call, n, &part, true)
+			j.readStarted = part.readStarted
 			r.height, r.events = part.to, part.events
 			r.link = chains.BlockLink{Hash: part.last.Hash, Parent: part.first.Parent}
 		}
@@ -275,7 +277,7 @@ func (p *SourcePool) warmLive() {
 func (p *SourcePool) AdvanceLive(ctx context.Context, spans []chains.Span, finish chains.FinishRange) (bool, error) {
 	q := p.live
 	for _, r := range spans {
-		q.jobs = append(q.jobs, &liveJob{span: r, tried: make(map[*endpoint]bool)})
+		q.jobs = append(q.jobs, &liveJob{span: r, readStarted: r.Failed, tried: make(map[*endpoint]bool)})
 	}
 	defer p.trimConnections()
 	// Prefer the oldest outstanding repair when a provider becomes free.

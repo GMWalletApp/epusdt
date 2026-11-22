@@ -21,6 +21,7 @@ const (
 // SourcePool is owned by one scan loop. SetNodes, Head, Read and Close must be
 // called serially. Independent nodes within a Read are used concurrently.
 type SourcePool struct {
+	scanAttempts   *scanAttempts
 	lanes          *providerLanes
 	live           *liveQueue
 	uses           uint64

@@ -13,11 +13,22 @@ import (
 
 // Only the enumerated routes can receive either upstream token. The browser
 // presents its EPUSDT admin JWT and never needs a ChainScanner credential.
+//
+// @Summary Get block scan retry rates by network
+// @Description Counts provider range reads and retries since scanner startup. retry_rate is retry_attempts divided by total_attempts, or null before the first read.
+// @Tags ChainScanner
+// @Security AdminJWT
+// @Produce json
+// @Param network query string false "Limit to one configured network"
+// @Success 200 {array} nodes.scanRetryStats
+// @Failure 400 {string} string "Invalid network filter"
+// @Failure 404 {string} string "External scanner does not support retry metrics"
+// @Router /admin/api/v1/chainscanner/admin/scan-retry-rate [get]
 func registerScannerAdmin(group *echo.Group, connection config.ScannerConnection) {
 	scanner := group.Group("/chainscanner")
 	for _, r := range []struct{ method, path string }{
 		{"GET", "/admin/blacklist"}, {"PUT", "/admin/blacklist/:host"}, {"DELETE", "/admin/blacklist/:host"},
-		{"GET", "/admin/progress"},
+		{"GET", "/admin/progress"}, {"GET", "/admin/scan-retry-rate"},
 		{"GET", "/admin/nodes"}, {"POST", "/admin/nodes"}, {"POST", "/admin/nodes/fallback"}, {"DELETE", "/admin/nodes/:id"},
 		{"POST", "/admin/nodes/:id/test"}, {"POST", "/admin/nodes/test"},
 		{"GET", "/heights/:network"}, {"GET", "/transactions/:network/:hash"}, {"GET", "/transactions/:network/:hash/strict"},

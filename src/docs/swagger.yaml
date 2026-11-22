@@ -1299,6 +1299,17 @@ definitions:
         example: "2026-04-16 12:00:00"
         type: string
     type: object
+  nodes.scanRetryStats:
+    properties:
+      network:
+        type: string
+      retry_attempts:
+        type: integer
+      retry_rate:
+        type: number
+      total_attempts:
+        type: integer
+    type: object
   request.CreateTransactionRequest:
     properties:
       amount:
@@ -2277,6 +2288,38 @@ paths:
       summary: Update chain
       tags:
       - Admin Chains
+  /admin/api/v1/chainscanner/admin/scan-retry-rate:
+    get:
+      description: Counts provider range reads and retries since scanner startup.
+        retry_rate is retry_attempts divided by total_attempts, or null before the
+        first read.
+      parameters:
+      - description: Limit to one configured network
+        in: query
+        name: network
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/nodes.scanRetryStats'
+            type: array
+        "400":
+          description: Invalid network filter
+          schema:
+            type: string
+        "404":
+          description: External scanner does not support retry metrics
+          schema:
+            type: string
+      security:
+      - AdminJWT: []
+      summary: Get block scan retry rates by network
+      tags:
+      - ChainScanner
   /admin/api/v1/config:
     get:
       description: |-

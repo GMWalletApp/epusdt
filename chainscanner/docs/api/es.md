@@ -34,6 +34,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Consumidor | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
 | Consumidor | [`GET /v1/transactions/{network}/{hash}/strict`](#transactions) | `200` |
 | Administrador | [`GET /v1/admin/progress`](#scan-progress) | `200` |
+| Administrador | [`GET /v1/admin/scan-retry-rate`](#scan-retry-rate) | `200`, `400` |
 | Administrador | [`GET /v1/admin/nodes`](#list) | `200` |
 | Administrador | [`POST /v1/admin/nodes`](#add) | `201` |
 | Administrador | [`POST /v1/admin/nodes/fallback`](#fallback) | `201` |
@@ -395,6 +396,22 @@ admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protoco
 ### `GET /v1/admin/progress`
 
 Devuelve una fila por red configurada sin consultar los nodos. `target_height` incluye las confirmaciones y `cursor_height` indica hasta dónde se ha escaneado sin huecos. `lag_ms` mide el tiempo mínimo observado que lleva pendiente una altura elegible. El historial en memoria se reinicia al arrancar o al iniciar otra suscripción tras quedar la red inactiva. El estado es `warning` por encima de 300 000 ms y `ok` en otro caso. Para `idle`, `warming` y `stale` el retraso es null.
+
+<a id="scan-retry-rate"></a>
+
+### `GET /v1/admin/scan-retry-rate`
+
+Requiere el token de administrador. Sin `network` devuelve todas las redes configuradas. Un filtro vacío, repetido o con una red no configurada devuelve **400**.
+
+`total_attempts` cuenta las lecturas de rangos iniciadas después de comprobar la altura del nodo. `retry_attempts` cuenta las relecturas y los intentos de reparar rangos marcados como fallidos, incluso con otro proveedor. Cada intento cuenta una vez aunque cubra varias alturas o llamadas RPC. Se excluyen las consultas de altura, las consultas por hash y los reintentos de entrega. Los contadores se conservan en memoria entre periodos de vigilancia y se reinician con el servicio. `retry_rate` es `retry_attempts / total_attempts` (0–1), o `null` si aún no hubo lecturas.
+
+```sh
+admin "$BASE/v1/admin/scan-retry-rate?network=base"
+```
+
+```json
+[{"network":"base","total_attempts":100,"retry_attempts":4,"retry_rate":0.04}]
+```
 
 <a id="test-one"></a>
 

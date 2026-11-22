@@ -44,6 +44,7 @@ func TestEmbeddedScannerPersistsSettingsAcrossStarts(t *testing.T) {
 			}
 			call("GET", conn.URL+"/v1/admin/progress", conn.ConsumerToken, 401)
 			call("GET", conn.URL+"/v1/admin/progress", conn.AdminToken, 200)
+			call("GET", conn.URL+"/v1/admin/scan-retry-rate", conn.AdminToken, 200)
 			blacklist := conn.URL + "/v1/admin/blacklist"
 			if run == 0 {
 				previousToken = conn.AdminToken
