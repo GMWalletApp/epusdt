@@ -829,7 +829,13 @@ func getOrderSupportedNetworks(t *testing.T, e *echo.Echo, tradeID string) map[s
 		rawTokens, _ := row["tokens"].([]interface{})
 		tokens := make([]string, 0, len(rawTokens))
 		for _, tok := range rawTokens {
-			tokens = append(tokens, tok.(string))
+			symbol := tok.(string)
+			details, _ := row["token_details"].(map[string]interface{})
+			metadata, _ := details[symbol].(map[string]interface{})
+			if metadata == nil || metadata["decimals"] == nil {
+				t.Fatalf("config missing metadata for configured %s/%s: %v", network, symbol, row)
+			}
+			tokens = append(tokens, symbol)
 		}
 		result[network] = tokens
 	}
@@ -1096,6 +1102,23 @@ func TestGetPublicConfig(t *testing.T) {
 		seen[network] = true
 		if _, ok := row["display_name"].(string); !ok {
 			t.Fatalf("supported_assets[%s].display_name missing or not string: %#v", network, row["display_name"])
+		}
+		details := row["token_details"].(map[string]interface{})
+		symbols := row["tokens"].([]interface{})
+		if len(details) != len(symbols) {
+			t.Fatalf("metadata and symbol list disagree on %s", network)
+		}
+		for _, symbol := range symbols {
+			if _, ok := details[symbol.(string)]; !ok {
+				t.Fatalf("missing %s/%s metadata", network, symbol)
+			}
+		}
+		if network == "tron" {
+			usdt := details["USDT"].(map[string]interface{})
+			trx := details["TRX"].(map[string]interface{})
+			if usdt["contract_address"] != "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" || usdt["decimals"] != float64(6) || trx["contract_address"] != "" {
+				t.Fatalf("invalid TRON metadata: %v", details)
+			}
 		}
 		if network == "tron" && row["display_name"] != "TRON" {
 			t.Fatalf("supported_assets.tron.display_name = %v, want TRON", row["display_name"])

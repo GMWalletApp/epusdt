@@ -73,6 +73,7 @@ func buildSupportedAssets(order *mdb.Orders) ([]response.NetworkTokenSupport, er
 			continue
 		}
 		symbols := make([]string, 0, len(tokens))
+		details := make(map[string]response.TokenDetails, len(tokens))
 		for _, t := range tokens {
 			if !service.ChainTokenReadyForPayment(t) {
 				continue
@@ -91,6 +92,7 @@ func buildSupportedAssets(order *mdb.Orders) ([]response.NetworkTokenSupport, er
 				}
 			}
 			symbols = append(symbols, sym)
+			details[sym] = response.TokenDetails{ContractAddress: t.ContractAddress, Decimals: t.Decimals}
 		}
 		if len(symbols) == 0 {
 			continue
@@ -101,9 +103,10 @@ func buildSupportedAssets(order *mdb.Orders) ([]response.NetworkTokenSupport, er
 			displayName = network
 		}
 		supports = append(supports, response.NetworkTokenSupport{
-			Network:     network,
-			DisplayName: displayName,
-			Tokens:      symbols,
+			Network:      network,
+			DisplayName:  displayName,
+			Tokens:       symbols,
+			TokenDetails: details,
 		})
 	}
 
@@ -117,10 +120,23 @@ func buildSupportedAssets(order *mdb.Orders) ([]response.NetworkTokenSupport, er
 		network, token := strings.ToLower(row.Network), strings.ToUpper(row.Token)
 		i := slices.IndexFunc(supports, func(s response.NetworkTokenSupport) bool { return s.Network == network })
 		if i < 0 {
-			supports = append(supports, response.NetworkTokenSupport{Network: network, DisplayName: network, Tokens: []string{token}})
-		} else if !slices.Contains(supports[i].Tokens, token) {
-			supports[i].Tokens = append(supports[i].Tokens, token)
-			sort.Strings(supports[i].Tokens)
+			i = len(supports)
+			supports = append(supports, response.NetworkTokenSupport{
+				Network: network, DisplayName: network, TokenDetails: make(map[string]response.TokenDetails),
+			})
+		}
+		support := &supports[i]
+		if slices.Contains(support.Tokens, token) {
+			continue
+		}
+		support.Tokens = append(support.Tokens, token)
+		sort.Strings(support.Tokens)
+		configured, err := data.GetConfiguredChainToken(network, token)
+		if err != nil {
+			return nil, err
+		}
+		if configured.ID != 0 {
+			support.TokenDetails[token] = response.TokenDetails{ContractAddress: configured.ContractAddress, Decimals: configured.Decimals}
 		}
 	}
 	return supports, nil

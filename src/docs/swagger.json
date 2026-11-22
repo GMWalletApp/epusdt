@@ -6328,6 +6328,12 @@
                     "type": "string",
                     "example": "tron"
                 },
+                "token_details": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/response.TokenDetails"
+                    }
+                },
                 "tokens": {
                     "type": "array",
                     "items": {
@@ -6448,6 +6454,17 @@
                 "withdrawal_reminder_enabled": {
                     "type": "boolean",
                     "example": false
+                }
+            }
+        },
+        "response.TokenDetails": {
+            "type": "object",
+            "properties": {
+                "contract_address": {
+                    "type": "string"
+                },
+                "decimals": {
+                    "type": "integer"
                 }
             }
         },

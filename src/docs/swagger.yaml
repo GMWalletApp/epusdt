@@ -1574,6 +1574,10 @@ definitions:
       network:
         example: tron
         type: string
+      token_details:
+        additionalProperties:
+          $ref: '#/definitions/response.TokenDetails'
+        type: object
       tokens:
         example:
         - USDT
@@ -1662,6 +1666,13 @@ definitions:
       withdrawal_reminder_enabled:
         example: false
         type: boolean
+    type: object
+  response.TokenDetails:
+    properties:
+      contract_address:
+        type: string
+      decimals:
+        type: integer
     type: object
   response.XLayerPublicConfig:
     properties:

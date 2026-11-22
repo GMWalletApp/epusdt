@@ -75,6 +75,15 @@ func GetEnabledChainTokenBySymbol(network, symbol string) (*mdb.ChainToken, erro
 	return row, err
 }
 
+// GetConfiguredChainToken returns metadata for a reserved payment even when
+// the merchant has stopped offering this token for new payments.
+func GetConfiguredChainToken(network, symbol string) (*mdb.ChainToken, error) {
+	row := new(mdb.ChainToken)
+	err := dao.Mdb.Where("network = ? AND UPPER(symbol) = ?", strings.ToLower(network), strings.ToUpper(symbol)).
+		Limit(1).Find(row).Error
+	return row, err
+}
+
 // GetChainTokenByID fetches by primary key.
 func GetChainTokenByID(id uint64) (*mdb.ChainToken, error) {
 	row := new(mdb.ChainToken)

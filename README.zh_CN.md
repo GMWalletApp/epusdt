@@ -6,11 +6,11 @@
 
 **面向商户的自托管加密支付网关**
 
-<p><a href="./README.md">English</a> · <strong>简体中文</strong></p>
+<p><a href="./README.md">English</a> · 简体中文 · <a href="https://epusdt.com/">其他语言请访问 EPUSDT 官网</a></p>
 
 <p>
-  <a href="wiki/API.md">商户 API</a> ·
-  <a href="wiki/README.zh_CN.md">文档目录</a> ·
+  <a href="https://epusdt.com/zh/api/payment">商户 API</a> ·
+  <a href="https://epusdt.com/zh/guide/intro">文档目录</a> ·
   <a href="https://t.me/epusdt">Telegram 频道</a> ·
   <a href="https://t.me/epusdt_group">Telegram 交流群</a>
 </p>
@@ -23,7 +23,39 @@
 
 </div>
 
----
+## 开发
+
+EPUSDT 使用 Go 和 SQLite。网关通过 GMPay 或易支付接口创建订单；内置 ChainScanner 跟踪收款地址，网关核验到账后向商户发送签名回调。
+
+使用 Go 1.25 或更高版本，在仓库根目录执行：
+
+```sh
+cd src
+go test ./...
+make build
+```
+
+二进制文件为 `src/bin/epusdt`。
+
+| 目录 | 用途 |
+| --- | --- |
+| [src](src/) | HTTP 路由、订单状态、支付核验和回调 |
+| [chainscanner](chainscanner/) | 固定版本的链上扫描器；通过 [同步脚本](scripts/sync-chainscanner) 更新 |
+| [sdk/python](sdk/python/) | 签名及创建订单的 Python 示例 |
+| [src/docs](src/docs/) | 生成的 Swagger 规范和 API 错误码 |
+
+[开发规范](DEVELOPMENT_STANDARD.zh_CN.md) · [代码审查](REVIEW.zh_CN.md) · [发布流程](RELEASING.zh_CN.md)
+
+## 使用文档
+
+[支持的网络、币种和完整合约地址](https://epusdt.com/zh/guide/intro#networks) · [Docker 部署与升级](https://epusdt.com/zh/guide/installation/docker) · [商户 API](https://epusdt.com/zh/api/payment) · [易支付接入](https://epusdt.com/zh/guide/integration/epay)
+
+A7A5 支持以下主网，需要商户按网络启用。
+
+| 网络 | A7A5 合约地址 | 小数位 |
+| --- | --- | ---: |
+| TRON (TRC-20) | `TLeVfrdym8RoJreJ23dAGyfJDygRtiWKBZ` | 6 |
+| Ethereum (ERC-20) | `0x6fA0BE17e4beA2fCfA22ef89BF8ac9aab0AB0fc9` | 6 |
 
 ## 部署或迁移到 EPUSDT
 
@@ -34,181 +66,6 @@
 ```
 
 [查看完整部署清单](https://epusdt.com/agent-setup/prompt.md)
-
-## 项目介绍
-
-EPUSDT 是用 Go 编写的自托管加密支付网关。商户通过 GMPay 或易支付兼容接口创建订单，买家向商户钱包转账，EPUSDT 核验到账后回调商户。支持多个收款地址轮换，也可以通过 Telegram Bot 接收支付通知。
-
-```mermaid
-flowchart TB
-    accTitle: 支付网关与上下游服务
-    M["商户系统"] -->|"通过 GMPay 或易支付创建订单"| G["EPUSDT"]
-    G -->|"订阅收款地址"| S["ChainScanner"]
-    S -->|"读取区块、补扫缺块"| N["链上 RPC 节点"]
-    S -->|"推送地址活动"| G
-    G -->|"创建托管收银台"| H["OKPay 或 OKX OnchainOS"]
-    H -->|"OKPay 签名通知或 OKX 结算查询结果"| G
-    G -->|"到账后发送签名回调"| M
-```
-
-<a id="screenshots"></a>
-
-## 界面预览
-
-| 后台首页 | 管理面板 |
-| :---: | :---: |
-| <a href="./wiki/img/web2.png"><img src="./wiki/img/web2.png" alt="后台首页" height="180"></a> | <a href="./wiki/img/web1.png"><img src="./wiki/img/web1.png" alt="管理面板" height="180"></a> |
-| **收银台** | **支付页面** |
-| <a href="./wiki/img/pay1.jpeg"><img src="./wiki/img/pay1.jpeg" alt="收银台" height="180"></a> | <a href="./wiki/img/pay2.jpeg"><img src="./wiki/img/pay2.jpeg" alt="支付页面" height="180"></a> |
-
-<a id="networks"></a>
-
-## 已支持网络与代币
-
-下表列出新安装预置的 16 条直接收款网络。收银台只展示本实例已启用、有可用收款地址和有效币种配置的组合。对接时读取 `GET /payments/gmpay/v1/config` 的 `data.supported_assets`，即可获得当前可用的网络标识和币种。
-
-| 网络 | API 网络标识 | 默认收款币种 |
-| --- | --- | --- |
-| TRON | `tron` | TRX、USDT |
-| Ethereum | `ethereum` | USDT、USDC |
-| BNB Smart Chain | `binance` | USDT、USDC |
-| Polygon PoS | `polygon` | USDT、USDC、USDC.e |
-| Solana | `solana` | SOL、USDT、USDC |
-| TON | `ton` | TON、USDT |
-| Plasma | `plasma` | USDT |
-| Aptos | `aptos` | USDT、USDC |
-| Sui | `sui` | SUI、USDC |
-| Arbitrum One | `arbitrum` | ETH、USDC、USDT |
-| Base | `base` | ETH、USDC |
-| OP Mainnet | `optimism` | ETH、USDC |
-| Avalanche C-Chain | `avalanche` | AVAX、USDC |
-| HyperEVM | `hyperevm` | HYPE、USDC |
-| Monad | `monad` | MON、USDC |
-| Arc | `arc` | USDC |
-
-Polygon 的 USDC 和 USDC.e 是两种不同资产。Arbitrum One 和 Plasma 上的 USDT0 在 EPUSDT 中使用收款币种代码 `USDT`。Arc 的原生转账和 ERC-20 转账都以 USDC 收款。
-
-<a id="checkout"></a>
-
-## 托管收银台
-
-这两种支付方式需由商户单独启用。公开配置接口分别通过 `xlayer` 和 `okpay` 返回其状态和允许的币种。
-
-- **OKX OnchainOS（X Layer）** 支持 USDC、USDT0、USDG。在后台填写 OKX API Key、Secret、Passphrase 和 X Layer 收款地址，选择接受的币种。买家在 OKX 页面完成支付，EPUSDT 查询到 `settled` 并核对订单后确认到账。
-- **OKPay** 默认允许 USDT、TRX。收银台按商户配置显示可用币种。
-
-## 订单处理流程
-
-```mermaid
-flowchart TB
-    accTitle: 订单状态与商户回调
-    Start["创建订单"] -->|"已指定网络与币种"| Wait["1 · 等待付款"]
-    Start -->|"买家在收银台选择"| Select["4 · 等待选择"]
-    Select -->|"选择资产或托管通道"| Wait
-    Wait -->|"匹配到链上转账"| Confirm["5 · 确认中"]
-    Confirm -->|"达到确认数并核验到账"| Paid["2 · 已支付"]
-    Confirm -->|"两轮严格核验未通过"| Review["6 · 人工复核"]
-    Review -->|"管理员重新核验通过"| Paid
-    Wait -->|"托管支付结果已核实"| Paid
-    Select -->|"超时"| Expired["3 · 已过期"]
-    Wait -->|"超时"| Expired
-    Paid --> Notify["通知商户"]
-```
-
-链上收款会核对网络、币种、地址、金额和付款时间。严格核验默认开启，要求两个独立节点返回一致结果。关闭后仍需核对到账与区块确认数。在付款窗口内发生的转账，可能在订单过期后才被补扫发现。
-
-<a id="quick-start"></a>
-
-## 快速开始
-
-1. 使用 [Linux 安装工具](wiki/EPCTL.md) 或 [Docker Compose](wiki/docker-RUN.md) 部署 EPUSDT。
-2. 在后台启用收款网络和币种，并添加该网络的收款地址。
-3. 调用 `GET /payments/gmpay/v1/config` 查看可用币种，再按[商户 API 指南](wiki/API.md)创建订单。
-
-<a id="deployment"></a>
-
-## 部署与升级
-
-Linux 二进制安装和升级使用 [epctl 指南](wiki/EPCTL.md)。也可以选择 [Docker Compose](wiki/docker-RUN.md)、[宝塔面板](wiki/BT_RUN.md) 或[手动部署](wiki/manual_RUN.md)。从 v2.0.0 升级 Docker Compose 时，先备份并迁移数据到新的挂载目录，再重建容器。[v2.1.0 升级说明](https://github.com/GMWalletApp/epusdt/releases/tag/v2.1.0)
-
-### 数据库与升级
-
-EPUSDT 仅支持 SQLite。新安装可省略 `db_type`，也可以显式设置 `db_type=sqlite`。首次启动会自动建表。
-
-| 用途 | 配置项 | 默认位置 |
-| --- | --- | --- |
-| 业务数据（订单、钱包、商户配置） | `sqlite_database_filename` | 配置文件同目录的 `epusdt.db` |
-| 运行状态（交易锁等） | `runtime_sqlite_filename` | `runtime_root_path` 下的 `epusdt-runtime.db` |
-
-升级时请备份配置和这两个数据库。使用内置 ChainScanner 时，也要保留运行目录中的 `chainscanner.sqlite`，其中存有订阅、扫描进度和节点设置。旧版 MySQL 或 PostgreSQL 部署需先备份、自行迁移并核对数据，再切换到 SQLite。修改 `db_type` 不会转换历史数据。
-
-## ChainScanner 地址订阅
-
-默认随 EPUSDT 在同一进程启动，无需另行配置凭据。扫描器通过多个节点读取区块，故障时切换节点并补扫缺块。后台可查看各链已扫高度、目标高度和追块延迟，超过 5 分钟会提示。
-
-<details>
-<summary>独立部署与节点管理</summary>
-
-原先使用独立扫描容器的部署可保留 `./runtime/chainscanner`、既有令牌和连接地址，使用 `docker compose --profile scanner up -d` 继续读取原有订阅和游标。新建独立扫描容器时设置两枚不同的令牌，支付服务使用 `CHAINSCANNER_URL=http://chainscanner:9081`。
-
-使用独立扫描服务时，在 EPUSDT 进程环境或启动用的 `.env` 填写以下设置，重启后生效。留空 `CHAINSCANNER_URL` 即使用内置扫描器。
-
-| 配置 | 用途 |
-| --- | --- |
-| `CHAINSCANNER_URL` | 服务的 HTTP(S) 源站，例如同机部署的 `http://127.0.0.1:9081`。容器间使用可达的服务名。 |
-| `CHAINSCANNER_TOKEN` | 独立服务分配给 EPUSDT 的消费者令牌。各业务使用不同令牌。 |
-| `CHAINSCANNER_ADMIN_TOKEN` | 启用后台节点管理和黑名单所需的独立管理员令牌。 |
-| `CHAINSCANNER_TRANSPORT` | 默认 `ws` 推送，也支持 `grpc` 双向流和 `http` 长轮询。gRPC 需要 HTTP/2 或内网 h2c。 |
-
-后台接口使用 EPUSDT 管理员 JWT。公共前缀为 `/admin/api/v1/chainscanner`，服务器按路由选用相应的 ChainScanner 令牌。
-
-| 用途 | 方法和相对路径 |
-| --- | --- |
-| 普通节点、兜底节点 | `GET /admin/nodes`、`POST /admin/nodes`、`POST /admin/nodes/fallback`、`DELETE /admin/nodes/{id}` |
-| 首页各链追块延迟 | `GET /admin/progress`（使用扫描器管理员令牌） |
-| 手动复测扫描节点 | `POST /admin/nodes/{id}/test`、`POST /admin/nodes/test?network=solana` |
-| RPC 地址黑名单 | `GET /admin/blacklist`、`PUT /admin/blacklist/{rule}`、`DELETE /admin/blacklist/{rule}`。例如 `keyword:acme`、`exact:rpc.example.org` |
-| 连续进度、普通与严格交易查询 | `GET /heights/{network}`、`GET /transactions/{network}/{hash}`、`GET /transactions/{network}/{hash}/strict` |
-
-可为每条链配置两家独立服务商提供的兜底节点，用于补扫和严格核验。[ChainScanner API](chainscanner/docs/api/zh-CN.md) · [上游仓库](https://github.com/GMWalletApp/ChainScanner) · [本项目使用的版本](chainscanner.rev)
-
-</details>
-
-<a id="documentation"></a>
-
-## 生态集成
-
-<details>
-<summary>兼容平台</summary>
-
-- **AI 分发** — [OneAPI](https://github.com/songquanpeng/one-api)、[Sub2API](https://github.com/Wei-Shaw/sub2api)、[NewAPI](https://github.com/QuantumNous/new-api)
-
-- **发卡系统** — [独角数卡（Dujiaoka）](https://dujiao-next.com/)、[异次元发卡](https://github.com/lizhipay/acg-faka)
-
-- **代理面板** — [V2Board](https://github.com/v2board/v2board)、[XBoard](https://github.com/cedar2025/Xboard)、[xiaoV2board](https://github.com/wyx2685/v2board/)、[SSPanel](https://github.com/anankke/sspanel-uim)
-
-- **建站生态** — [WordPress](https://wordpress.com/)、[WHMCS](https://www.whmcs.com/)
-
-- **Epay 兼容** — 兼容各类支持 Epay 易支付接口的平台
-
-</details>
-
-相关项目：[GMPay Edge 支付网关](https://github.com/GMWalletApp/gmpay-edge) 和 [GMShop Edge 数字商品商城](https://github.com/GMWalletApp/gmshop-edge) 均运行在 Cloudflare Workers 上。
-
-<details>
-<summary>GitHub 星标历史</summary>
-
-<a href="https://www.star-history.com/?type=date&repos=gmwalletapp%2Fepusdt">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=gmwalletapp/epusdt&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=gmwalletapp/epusdt&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=gmwalletapp/epusdt&type=date&legend=top-left" />
- </picture>
-</a>
-
-</details>
-
-[问题反馈](https://github.com/GMWalletApp/epusdt/issues) · [项目网站](https://epusdt.com)
 
 ## 安全审计与许可
 

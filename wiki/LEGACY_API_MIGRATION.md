@@ -17,7 +17,7 @@
 2. 通过 `GET /payments/gmpay/v1/config` 查询可用网络和币种。GMPay 如需买家在收银台选择，可同时省略两项。
 3. 对照[商户 API 示例](API.md)验算签名，联调创建订单、浏览器跳转与签名回调。重复通知应幂等处理，成功时返回 HTTP 200 及 `ok` 或 `success`。
 
-同时变更数据目录或数据库的部署，请参考[升级说明](../README.zh_CN.md#部署与升级)。
+同时变更数据目录或数据库的部署，请参考[升级说明](https://epusdt.com/zh/guide/installation/docker)。
 
 ## 后台节点管理升级
 
