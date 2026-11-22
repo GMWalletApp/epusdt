@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/GMWalletApp/epusdt/internal/testutil"
+	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/xssnick/tonutils-go/address"
 )
@@ -43,53 +44,19 @@ func TestEvmTransactionLockAddressIsCaseInsensitive(t *testing.T) {
 	}
 }
 
-func TestStatsBucketExprForDialect(t *testing.T) {
-	tests := []struct {
-		name    string
-		dialect string
-		hourly  bool
-		want    string
-	}{
-		{
-			name:    "sqlite daily",
-			dialect: "sqlite",
-			want:    "substr(created_at, 1, 10)",
-		},
-		{
-			name:    "sqlite hourly",
-			dialect: "sqlite",
-			hourly:  true,
-			want:    "replace(substr(created_at, 1, 13), 'T', ' ') || ':00'",
-		},
-		{
-			name:    "postgres daily",
-			dialect: "postgres",
-			want:    "TO_CHAR(created_at, 'YYYY-MM-DD')",
-		},
-		{
-			name:    "postgres hourly",
-			dialect: "postgres",
-			hourly:  true,
-			want:    "TO_CHAR(created_at, 'YYYY-MM-DD HH24:00')",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := statsBucketExprForDialect(tt.dialect, "created_at", tt.hourly)
-			if err != nil {
-				t.Fatalf("statsBucketExprForDialect error: %v", err)
+func TestStatsBucketGroupsSQLiteTimestamps(t *testing.T) {
+	defer testutil.SetupTestDatabases(t)()
+	for _, timestamp := range []string{"2026-01-02 15:04:05", "2026-01-02T15:04:05Z"} {
+		for _, tc := range []struct {
+			hourly bool
+			want   string
+		}{{false, "2026-01-02"}, {true, "2026-01-02 15:00"}} {
+			var got string
+			err := dao.Mdb.Raw("SELECT "+statsBucketExpr(tc.hourly)+" FROM (SELECT ? AS created_at)", timestamp).Scan(&got).Error
+			if err != nil || got != tc.want {
+				t.Fatalf("timestamp %q hourly=%v: got %q, want %q (error %v)", timestamp, tc.hourly, got, tc.want, err)
 			}
-			if got != tt.want {
-				t.Fatalf("bucket expr = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestStatsBucketExprRejectsUnsupportedDialect(t *testing.T) {
-	if _, err := statsBucketExprForDialect("mysql", "created_at", false); err == nil {
-		t.Fatal("expected unsupported mysql dialect error")
+		}
 	}
 }
 

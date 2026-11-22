@@ -120,18 +120,13 @@ func (c *BaseAdminController) CreateApiKey(ctx echo.Context) error {
 	})
 }
 
-// isUniqueViolation matches the driver-specific strings for a unique-
-// index collision across SQLite / MySQL / PostgreSQL. Good enough for
-// the PID retry loop; a cleaner approach would be a typed error but
-// GORM doesn't surface one portably.
+// isUniqueViolation detects a PID collision reported by either SQLite driver.
 func isUniqueViolation(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "unique") ||
-		strings.Contains(msg, "duplicate") ||
-		strings.Contains(msg, "constraint failed")
+	return strings.Contains(msg, "unique constraint failed")
 }
 
 // UpdateApiKey patches name / ip_whitelist / notify_url. Secret rotation

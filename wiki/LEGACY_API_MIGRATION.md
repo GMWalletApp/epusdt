@@ -1,106 +1,23 @@
-# API 变更文档
+# 迁移旧版商户接口
 
-## 概述
+[文档目录](README.zh_CN.md) · [English](LEGACY_API_MIGRATION.en.md)
 
-## 后台配置说明（重要）
+## 确认插件使用的协议
 
-### 对于 dujiaoka 用户
+先确认插件（包括独角数卡插件）支持的协议。旧指南曾使用 `/api/v1/order/create-transaction` 或 `/payments/epusdt/v1/order/create-transaction`。当前代码注册的路由如下。只支持旧签名的插件还需升级签名逻辑。
 
-**只需要修改一个地方**：在 dujiaoka 后台支付插件配置中，将 API 地址前缀从 `/api` 改为 `/payments/epusdt` 即可。
+| 协议 | 创建订单 | 请求与回调签名 |
+| --- | --- | --- |
+| GMPay | `POST /payments/gmpay/v1/order/create-transaction` | HMAC-SHA256 |
+| EPay | `GET/POST /payments/epay/v1/order/create-transaction/submit.php` | MD5 |
 
-**示例**：
+## 切换前验证
 
-```
-旧配置：https://your-domain.com/api/v1/order/create-transaction
-新配置：https://your-domain.com/payments/epusdt/v1/order/create-transaction
-```
+1. 从后台获取商户 PID 与密钥，EPay 使用数字 PID。
+2. 通过 `GET /payments/gmpay/v1/config` 查询可用网络和币种。GMPay 如需买家在收银台选择，可同时省略两项。
+3. 对照[商户 API 示例](API.md)验算签名，联调创建订单、浏览器跳转与签名回调。重复通知应幂等处理，成功时返回 HTTP 200 及 `ok` 或 `success`。
 
-**就这么简单！** 其他配置（密钥、回调地址等）完全不需要修改。
-
----
-
-## 路由变更对照表
-
-### API 路由
-
-| 原路由 | 新路由 | 说明 |
-|--------|--------|------|
-| `POST /api/v1/order/create-transaction` | `POST /payments/epusdt/v1/order/create-transaction` | 创建交易订单 |
-
-
-## 新增配置项说明
-
-本次更新新增了以下配置项（位于 `src/.env.example` 文件）：
-
-### 1. `api_rate_url` - 汇率接口 URL
-
-用于获取实时汇率的 API 地址。系统会根据此接口动态获取不同币种的汇率。
-
-```bash
-# 汇率接口url
-api_rate_url=https://your-rate-api.com/
-```
-
-**API 格式要求**：
-
-系统会请求 `{api_rate_url}/{currency}.json`，例如：
-- `https://your-rate-api.com/cny.json`
-- `https://your-rate-api.com/usd.json`
-
-**返回格式示例**：
-
-```json
-{
-  "cny": {
-    "usdt": 0.1389,
-    "trx": 0.0123
-  }
-}
-```
-
-其中 `0.1389` 表示 1 CNY = 0.1389 USDT（即 1 USDT ≈ 7.2 CNY）
-
-**说明**：
-- 支持自建汇率 API，只需按照上述格式返回数据即可
-
-### 2. `tron_grid_api_key` - TRON Grid API Key
-
-TRON Grid API 密钥，用于提高 API 请求限制和稳定性。
-
-```bash
-tron_grid_api_key=
-```
-
-**如何获取 API Key**：
-
-1. 访问 [https://www.trongrid.io/](https://www.trongrid.io/)
-2. 注册账号并登录
-3. 在控制台创建 API Key
-4. 将 API Key 填入配置文件
-
-**为什么需要 API Key**：
-
-- ✅ **提高请求限制**：免费账号有更高的 API 调用配额
-- ✅ **更好的稳定性**：避免公共 API 的限流问题
-- ✅ **支持更多功能**：为后续支持 TRX 等其他代币做准备
-
-### 配置示例
-
-`.env` 配置示例：
-
-```bash
-# 订单过期时间（分钟）
-order_expiration_time=15
-
-# 订单回调失败最大重试次数
-order_notice_max_retry=0
-
-# 汇率接口url（动态获取汇率）
-api_rate_url=
-
-# TRON Grid API Key（推荐配置）
-tron_grid_api_key=your-api-key-here
-```
+同时变更数据目录或数据库的部署，请参考[升级说明](../README.zh_CN.md#部署与升级)。
 
 ## 后台节点管理升级
 

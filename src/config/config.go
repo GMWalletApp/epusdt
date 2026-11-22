@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +17,6 @@ var (
 	HTTPAccessLog      bool
 	SQLDebug           bool
 	LogLevel           string
-	MysqlDns           string
 	RuntimePath        string
 	LogSavePath        string
 	StaticPath         string
@@ -61,11 +59,6 @@ func Init() {
 	LogSavePath = resolvePathFromBase(RuntimePath, viper.GetString("log_save_path"), filepath.Join(RuntimePath, "logs"))
 	mustMkdir(RuntimePath)
 	mustMkdir(LogSavePath)
-	MysqlDns = fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		url.QueryEscape(viper.GetString("mysql_user")),
-		url.QueryEscape(viper.GetString("mysql_passwd")),
-		fmt.Sprintf("%s:%s", viper.GetString("mysql_host"), viper.GetString("mysql_port")),
-		viper.GetString("mysql_database"))
 	TgBotToken = viper.GetString("tg_bot_token")
 	TgProxy = viper.GetString("tg_proxy")
 	TgManage = viper.GetInt64("tg_manage")
@@ -346,6 +339,24 @@ func GetOrderExpirationTime() int {
 func GetOrderExpirationTimeDuration() time.Duration {
 	timer := GetOrderExpirationTime()
 	return time.Minute * time.Duration(timer)
+}
+
+// ValidateDatabase rejects legacy database settings before opening a file or rewriting the config.
+func ValidateDatabase(settings *viper.Viper) error {
+	dbType := strings.TrimSpace(settings.GetString("db_type"))
+	if strings.EqualFold(dbType, "sqlite") {
+		return nil
+	}
+	if dbType != "" {
+		return fmt.Errorf("unsupported db_type %q: EPUSDT supports only SQLite", dbType)
+	}
+	// Older releases defaulted to MySQL. Don't open an empty SQLite file over a legacy configuration.
+	for _, backend := range []string{"mysql", "postgres"} {
+		if settings.GetString(backend+"_database") != "" || settings.GetString(backend+"_host") != "" {
+			return fmt.Errorf("legacy %s configuration detected: migrate your data to SQLite and set db_type=sqlite before starting", backend)
+		}
+	}
+	return nil
 }
 
 func GetRuntimeSqlitePath() string {

@@ -1,5 +1,7 @@
 # Releasing
 
+[Documentation index](wiki/README.md) · [简体中文](RELEASING.zh_CN.md)
+
 This repository publishes versioned binaries to GitHub Releases when a tag is pushed.
 
 ## What gets published
@@ -15,9 +17,8 @@ For each tag like `v1.2.3`, GitHub Actions builds release archives for:
 
 Each archive includes:
 
-- the `epusdt` binary
-- `src/.env.example`
-- `src/static/`
+- the `epusdt` and `chainscanner` binaries
+- `.env.example`
 
 Windows artifacts are published as `.zip`. Other platforms are published as `.tar.gz`.
 

@@ -1,5 +1,7 @@
 # Development Standard
 
+[Documentation index](wiki/README.md) · [简体中文](DEVELOPMENT_STANDARD.zh_CN.md)
+
 ## Purpose
 
 This document defines the default development goals, review criteria, and testing constraints for changes in this repository.

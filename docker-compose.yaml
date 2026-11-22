@@ -31,7 +31,7 @@ services:
       - "${EPUSDT_PORT:-8000}:8000"
     environment:
       EPUSDT_CONFIG: "/app/runtime/.env"
-      EPUSDT_INSTALL: "${EPUSDT_INSTALL:-false}"
+      EPUSDT_INSTALL:
       APP_URI: "${APP_URI:-http://127.0.0.1:8000}"
       HTTP_LISTEN: "0.0.0.0:8000"
       CHAINSCANNER_URL:

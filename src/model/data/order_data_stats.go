@@ -29,31 +29,12 @@ type AddressDailyStat struct {
 	ActualAmount float64 `json:"actual_amount"`
 }
 
-func statsBucketExpr(column string, hourly bool) (string, error) {
-	dialect := "sqlite"
-	if dao.Mdb != nil && dao.Mdb.Dialector != nil {
-		dialect = dao.Mdb.Dialector.Name()
+// SQLite timestamp text can use either a space or T between date and time.
+func statsBucketExpr(hourly bool) string {
+	if hourly {
+		return "replace(substr(created_at, 1, 13), 'T', ' ') || ':00'"
 	}
-	return statsBucketExprForDialect(dialect, column, hourly)
-}
-
-func statsBucketExprForDialect(dialect, column string, hourly bool) (string, error) {
-	switch dialect {
-	case "sqlite", "":
-		// modernc SQLite stores time.Time as Go's time.String() by default.
-		// Prefix buckets work for that format and SQLite datetime text.
-		if hourly {
-			return fmt.Sprintf("replace(substr(%s, 1, 13), 'T', ' ') || ':00'", column), nil
-		}
-		return fmt.Sprintf("substr(%s, 1, 10)", column), nil
-	case "postgres":
-		if hourly {
-			return fmt.Sprintf("TO_CHAR(%s, 'YYYY-MM-DD HH24:00')", column), nil
-		}
-		return fmt.Sprintf("TO_CHAR(%s, 'YYYY-MM-DD')", column), nil
-	default:
-		return "", fmt.Errorf("unsupported database dialect for dashboard stats: %s", dialect)
-	}
+	return "substr(created_at, 1, 10)"
 }
 
 // DailyOrderStats returns per-day counts/amounts within [start, end],
@@ -81,11 +62,8 @@ func HourlyOrderStats(start, end time.Time) ([]DailyStat, error) {
 
 func queryOrderStats(start, end time.Time, hourly bool) ([]DailyStat, error) {
 	var rows []DailyStat
-	bucket, err := statsBucketExpr("created_at", hourly)
-	if err != nil {
-		return nil, err
-	}
-	err = dao.Mdb.Model(&mdb.Orders{}).
+	bucket := statsBucketExpr(hourly)
+	err := dao.Mdb.Model(&mdb.Orders{}).
 		Select(fmt.Sprintf(`%s AS day,
             COUNT(*) AS order_count,
             SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS success_count,
@@ -166,11 +144,8 @@ func HourlyAssetByAddress(start, end time.Time) ([]AddressDailyStat, error) {
 
 func queryAssetByAddress(start, end time.Time, hourly bool) ([]AddressDailyStat, error) {
 	var rows []AddressDailyStat
-	bucket, err := statsBucketExpr("created_at", hourly)
-	if err != nil {
-		return nil, err
-	}
-	err = dao.Mdb.Model(&mdb.Orders{}).
+	bucket := statsBucketExpr(hourly)
+	err := dao.Mdb.Model(&mdb.Orders{}).
 		Select(fmt.Sprintf(`%s AS day,
             receive_address AS address,
             SUM(actual_amount) AS actual_amount`, bucket)).
@@ -286,8 +261,6 @@ func AveragePaymentDurationSeconds(start, end time.Time) (float64, error) {
 		Avg float64
 	}
 	var r row
-	// Using TIMESTAMPDIFF would be MySQL-specific. Fetch the raw
-	// columns and compute in Go — trend windows are small enough.
 	type pair struct {
 		CreatedAt time.Time
 		UpdatedAt time.Time
