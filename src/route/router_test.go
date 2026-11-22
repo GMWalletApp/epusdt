@@ -3058,6 +3058,8 @@ func TestSwitchNetwork_EpayChildInheritsOriginalType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load api key: %v", err)
 	}
+	// Verify the callback format after this child has settled.
+	subOrder.Status = mdb.StatusPaySuccess
 	params, err := service.BuildEPayResultParams(subOrder, apiKeyRow)
 	if err != nil {
 		t.Fatalf("BuildEPayResultParams(): %v", err)

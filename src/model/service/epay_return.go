@@ -82,7 +82,7 @@ func epayResultType(order *mdb.Orders) string {
 }
 
 func BuildEPayResultParams(order *mdb.Orders, apiKeyRow *mdb.ApiKey) (map[string]string, error) {
-	if order == nil || apiKeyRow == nil {
+	if !isEPayOrder(order) || order.Status != mdb.StatusPaySuccess || apiKeyRow == nil || strings.TrimSpace(apiKeyRow.SecretKey) == "" {
 		return nil, constant.EPayReturnSignatureErr
 	}
 
