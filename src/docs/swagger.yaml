@@ -1653,7 +1653,7 @@ definitions:
         example: Acme Payments
         type: string
       withdrawal_reminder_enabled:
-        example: true
+        example: false
         type: boolean
     type: object
   response.XLayerPublicConfig:

@@ -63,7 +63,7 @@ import (
 //     brand.site_title       (string) — payment page title / website title (preferred)
 //     brand.success_copy     (string) — text shown on payment success (preferred)
 //     brand.support_url      (string) — support / help URL
-//     brand.withdrawal_reminder_enabled (bool) — show the on-chain payment reminder (default true)
+//     brand.withdrawal_reminder_enabled (bool) — show the on-chain payment reminder (default false)
 //     brand.payment_reminder_title (string) — optional plain-text title
 //     brand.payment_reminder_body (string) — optional plain-text body supporting {amount}
 //     brand.background_color (string) — checkout background color

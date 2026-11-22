@@ -261,7 +261,7 @@ function epaySign(array $params, string $secretKey): string
       "support_link": "https://example.com/support",
       "background_color": "#0f172a",
       "background_image_url": "https://cdn.example.com/background.png",
-      "withdrawal_reminder_enabled": true,
+      "withdrawal_reminder_enabled": false,
       "payment_reminder_title": "",
       "payment_reminder_body": ""
     },
@@ -294,7 +294,7 @@ function epaySign(array $params, string $secretKey): string
 
 ### 链上付款提醒
 
-收银台从公共配置读取 `data.site.withdrawal_reminder_enabled`（布尔值，默认 `true`）。等配置返回后，仅在开关开启、订单处于链上待支付状态、已有收款地址且 `actual_amount > 0` 时，于到账金额下显示提醒。关闭时整块隐藏。对接旧版本后端时，已加载的配置缺少该字段可按默认开启处理。
+收银台从公共配置读取 `data.site.withdrawal_reminder_enabled`（布尔值，默认 `false`）。等配置返回后，仅在开关开启、订单处于链上待支付状态、已有收款地址且 `actual_amount > 0` 时，于到账金额下显示提醒。关闭时整块隐藏。对接旧版本后端时，已加载的配置缺少该字段时隐藏提醒。
 
 从 `data.site.payment_reminder_title` 和 `data.site.payment_reminder_body` 读取自定义标题与正文。任一字段缺失、留空或仅含空白时，该字段使用当前收银台语言的默认文案。正文按纯文本展示，支持多行；每个 `{amount}` 都替换为页面展示的实际到账金额和币种，例如 `14.2857 USDT`。
 

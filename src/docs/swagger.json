@@ -6393,7 +6393,7 @@
                 },
                 "withdrawal_reminder_enabled": {
                     "type": "boolean",
-                    "example": true
+                    "example": false
                 }
             }
         },

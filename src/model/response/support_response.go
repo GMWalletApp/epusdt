@@ -13,7 +13,7 @@ type EpayPublicConfig struct {
 }
 
 type SitePublicConfig struct {
-	WithdrawalReminderEnabled bool   `json:"withdrawal_reminder_enabled" example:"true"`
+	WithdrawalReminderEnabled bool   `json:"withdrawal_reminder_enabled" example:"false"`
 	PaymentReminderTitle      string `json:"payment_reminder_title"` // Optional on-chain payment reminder title. Empty uses the checkout language.
 	PaymentReminderBody       string `json:"payment_reminder_body"`  // Optional plain text. {amount} inserts the formatted payment amount and token.
 	CashierName               string `json:"cashier_name" example:"Acme Cashier"`

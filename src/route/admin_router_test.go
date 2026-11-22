@@ -2180,7 +2180,7 @@ func TestAdminSettings_WithdrawalReminder(t *testing.T) {
 		}
 	}
 
-	checkConfig(true)
+	checkConfig(false)
 	save("brand", false, true)
 	if err := data.ReloadSettings(); err != nil {
 		t.Fatal(err)
@@ -2192,7 +2192,7 @@ func TestAdminSettings_WithdrawalReminder(t *testing.T) {
 	save("brand", true, true)
 	checkConfig(true)
 	assertOK(t, doDeleteAdmin(e, "/admin/api/v1/settings/"+key, token))
-	checkConfig(true)
+	checkConfig(false)
 }
 
 func TestAdminSettings_PaymentReminderCopy(t *testing.T) {

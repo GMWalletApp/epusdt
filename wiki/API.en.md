@@ -211,7 +211,7 @@ Each entry in the general `supported_assets` list requires an enabled chain, an 
       "support_link": "https://example.com/support",
       "background_color": "#0f172a",
       "background_image_url": "https://cdn.example.com/background.png",
-      "withdrawal_reminder_enabled": true
+      "withdrawal_reminder_enabled": false
     },
     "epay": {
       "default_token": "",
@@ -234,7 +234,7 @@ Each entry in the general `supported_assets` list requires an enabled chain, an 
 
 ### Exchange withdrawal reminder
 
-After loading config, show the reminder only when `site.withdrawal_reminder_enabled` is true, the on-chain order is awaiting payment, a receiving address is available and `actual_amount > 0`. Treat a missing flag on older versions as true. Display the expected **net received amount** after exchange fees using the same precision and token as the order. [Light preview](img/withdrawal-reminder-light.png) · [Dark preview](img/withdrawal-reminder-dark.png)
+After loading config, show the reminder only when `site.withdrawal_reminder_enabled` is true, the on-chain order is awaiting payment, a receiving address is available and `actual_amount > 0`. New installations default to false. Hide the reminder when older versions omit the flag. Display the expected **net received amount** after exchange fees using the same precision and token as the order. [Light preview](img/withdrawal-reminder-light.png) · [Dark preview](img/withdrawal-reminder-dark.png)
 
 Administrators read `GET /admin/api/v1/settings?group=brand`. The stored value of `brand.withdrawal_reminder_enabled` is the string `"true"` or `"false"`. To change it, send the following authenticated `PUT /admin/api/v1/settings` request. Check the returned item’s `ok` flag and reopen checkout.
 

@@ -179,7 +179,7 @@ func (c *BaseCommController) GetPublicConfig(ctx echo.Context) error {
 	return c.SucJson(ctx, response.PublicConfigResponse{
 		SupportedAssets: supports,
 		Site: response.SitePublicConfig{
-			WithdrawalReminderEnabled: data.GetSettingBool(mdb.SettingKeyBrandWithdrawalReminder, true),
+			WithdrawalReminderEnabled: data.GetSettingBool(mdb.SettingKeyBrandWithdrawalReminder, false),
 			PaymentReminderTitle:      data.GetSettingString(mdb.SettingKeyBrandReminderTitle, ""),
 			PaymentReminderBody:       data.GetSettingString(mdb.SettingKeyBrandReminderBody, ""),
 			CashierName:               data.GetBrandCashierName(),
