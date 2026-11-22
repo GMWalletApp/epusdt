@@ -82,7 +82,7 @@ def parse_args():
     )
     parser.add_argument("--api-url", required=True, help="GMPay create-order endpoint")
     parser.add_argument("--pid", required=True, help="Merchant PID")
-    parser.add_argument("--notify-url", required=True, help="Public payment callback URL")
+    parser.add_argument("--notify-url", help="Public payment callback URL (defaults to the merchant API key setting)")
     parser.add_argument("--redirect-url", default="", help="Browser return URL")
     parser.add_argument("--token", default="usdt", help="Payment token (default: usdt)")
     parser.add_argument("--network", default="tron", help="Payment network (default: tron)")
@@ -123,10 +123,12 @@ def main():
         "token": args.token,
         "network": args.network,
         "amount": args.amount,
-        "notify_url": args.notify_url,
         "redirect_url": args.redirect_url,
         "name": args.name,
     }
+
+    if args.notify_url:
+        payload["notify_url"] = args.notify_url
 
     canonical, payload["signature"] = make_signature(payload, secret_key)
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")

@@ -1739,7 +1739,7 @@ func TestCreateTransactionIdempotentReplayReturnsOriginalOrder(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	apiKey := &mdb.ApiKey{}
+	apiKey := &mdb.ApiKey{Pid: "1000", SecretKey: "test-key"}
 	apiKey.ID = 41
 	req := newCreateTransactionRequest("idempotent-placeholder", 12.34)
 	req.Token = ""
@@ -1775,7 +1775,7 @@ func TestCreateTransactionIdempotentReplayRejectsChangedRequest(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	apiKey := &mdb.ApiKey{}
+	apiKey := &mdb.ApiKey{Pid: "1000", SecretKey: "test-key"}
 	apiKey.ID = 42
 	req := newCreateTransactionRequest("idempotent-conflict", 12.34)
 	req.Token = ""
@@ -1800,7 +1800,7 @@ func TestCreateTransactionIdempotentReplayRejectsOtherMerchant(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	owner := &mdb.ApiKey{}
+	owner := &mdb.ApiKey{Pid: "1000", SecretKey: "test-key"}
 	owner.ID = 43
 	other := &mdb.ApiKey{}
 	other.ID = 44
@@ -1819,7 +1819,7 @@ func TestCreateTransactionConcurrentReplayCreatesOneOrder(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	apiKey := &mdb.ApiKey{}
+	apiKey := &mdb.ApiKey{Pid: "1000", SecretKey: "test-key"}
 	apiKey.ID = 45
 	const workers = 8
 	responses := make(chan string, workers)
@@ -1867,7 +1867,7 @@ func TestCreateTransactionConcurrentReplayCreatesOneOrder(t *testing.T) {
 func TestGMPayReplayPreservesConflictForLegacyRowsAndEPay(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
-	owner := &mdb.ApiKey{BaseModel: mdb.BaseModel{ID: 1}}
+	owner := &mdb.ApiKey{BaseModel: mdb.BaseModel{ID: 1}, Pid: "1000", SecretKey: "test-key"}
 	request := newCreateTransactionRequest("legacy", 12.34)
 	request.Token, request.Network = "", ""
 	legacy := &mdb.Orders{TradeId: "old-trade", OrderId: request.OrderId, ApiKeyID: owner.ID,
@@ -1890,7 +1890,7 @@ func TestGMPayReplayPreservesConflictForLegacyRowsAndEPay(t *testing.T) {
 func TestGMPayReplayAfterConcurrentOrderInsertReleasesOnlyLosingReservation(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
-	owner := &mdb.ApiKey{BaseModel: mdb.BaseModel{ID: 1}}
+	owner := &mdb.ApiKey{BaseModel: mdb.BaseModel{ID: 1}, Pid: "1000", SecretKey: "test-key"}
 	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatal(err)
 	}
@@ -1911,7 +1911,7 @@ func TestGMPayReplayAfterConcurrentOrderInsertReleasesOnlyLosingReservation(t *t
 		if err := data.LockTransaction(winner.Network, winner.ReceiveAddress, winner.Token, winner.TradeId, winner.ActualAmount, time.Hour); err != nil {
 			t.Fatal(err)
 		}
-		if err := insertMerchantOrder(dao.Mdb, winner); err != nil {
+		if err := insertMerchantOrder(dao.Mdb, winner, owner); err != nil {
 			t.Fatal(err)
 		}
 	}); err != nil {

@@ -9,7 +9,7 @@ type CreateTransactionRequest struct {
 	Token       string  `json:"token" form:"token" example:"usdt"`                          // 币种 如：usdt、ton；可与 network 同时缺省创建占位订单
 	Network     string  `json:"network" form:"network" example:"tron"`                      // 网络 如：ton、tron、aptos；可与 token 同时缺省创建占位订单
 	Amount      float64 `json:"amount" form:"amount" validate:"required|isFloat|gt:0.01" example:"100.00"`
-	NotifyUrl   string  `json:"notify_url" form:"notify_url" validate:"required" example:"https://example.com/notify"`
+	NotifyUrl   string  `json:"notify_url" form:"notify_url" example:"https://example.com/notify"`
 	Signature   string  `json:"signature" form:"signature" validate:"required" example:"6f874b1919d95081835e2809b620e354a5866f5a6dbb2e432d1627f1eb10059d"`
 	RedirectUrl string  `json:"redirect_url" form:"redirect_url" example:"https://example.com/success"`
 	Name        string  `json:"name" form:"name" example:"VIP月卡"`

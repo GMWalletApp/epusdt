@@ -398,7 +398,7 @@ func TestAdminApiKeys_CRUD(t *testing.T) {
 
 	// Create a new key.
 	rec = doPostAdmin(e, "/admin/api/v1/api-keys", map[string]interface{}{
-		"name": "test-created-key",
+		"name": "test-created-key", "notify_url": "https://93.184.216.34/default",
 	}, token)
 	t.Logf("CreateApiKey: %s", rec.Body.String())
 	resp := assertOK(t, rec)
@@ -415,6 +415,20 @@ func TestAdminApiKeys_CRUD(t *testing.T) {
 	}, token)
 	t.Logf("UpdateApiKey: %s", rec.Body.String())
 	assertOK(t, rec)
+
+	for _, want := range []string{"https://93.184.216.34/default", "https://93.184.216.34/edited", ""} {
+		if want != "https://93.184.216.34/default" {
+			assertOK(t, doPatchAdmin(e, "/admin/api/v1/api-keys/"+keyIDStr, map[string]interface{}{"notify_url": want}, token))
+		}
+		key, err := data.GetApiKeyByID(uint64(keyID.(float64)))
+		if err != nil || key.NotifyUrl != want {
+			t.Fatal("default callback address was not saved", err)
+		}
+	}
+	rec = doPatchAdmin(e, "/admin/api/v1/api-keys/"+keyIDStr, map[string]interface{}{"notify_url": "invalid"}, token)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"status_code":10041`) {
+		t.Fatal("invalid default callback address accepted")
+	}
 
 	// Get secret.
 	rec = doGetAdmin(e, "/admin/api/v1/api-keys/"+keyIDStr+"/secret", token)

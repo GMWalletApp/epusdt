@@ -80,6 +80,7 @@ func setupTestEnv(t *testing.T) *echo.Echo {
 		&mdb.WalletAddress{},
 		&mdb.AdminUser{},
 		&mdb.ApiKey{},
+		&mdb.CallbackSigningKey{},
 		&mdb.Setting{},
 		&mdb.RateCache{},
 		&mdb.NotificationChannel{},
@@ -2291,7 +2292,7 @@ func TestPayReturn_PaidEpayWithEmptyRedirectReturnsError(t *testing.T) {
 	}
 }
 
-func TestPayReturn_PaidEpayWithDisabledApiKeyReturnsError(t *testing.T) {
+func TestPayReturn_PaidEpayKeepsSigningKeyAfterMerchantChanges(t *testing.T) {
 	e := setupTestEnv(t)
 	tradeID := mustCreateEPayOrder(t, e, "epay-return-disabled-key-001", "https://merchant.example/return", url.Values{
 		"token":    {"usdt"},
@@ -2309,53 +2310,29 @@ func TestPayReturn_PaidEpayWithDisabledApiKeyReturnsError(t *testing.T) {
 	}
 	if err := dao.Mdb.Model(&mdb.ApiKey{}).
 		Where("id = ?", order.ApiKeyID).
-		Update("status", mdb.ApiKeyStatusDisable).Error; err != nil {
+		Updates(map[string]interface{}{"status": mdb.ApiKeyStatusDisable, "pid": "changed", "secret_key": "rotated"}).Error; err != nil {
 		t.Fatalf("disable api key: %v", err)
 	}
 
+	if err := dao.Mdb.Delete(&mdb.ApiKey{}, order.ApiKeyID).Error; err != nil {
+		t.Fatal(err)
+	}
 	req := httptest.NewRequest(http.MethodGet, "/pay/return/"+tradeID, nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusFound {
+		t.Fatalf("paid return status %d", rec.Code)
 	}
-	resp := parseResp(t, rec)
-	if got := int(resp["status_code"].(float64)); got != 10045 {
-		t.Fatalf("status_code = %d, want 10045; response=%v", got, resp)
-	}
-}
-
-func TestPayReturn_PaidEpayWithNonNumericPidReturnsSignatureError(t *testing.T) {
-	e := setupTestEnv(t)
-	tradeID := mustCreateEPayOrder(t, e, "epay-return-bad-pid-001", "https://merchant.example/return", url.Values{
-		"token":    {"usdt"},
-		"network":  {"tron"},
-		"currency": {"cny"},
-	})
-	order, err := data.GetOrderInfoByTradeId(tradeID)
+	target, err := url.Parse(rec.Header().Get("Location"))
 	if err != nil {
-		t.Fatalf("load order: %v", err)
+		t.Fatal(err)
 	}
-	if err := dao.Mdb.Model(&mdb.Orders{}).
-		Where("trade_id = ?", tradeID).
-		Update("status", mdb.StatusPaySuccess).Error; err != nil {
-		t.Fatalf("mark order paid: %v", err)
-	}
-	if err := dao.Mdb.Model(&mdb.ApiKey{}).
-		Where("id = ?", order.ApiKeyID).
-		Update("pid", "not-a-number").Error; err != nil {
-		t.Fatalf("break pid: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/pay/return/"+tradeID, nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
-	}
-	resp := parseResp(t, rec)
-	if got := int(resp["status_code"].(float64)); got != 10046 {
-		t.Fatalf("status_code = %d, want 10046; response=%v", got, resp)
+	values := target.Query()
+	sig := values.Get("sign")
+	values.Del("sign")
+	values.Del("sign_type")
+	if values.Get("pid") != "1" || signEpayValues(values).Get("sign") != sig {
+		t.Fatal("return did not use order signing credentials")
 	}
 }
 
@@ -3403,4 +3380,110 @@ func TestSignedEPaySubmitReopensOnlyOriginalPendingCashier(t *testing.T) {
 		t.Fatal(err)
 	}
 	conflict(get(values))
+}
+
+func TestMerchantDefaultNotifyURLOnSignedOrders(t *testing.T) {
+	e := setupTestEnv(t)
+	const defaultURL = "https://93.184.216.34/merchant"
+	const overrideURL = "https://93.184.216.34/override"
+	for _, protocol := range []string{"gmpay", "epay"} {
+		t.Run(protocol, func(t *testing.T) {
+			pid, success := testAPIToken, http.StatusOK
+			submit := func(id, override string) *httptest.ResponseRecorder {
+				if protocol == "epay" {
+					v := url.Values{"pid": {"1"}, "out_trade_no": {id}, "money": {"1.00"}}
+					if override != "" {
+						v.Set("notify_url", override)
+					}
+					return doFormPost(e, "/payments/epay/v1/order/create-transaction/submit.php", signEpayValues(v))
+				}
+				body := map[string]interface{}{"order_id": id, "amount": 1, "currency": "cny"}
+				if override != "" {
+					body["notify_url"] = override
+				}
+				return doPost(e, "/payments/gmpay/v1/order/create-transaction", signBody(body))
+			}
+			if protocol == "epay" {
+				pid, success = "1", http.StatusFound
+			}
+			setDefault := func(u string) {
+				t.Helper()
+				if err := dao.Mdb.Model(&mdb.ApiKey{}).Where("pid = ?", pid).Update("notify_url", u).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			check := func(id, override, want string) mdb.Orders {
+				t.Helper()
+				if r := submit(id, override); r.Code != success {
+					t.Fatalf("submit %s returned %d: %s", id, r.Code, r.Body.String())
+				}
+				order, err := data.GetOrderInfoByOrderId(id)
+				if err != nil || order.NotifyUrl != want || order.CallbackSigningKeyID == 0 {
+					t.Fatalf("callback destination or signing version missing for %s", id)
+				}
+				return *order
+			}
+			setDefault(defaultURL)
+			first := check(protocol+"-default", "", defaultURL)
+			next := check(protocol+"-override", overrideURL, overrideURL)
+			if first.CallbackSigningKeyID != next.CallbackSigningKeyID {
+				t.Fatal("two orders used different versions of the same credential")
+			}
+			setDefault("")
+			if got := check(first.OrderId, "", defaultURL); got.ID != first.ID {
+				t.Fatal("retry created another order")
+			}
+			for _, invalid := range []string{"", "invalid-default"} {
+				setDefault(invalid)
+				r := submit(protocol+"-missing", "")
+				if r.Code != http.StatusBadRequest || !strings.Contains(r.Body.String(), `"status_code":10041`) {
+					t.Fatalf("invalid effective callback: %d %s", r.Code, r.Body.String())
+				}
+			}
+		})
+	}
+}
+
+func TestGMPayCredentialRotationSeparatesOldAndNewOrders(t *testing.T) {
+	e := setupTestEnv(t)
+	const path = "/payments/gmpay/v1/order/create-transaction"
+	submit := func(id, secret string) *httptest.ResponseRecorder {
+		body := map[string]interface{}{"order_id": id, "pid": testAPIToken, "amount": 1, "currency": "cny", "notify_url": "https://93.184.216.34/order"}
+		sig, err := sign.GetHMACSHA256(body, secret)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body["signature"] = sig
+		return doPost(e, path, body)
+	}
+	if submit("before-rotation", testAPIToken).Code != http.StatusOK {
+		t.Fatal("first order rejected")
+	}
+	merchant, err := data.GetEnabledApiKey(testAPIToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := data.UpdateApiKeyFields(merchant.ID, map[string]interface{}{"secret_key": "new-test-secret"}); err != nil {
+		t.Fatal(err)
+	}
+	if submit("after-rotation", testAPIToken).Code == http.StatusOK {
+		t.Fatal("old secret still accepted for new orders")
+	}
+	if submit("after-rotation", "new-test-secret").Code != http.StatusOK {
+		t.Fatal("new credential rejected")
+	}
+	for _, item := range []struct{ id, secret string }{{"before-rotation", testAPIToken}, {"after-rotation", "new-test-secret"}} {
+		order, err := data.GetOrderInfoByOrderId(item.id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		key, err := service.ResolveOrderApiKey(order)
+		if err != nil || key.SecretKey != item.secret || key.Pid != merchant.Pid {
+			t.Fatal("wrong signing key for order", item.id)
+		}
+		order.ApiKeyID++
+		if key, _ := service.ResolveOrderApiKey(order); key != nil {
+			t.Fatal("credential from another merchant accepted")
+		}
+	}
 }

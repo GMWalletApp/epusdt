@@ -166,7 +166,14 @@ func ReopenEPayCashier(orderID string, apiKeyID uint64, submitHash string) (stri
 
 // Capture the deadline at the same instant as creation. The cashier may later
 // renew its own payment window by updating created_at.
-func insertMerchantOrder(tx *gorm.DB, order *mdb.Orders) error {
+func insertMerchantOrder(tx *gorm.DB, order *mdb.Orders, key *mdb.ApiKey) error {
+	if order.ApiKeyID != 0 {
+		id, err := dao.PinCallbackSigningKey(tx, key)
+		if err != nil {
+			return err
+		}
+		order.CallbackSigningKeyID = id
+	}
 	if order.CreateRequestHash != "" {
 		now := carbon.Now()
 		order.CreatedAt = *carbon.NewTime(now)
@@ -194,9 +201,6 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 	}
 	notifyURL := strings.TrimSpace(req.NotifyUrl)
 	redirectURL, name := req.RedirectUrl, req.Name
-	if err := security.ValidatePublicHTTPURL(notifyURL); err != nil {
-		return nil, constant.NotifyURLErr
-	}
 	paymentType := mdb.PaymentTypeGmpay
 	if strings.EqualFold(req.PaymentType, mdb.PaymentTypeEpay) {
 		paymentType = mdb.PaymentTypeEpay
@@ -213,6 +217,15 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 		epayType = strings.TrimSpace(req.EpayType)
 	} else {
 		redirectURL, name = strings.TrimSpace(redirectURL), strings.TrimSpace(name)
+	}
+
+	resolvedNotifyURL := notifyURL
+	if resolvedNotifyURL == "" && apiKey != nil {
+		resolvedNotifyURL = strings.TrimSpace(apiKey.NotifyUrl)
+	}
+	notifyErr := security.ValidatePublicHTTPURL(resolvedNotifyURL)
+	if notifyErr != nil && (notifyURL != "" || apiKey == nil) {
+		return nil, constant.NotifyURLErr
 	}
 
 	gCreateTransactionLock.Lock()
@@ -247,6 +260,12 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 		return replayCreateTransaction(exist, order)
 	}
 
+	// The merchant's current default cannot alter an existing signed request.
+	if notifyErr != nil {
+		return nil, constant.NotifyURLErr
+	}
+	order.NotifyUrl = resolvedNotifyURL
+
 	decimalPayAmount := decimal.NewFromFloat(payAmount)
 	if decimalPayAmount.Cmp(decimal.NewFromFloat(CnyMinimumPaymentAmount)) == -1 {
 		return nil, constant.PayAmountErr
@@ -255,7 +274,7 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 	if token == "" && network == "" {
 		order.TradeId = GenerateCode()
 		order.Status = mdb.StatusWaitSelect
-		if err = insertMerchantOrder(dao.Mdb, order); err != nil {
+		if err = dao.Mdb.Transaction(func(tx *gorm.DB) error { return insertMerchantOrder(tx, order, apiKey) }); err != nil {
 			return replayAfterCreateError(order, err)
 		}
 		return buildCreateTransactionResponse(order), nil
@@ -300,7 +319,7 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 	order.ReceiveAddress = wallet.Address
 	order.Status = mdb.StatusWaitPay
 	if err = data.WithReceivingWallet(wallet.ID, func(tx *gorm.DB) error {
-		return insertMerchantOrder(tx, order)
+		return insertMerchantOrder(tx, order, apiKey)
 	}); err != nil {
 		_ = data.UnLockTransactionByTradeId(tradeID)
 		return replayAfterCreateError(order, err)
@@ -739,7 +758,9 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 		CallBackConfirm: mdb.CallBackConfirmOk, // don't trigger callback on sub-order
 		PaymentType:     parent.PaymentType,
 		PayProvider:     mdb.PaymentProviderOnChain,
-		ApiKeyID:        parent.ApiKeyID, // inherit from parent so resolveOrderApiKey never fails
+		ApiKeyID:        parent.ApiKeyID,
+
+		CallbackSigningKeyID: parent.CallbackSigningKeyID,
 	}
 	if err = data.WithReceivingWallet(wallet.ID, func(tx *gorm.DB) error {
 		if err := data.CreateOrderWithTransaction(tx, subOrder); err != nil {
@@ -1004,6 +1025,8 @@ func switchToOkPay(parent *mdb.Orders, token string) (*response.CheckoutCounterR
 		PaymentType:     parent.PaymentType,
 		PayProvider:     mdb.PaymentProviderOkPay,
 		ApiKeyID:        parent.ApiKeyID,
+
+		CallbackSigningKeyID: parent.CallbackSigningKeyID,
 	}
 	if err = data.CreateOrderWithTransaction(tx, subOrder); err != nil {
 		tx.Rollback()
@@ -1256,6 +1279,8 @@ func switchToXLayer(parent *mdb.Orders, token string) (*response.CheckoutCounter
 		PaymentType:     parent.PaymentType,
 		PayProvider:     mdb.PaymentProviderXLayer,
 		ApiKeyID:        parent.ApiKeyID,
+
+		CallbackSigningKeyID: parent.CallbackSigningKeyID,
 	}
 	if err = data.CreateOrderWithTransaction(tx, subOrder); err != nil {
 		tx.Rollback()

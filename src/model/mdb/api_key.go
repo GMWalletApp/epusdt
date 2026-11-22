@@ -27,3 +27,17 @@ type ApiKey struct {
 func (a *ApiKey) TableName() string {
 	return "api_keys"
 }
+
+// CallbackSigningKey is an immutable credential version, shared by orders
+// created with the same merchant key. It is never used for authentication.
+type CallbackSigningKey struct {
+	ID          uint64 `gorm:"primaryKey" json:"-"`
+	Fingerprint string `gorm:"size:64;uniqueIndex;not null" json:"-"`
+	ApiKeyID    uint64 `gorm:"column:api_key_id;not null" json:"-"`
+	Pid         string `gorm:"size:128;not null" json:"-"`
+	SecretKey   string `gorm:"size:255;not null" json:"-"`
+}
+
+func (CallbackSigningKey) TableName() string {
+	return "callback_signing_keys"
+}

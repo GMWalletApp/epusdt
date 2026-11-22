@@ -17,23 +17,6 @@ import (
 	"github.com/GMWalletApp/epusdt/util/sign"
 )
 
-// resolveOrderApiKey returns the api_keys row that signed the order.
-// Every order must carry an ApiKeyID (the default key is always seeded
-// at bootstrap, and the middleware/EPAY inline flow always stamps it).
-// If the row is missing or disabled, we return an error — using any
-// other secret would produce a signature the merchant can't verify.
-// The admin can resend the callback after fixing the key.
-func resolveOrderApiKey(order *mdb.Orders) (*mdb.ApiKey, error) {
-	row, err := service.ResolveOrderApiKey(order)
-	if err != nil || row == nil || row.ID == 0 {
-		if err != nil {
-			return nil, err
-		}
-		return nil, errors.New("api key unavailable")
-	}
-	return row, nil
-}
-
 const batchSize = 100
 
 const sqliteBusyRetryAttempts = 3
@@ -193,9 +176,9 @@ func processCallback(tradeID string, limiter <-chan struct{}) {
 }
 
 func sendOrderCallback(order *mdb.Orders) error {
-	apiKeyRow, err := resolveOrderApiKey(order)
-	if err != nil || apiKeyRow == nil || apiKeyRow.ID == 0 {
-		return errors.New("no api key row available for callback")
+	apiKeyRow, err := service.ResolveOrderApiKey(order)
+	if err != nil {
+		return err
 	}
 
 	switch {

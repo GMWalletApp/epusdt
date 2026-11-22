@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	"github.com/GMWalletApp/epusdt/model/service"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -201,7 +202,9 @@ func TestDispatchPendingCallbacksHonorsBackoffAndPersistsSuccess(t *testing.T) {
 		BlockTransactionId: "block_callback",
 		CallbackNum:        1,
 		CallBackConfirm:    mdb.CallBackConfirmNo,
-		ApiKeyID:           1, // seeded by testutil.SetupTestDatabases
+		ApiKeyID:           1,
+
+		CallbackSigningKeyID: pinTestKey(t, 1),
 	}
 	if err := dao.Mdb.Create(order).Error; err != nil {
 		t.Fatalf("create callback order: %v", err)
@@ -262,7 +265,9 @@ func TestDispatchPendingCallbacksResumesRetryAfterRestart(t *testing.T) {
 		BlockTransactionId: "block_callback_restart",
 		CallbackNum:        0,
 		CallBackConfirm:    mdb.CallBackConfirmNo,
-		ApiKeyID:           1, // seeded by testutil.SetupTestDatabases
+		ApiKeyID:           1,
+
+		CallbackSigningKeyID: pinTestKey(t, 1),
 	}
 	if err := dao.Mdb.Create(order).Error; err != nil {
 		t.Fatalf("create callback order: %v", err)
@@ -338,6 +343,8 @@ func TestDispatchPendingCallbacksEpayRequiresAck(t *testing.T) {
 		CallBackConfirm:    mdb.CallBackConfirmNo,
 		PaymentType:        "epay",
 		ApiKeyID:           epayKey.ID,
+
+		CallbackSigningKeyID: pinTestKey(t, epayKey.ID),
 	}
 	if err := dao.Mdb.Create(order).Error; err != nil {
 		t.Fatalf("create callback order: %v", err)
@@ -392,6 +399,8 @@ func TestDispatchPendingCallbacksEpayAcceptsTrimmedOk(t *testing.T) {
 		CallBackConfirm:    mdb.CallBackConfirmNo,
 		PaymentType:        "epay",
 		ApiKeyID:           epayKey.ID,
+
+		CallbackSigningKeyID: pinTestKey(t, epayKey.ID),
 	}
 	if err := dao.Mdb.Create(order).Error; err != nil {
 		t.Fatalf("create callback order: %v", err)
@@ -424,14 +433,12 @@ func TestResolveOrderApiKeyRejectsZeroApiKeyID(t *testing.T) {
 		TradeId:  "no-api-key-id",
 		ApiKeyID: 0,
 	}
-	if _, err := resolveOrderApiKey(order); err == nil {
+	if _, err := service.ResolveOrderApiKey(order); err == nil {
 		t.Fatal("expected error for ApiKeyID=0")
 	}
 }
 
-// Happy path: when ApiKeyID points at an enabled row, resolveOrderApiKey
-// returns it.
-func TestResolveOrderApiKeyReturnsEnabledRow(t *testing.T) {
+func TestResolveOrderApiKeyReturnsPinnedCredential(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
@@ -447,8 +454,10 @@ func TestResolveOrderApiKeyReturnsEnabledRow(t *testing.T) {
 	order := &mdb.Orders{
 		TradeId:  "happy-path",
 		ApiKeyID: row.ID,
+
+		CallbackSigningKeyID: pinTestKey(t, row.ID),
 	}
-	got, err := resolveOrderApiKey(order)
+	got, err := service.ResolveOrderApiKey(order)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -502,7 +511,18 @@ func TestSendOrderCallbackGmpayUsesApiKeySecretByPid(t *testing.T) {
 		NotifyUrl:          server.URL,
 		BlockTransactionId: "block_gmpay_sign",
 		ApiKeyID:           key.ID,
-		PaymentType:        mdb.PaymentTypeGmpay,
+
+		CallbackSigningKeyID: pinTestKey(t, key.ID),
+
+		PaymentType: mdb.PaymentTypeGmpay,
+	}
+
+	// A retry for an existing order still uses its original credentials.
+	if err := data.UpdateApiKeyFields(key.ID, map[string]interface{}{"secret_key": "rotated", "status": mdb.ApiKeyStatusDisable}); err != nil {
+		t.Fatal(err)
+	}
+	if err := data.DeleteApiKeyByID(key.ID); err != nil {
+		t.Fatal(err)
 	}
 
 	if err := sendOrderCallback(order); err != nil {
@@ -558,7 +578,8 @@ func TestGmpaySettledChildCallbackVersions(t *testing.T) {
 		io.WriteString(w, "ok")
 	}))
 	defer server.Close()
-	order := &mdb.Orders{TradeId: "root", OrderId: "merchant-order", Amount: 10, ActualAmount: 9, Token: "TRX", Network: "tron", ReceiveAddress: "parent-wallet", NotifyUrl: server.URL, Status: mdb.StatusPaySuccess, ApiKeyID: key.ID}
+	order := &mdb.Orders{TradeId: "root", OrderId: "merchant-order", Amount: 10, ActualAmount: 9, Token: "TRX", Network: "tron", ReceiveAddress: "parent-wallet", NotifyUrl: server.URL, Status: mdb.StatusPaySuccess, ApiKeyID: key.ID,
+		CallbackSigningKeyID: pinTestKey(t, key.ID)}
 	child := &mdb.Orders{TradeId: "child", OrderId: "child", ParentTradeId: order.TradeId, ActualAmount: 3.75, Token: "USDC", Network: "ethereum", ReceiveAddress: "child-wallet", BlockTransactionId: "paid-tx", Status: mdb.StatusPaySuccess}
 	if err := dao.Mdb.Create(child).Error; err != nil {
 		t.Fatal(err)
@@ -642,6 +663,16 @@ func TestSendOrderCallbackEpayUsesApiKeySecretByPid(t *testing.T) {
 		EpayType:           "usdt.tron",
 		PaymentType:        "epay",
 		ApiKeyID:           key.ID,
+
+		CallbackSigningKeyID: pinTestKey(t, key.ID),
+	}
+
+	// A retry for an existing order still uses its original credentials.
+	if err := data.UpdateApiKeyFields(key.ID, map[string]interface{}{"secret_key": "rotated", "status": mdb.ApiKeyStatusDisable}); err != nil {
+		t.Fatal(err)
+	}
+	if err := data.DeleteApiKeyByID(key.ID); err != nil {
+		t.Fatal(err)
 	}
 
 	if err := sendOrderCallback(order); err != nil {
@@ -743,6 +774,8 @@ func TestSendOrderCallbackEpayPreservesStoredAlipayType(t *testing.T) {
 		EpayType:           "alipay",
 		PaymentType:        "epay",
 		ApiKeyID:           key.ID,
+
+		CallbackSigningKeyID: pinTestKey(t, key.ID),
 	}
 
 	if err := sendOrderCallback(order); err != nil {
@@ -804,6 +837,8 @@ func TestDispatchPendingCallbacksEpayAcceptsSuccessAck(t *testing.T) {
 		CallBackConfirm:    mdb.CallBackConfirmNo,
 		PaymentType:        mdb.PaymentTypeEpay,
 		ApiKeyID:           epayKey.ID,
+
+		CallbackSigningKeyID: pinTestKey(t, epayKey.ID),
 	}
 	if err := dao.Mdb.Create(order).Error; err != nil {
 		t.Fatalf("create callback order: %v", err)
@@ -835,4 +870,17 @@ func waitFor(t *testing.T, timeout time.Duration, fn func() bool) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("condition not satisfied before timeout")
+}
+
+func pinTestKey(t *testing.T, keyID uint64) uint64 {
+	t.Helper()
+	var key mdb.ApiKey
+	if err := dao.Mdb.First(&key, keyID).Error; err != nil {
+		t.Fatal(err)
+	}
+	version, err := dao.PinCallbackSigningKey(dao.Mdb, &key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return version
 }

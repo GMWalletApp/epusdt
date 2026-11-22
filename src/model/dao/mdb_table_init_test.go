@@ -391,3 +391,46 @@ func setupSeedTableTestDB(t *testing.T, models ...interface{}) *gorm.DB {
 	}
 	return db
 }
+
+func TestBackfillCallbackSigningKeysFreezesLegacyCredentials(t *testing.T) {
+	db := setupSeedTableTestDB(t, &mdb.Orders{}, &mdb.ApiKey{}, &mdb.CallbackSigningKey{})
+	merchant := &mdb.ApiKey{Pid: "1007", SecretKey: "test-before-upgrade"}
+	if err := db.Create(merchant).Error; err != nil {
+		t.Fatal(err)
+	}
+	order := &mdb.Orders{TradeId: "legacy", OrderId: "legacy", ApiKeyID: merchant.ID}
+	if err := db.Create(order).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Delete(merchant).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := backfillCallbackSigningKeys(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(order, order.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if order.CallbackSigningKeyID == 0 {
+		t.Fatal("upgrade lost the soft-deleted merchant")
+	}
+	original := order.CallbackSigningKeyID
+	if err := db.Unscoped().Model(merchant).Update("secret_key", "test-after-upgrade").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := backfillCallbackSigningKeys(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(order, order.ID).Error; err != nil || order.CallbackSigningKeyID != original {
+		t.Fatal("upgrade repinned a previous order", err)
+	}
+	merchant.SecretKey = "test-after-upgrade"
+	rotated, err := PinCallbackSigningKey(db, merchant)
+	if err != nil || rotated == original {
+		t.Fatal("rotation reused a stale credential", err)
+	}
+	var version mdb.CallbackSigningKey
+	if err := db.First(&version, original).Error; err != nil || version.SecretKey != "test-before-upgrade" {
+		t.Fatal("original signing credential lost", err)
+	}
+}

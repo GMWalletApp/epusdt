@@ -181,7 +181,7 @@ function epaySign(array $params, string $secretKey): string
 | `token` | string | 条件必填 | 收款币种，如 `usdt`、`trx`、`usdc`、`sol`。GMPay 可与 `network` 同时省略以创建状态 `4` 占位订单。 |
 | `network` | string | 条件必填 | 收款网络，如 `tron`、`solana`、`ethereum`、`binance`、`polygon`、`plasma`。GMPay 可与 `token` 同时省略以创建状态 `4` 占位订单。 |
 | `amount` | number | 是 | 法币金额，必须大于 `0.01`。 |
-| `notify_url` | string | 是 | 支付成功异步回调地址。 |
+| `notify_url` | string | 条件必填 | 省略时使用该商户 API Key 的默认回调地址；两处至少填写一处。 |
 | `redirect_url` | string | 否 | 支付完成后的同步跳转地址。 |
 | `name` | string | 否 | 商品/订单名称。 |
 | `callback_version` | integer | 否 | GMPay JSON 回调版本，默认 1。创建订单时传 2 并将该参数计入签名，可收到含实际支付网络的签名回调。 |
@@ -494,7 +494,7 @@ EPay 订单的 `redirect_url` 用于支付成功后的签名回跳。付款人�
 | `pid` | query/form | string | 是 | 商户 PID。建议使用数字 PID；EPay 回调会按数字 PID 输出。 |
 | `money` | query/form | number | 是 | 法币金额。 |
 | `out_trade_no` | query/form | string | 是 | 商户订单号。 |
-| `notify_url` | query/form | string | 是 | 异步回调地址。 |
+| `notify_url` | query/form | string | 条件必填 | 省略时使用该商户 API Key 的默认回调地址；两处至少填写一处。 |
 | `return_url` | query/form | string | 否 | 支付完成后的同步跳转地址。 |
 | `name` | query/form | string | 否 | 商品/订单名称。 |
 | `type` | query/form | string | 否 | 仅支持空值、`alipay`，或当前已启用并可收款的 `token.network` selector（如 `usdt.tron`）。推荐使用小写 `alipay`。 |
@@ -538,6 +538,8 @@ EPay 接口解析 `type/token/network/currency` 的规则：
 <a id="callbacks"></a>
 
 ## 商户异步回调
+
+订单创建时固定回调地址、PID 和签名密钥。轮换、停用或删除商户 API Key 后，该订单的通知、重发及 EPay 成功回跳仍以原密钥签名。商户应保留历史订单对应的验签密钥。升级时，旧订单使用数据库中仍可取得的商户凭据，升级前已覆盖的密钥无法恢复。
 
 订单支付成功后，Epusdt 会向订单的 `notify_url` 发送异步通知。目标服务器处理完成后需返回 HTTP 200，响应体为 `ok` 或 `success`（大小写不敏感）。否则会按队列配置重试：首次失败后最多重试 `order_notice_max_retry` 次，重试间隔按 `callback_retry_base_seconds` 指数退避，最大 5 分钟。
 

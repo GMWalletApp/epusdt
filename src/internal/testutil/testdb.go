@@ -54,6 +54,7 @@ func SetupTestDatabases(t testing.TB) func() {
 		&mdb.ProviderOrder{},
 		&mdb.WalletAddress{},
 		&mdb.ApiKey{},
+		&mdb.CallbackSigningKey{},
 		&mdb.Setting{},
 		&mdb.RateCache{},
 		&mdb.NotificationChannel{},

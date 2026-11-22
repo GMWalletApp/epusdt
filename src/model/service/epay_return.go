@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/GMWalletApp/epusdt/config"
-	"github.com/GMWalletApp/epusdt/model/data"
+	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/model/response"
 	"github.com/GMWalletApp/epusdt/util/constant"
@@ -70,17 +70,17 @@ func buildPublicRedirectURL(order *mdb.Orders) string {
 }
 
 func ResolveOrderApiKey(order *mdb.Orders) (*mdb.ApiKey, error) {
-	if order == nil || order.ApiKeyID == 0 {
+	if order == nil || order.ApiKeyID == 0 || order.CallbackSigningKeyID == 0 {
 		return nil, constant.OrderApiKeyUnavailableErr
 	}
-	row, err := data.GetApiKeyByID(order.ApiKeyID)
-	if err != nil {
+	var row mdb.CallbackSigningKey
+	if err := dao.Mdb.Where("id = ? AND api_key_id = ?", order.CallbackSigningKeyID, order.ApiKeyID).Limit(1).Find(&row).Error; err != nil {
 		return nil, err
 	}
-	if row == nil || row.ID == 0 || row.Status != mdb.ApiKeyStatusEnable {
+	if row.ID == 0 {
 		return nil, constant.OrderApiKeyUnavailableErr
 	}
-	return row, nil
+	return &mdb.ApiKey{BaseModel: mdb.BaseModel{ID: row.ApiKeyID}, Pid: row.Pid, SecretKey: row.SecretKey}, nil
 }
 
 func epayResultType(order *mdb.Orders) string {

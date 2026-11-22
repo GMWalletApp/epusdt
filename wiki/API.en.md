@@ -135,7 +135,7 @@ function epaySign(array $params, string $secretKey): string
 | `token` | string | Conditional | Receiving asset. Pair with network or omit both. |
 | `network` | string | Conditional | Network ID from public config, for example `binance`. |
 | `amount` | number | Yes | Fiat amount, greater than 0.01. |
-| `notify_url` | string | Yes | Asynchronous success callback URL. |
+| `notify_url` | string | Conditional | If omitted, uses the merchant API key’s default callback URL. One of the two is required. |
 | `redirect_url` | string | No | Browser return URL. |
 | `name` | string | No | Product or order name. |
 | `callback_version` | integer | No | GMPay JSON format, default 1. Set to 2 and sign this field to receive the signed payment network. |
@@ -379,7 +379,7 @@ For orders created with this version, repeating the same signed fields as the sa
 | `pid` | query/form | string | Yes | Merchant PID. Use a numeric PID for callbacks. |
 | `money` | query/form | number | Yes | Fiat amount. |
 | `out_trade_no` | query/form | string | Yes | Merchant order ID. |
-| `notify_url` | query/form | string | Yes | Merchant callback URL. |
+| `notify_url` | query/form | string | Conditional | If omitted, uses the merchant API key’s default callback URL. One of the two is required. |
 | `return_url` | query/form | string | No | Browser return URL. |
 | `name` | query/form | string | No | Product or order name. |
 | `type` | query/form | string | No | Empty, `alipay`, or an enabled `token.network` selector. |
@@ -406,6 +406,8 @@ Fresh installations seed `cny` and leave default token and network empty. Existi
 <a id="callbacks"></a>
 
 ## Merchant callbacks
+
+Each order keeps its callback URL, PID, and signing key at creation. Rotation, deactivation, and deletion of the merchant API key preserve the signatures used for notifications, retries, and EPay success redirects. Merchants should retain the verification key for each order. Orders created before upgrading use the credentials still available at upgrade time. Previously overwritten keys cannot be recovered.
 
 EPUSDT notifies the order’s `notify_url` after successful payment. Verify the signature, match the order and amount, and process repeated notifications idempotently. Acknowledge with HTTP 200 and a body of `ok` or `success` (case-insensitive). Failed delivery is retried according to `order_notice_max_retry` and `callback_retry_base_seconds`, with exponential backoff capped at five minutes.
 
