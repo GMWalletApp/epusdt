@@ -252,15 +252,19 @@ func (r *NodeRegistry) validate(options NodeOptions, fallback bool) (NodeEndpoin
 	if options.Weight < 1 || (options.Purpose != "general" && options.Purpose != "manual_verify" && options.Purpose != "both") || (fallback && options.Purpose == "manual_verify") {
 		return NodeEndpoint{}, errInvalidNode
 	}
-	e := options.NodeEndpoint
+	if fallback && !chains.Supported(options.Network) {
+		return NodeEndpoint{}, errInvalidNode
+	}
+	if blocked := r.blacklist.hosts(); blocked.matches(strings.TrimSpace(options.URL)) || blocked.matches(options.HistoryURL) {
+		return NodeEndpoint{}, errInvalidNode
+	}
+	return options.ValidatedEndpoint()
+}
 
-	if fallback && !chains.Supported(e.Network) {
-		return NodeEndpoint{}, errInvalidNode
-	}
+// ValidatedEndpoint checks the primary and history transports, including height-only interfaces.
+func (options NodeOptions) ValidatedEndpoint() (NodeEndpoint, error) {
+	e := options.NodeEndpoint
 	e.URL = strings.TrimSpace(e.URL)
-	if blocked := r.blacklist.hosts(); blocked.matches(e.URL) || blocked.matches(options.HistoryURL) {
-		return NodeEndpoint{}, errInvalidNode
-	}
 	u, err := url.Parse(e.URL)
 	if err != nil || u.User != nil || u.Fragment != "" || len(e.URL) > 4096 {
 		return NodeEndpoint{}, errInvalidNode

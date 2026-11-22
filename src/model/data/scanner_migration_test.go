@@ -2,16 +2,18 @@ package data
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strings"
+	"testing"
+
 	scanner "github.com/GMWalletApp/ChainScanner"
 	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/internal/scanneradmin"
 	"github.com/GMWalletApp/epusdt/internal/testutil"
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/mdb"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
 )
 
 func TestLegacyScannerImportConsentConflictsAndRetry(t *testing.T) {
@@ -148,5 +150,27 @@ func TestLegacyScannerImportConsentConflictsAndRetry(t *testing.T) {
 	}
 	if found != 2 {
 		t.Fatalf("usable migrated candidates %d", found)
+	}
+	for _, item := range []struct{ network, protocol string }{
+		{"bitcoin", "unisat"}, {"ton", "toncenter-v3"}, {"solana", "jsonrpc"},
+	} {
+		row := mdb.RpcNode{Network: item.network, Type: item.protocol, Url: "https://custom.example", Enabled: true, Weight: 3}
+		if err := dao.Mdb.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	res, err = MigrateScannerNodes(ctx, conn, true, &preview.MigrationTarget)
+	if err != nil || res.Completed != 7 || len(res.Conflicts) != 3 {
+		t.Fatalf("supplementary interfaces were not imported: %+v, %v", res, err)
+	}
+	alias, err := registry.Add(ctx, scanner.NodeOptions{NodeEndpoint: scanner.NodeEndpoint{Network: "solana", Protocol: "jsonrpc", URL: "https://sol.example"}, APIKey: "sol-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates, err = ListManualPaymentRpcCandidates("solana", "http")
+	if err != nil || !slices.ContainsFunc(candidates, func(node mdb.RpcNode) bool {
+		return node.ID == uint64(alias.ID) && node.Type == "http" && node.ApiKey == "sol-key"
+	}) {
+		t.Fatal("manual payment check excluded a compatible JSON-RPC endpoint", err)
 	}
 }

@@ -40,10 +40,6 @@ func upgradeNodeSettings(ctx context.Context, tx *sql.Tx) error {
 
 // Identity preserves credential-bearing paths and queries while matching equivalent transports.
 func (e NodeEndpoint) Identity() NodeEndpoint {
-	e.URL = strings.TrimSpace(e.URL)
-	if p, err := chains.EndpointProtocol(chains.Network{Name: e.Network, Protocol: e.Protocol, URL: e.URL}); err == nil {
-		e.Protocol = p
-	}
 	return e.identity()
 }
 
@@ -118,8 +114,15 @@ func (r *NodeRegistry) update(ctx context.Context, id int64, p NodePatch) (Node,
 			return Node{}, err
 		}
 		for _, peer := range peers[e.identity()] {
-			if peer.id != id {
+			if peer.id == id {
+				continue
+			}
+			if !peer.removed {
 				return Node{}, errDuplicateNode
+			}
+			// An explicit edit can reclaim a retired address, just like an explicit add.
+			if _, err := tx.ExecContext(ctx, "DELETE FROM rpc_nodes WHERE id=? AND removed=1", peer.id); err != nil {
+				return Node{}, err
 			}
 		}
 		origin = "custom"

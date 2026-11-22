@@ -95,6 +95,13 @@ func TestManagedNodesStayOutOfSchedulingAcrossRestart(t *testing.T) {
 	if _, err := r.update(ctx, edited.ID, NodePatch{URL: &fallback.URL}); err != errDuplicateNode {
 		t.Fatal("duplicate edit", err)
 	}
+	restored, err := r.update(ctx, edited.ID, NodePatch{URL: &normal.URL})
+	if err != nil || restored.ID != normal.ID || restored.URL != normal.URL || restored.options.APIKey != normal.options.APIKey {
+		t.Fatal("restore previous address", err)
+	}
+	if _, err := r.insert(ctx, NodeOptions{NodeEndpoint: edited.NodeEndpoint}, false, true); err != errDuplicateNode {
+		t.Fatal("import resurrected the replaced address", err)
+	}
 	if err := r.Delete(ctx, edited.ID); err != nil {
 		t.Fatal(err)
 	}

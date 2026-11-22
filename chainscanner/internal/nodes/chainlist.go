@@ -101,9 +101,12 @@ func fetchChainList(ctx context.Context, client *http.Client, address string) ([
 			continue
 		}
 		for _, entry := range chain.RPC {
-			e := NodeEndpoint{name, chains.PublicRPCProtocol(entry.URL), entry.URL}
-			e = e.identity()
-			if e.Protocol != "" && !seen[e] {
+			protocol := chains.PublicRPCProtocol(entry.URL)
+			if protocol == "" {
+				continue
+			}
+			e := (NodeEndpoint{name, protocol, entry.URL}).identity()
+			if !seen[e] {
 				endpoints = append(endpoints, e)
 				seen[e] = true
 			}

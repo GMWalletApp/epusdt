@@ -38,4 +38,4 @@ windows-arm64:
 build-all: linux-amd64 linux-arm64 linux-armv7 darwin-amd64 darwin-arm64 windows-amd64 windows-arm64
 
 swagger:
-	swag init --outputTypes json,yaml --parseInternal --parseDependency -o docs
+	swag init --outputTypes json,yaml --parseInternal --parseDependency --parseFuncBody -o docs

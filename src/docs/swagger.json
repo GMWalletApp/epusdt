@@ -958,6 +958,622 @@
                 }
             }
         },
+        "/admin/api/v1/chainscanner/admin/blacklist": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "List blocked node hosts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "host": {
+                                        "type": "string"
+                                    },
+                                    "source": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/blacklist/{host}": {
+            "put": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Block a node host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hostname",
+                        "name": "host",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Remove an administrator host block",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hostname",
+                        "name": "host",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/connection": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Get scanner connection and supported operations",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/scanneradmin.ConnectionInfo"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/migration": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Preview legacy node migration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/data.NodeMigration"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Apply migration to the confirmed scanner",
+                "parameters": [
+                    {
+                        "description": "Target returned by the preview",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/data.MigrationTarget"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/data.NodeMigration"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/nodes": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "List scanner nodes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Limit to one network",
+                        "name": "network",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/nodes.Node"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Add a regular node",
+                "parameters": [
+                    {
+                        "description": "Node configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/nodes.NodeOptions"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/nodes.Node"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/nodes/fallback": {
+            "post": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Add a fallback node",
+                "parameters": [
+                    {
+                        "description": "Fallback node configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/nodes.NodeOptions"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/nodes.Node"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/nodes/test": {
+            "post": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Check enabled nodes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Limit to one network",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Also check manual verification nodes",
+                        "name": "include_manual",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/nodes.Node"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/nodes/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Remove a node",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Node ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Update node settings or activation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Node ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Changed fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/nodes.NodePatch"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/nodes.Node"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/nodes/{id}/test": {
+            "post": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Check one enabled node",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Node ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/nodes.Node"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/progress": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Get scanner progress by network",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/engine.ScanProgress"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/heights/{network}": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Get the scanner height",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Network",
+                        "name": "network",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/transactions/{network}/{hash}": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Look up a transaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Network",
+                        "name": "network",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Transaction hash",
+                        "name": "hash",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Allow manual verification nodes",
+                        "name": "manual",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "hash": {
+                                    "type": "string"
+                                },
+                                "network": {
+                                    "type": "string"
+                                },
+                                "result": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/transactions/{network}/{hash}/strict": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Verify a transaction with independent nodes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Network",
+                        "name": "network",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Transaction hash",
+                        "name": "hash",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Allow manual verification nodes",
+                        "name": "manual",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Restrict lookup to fallback nodes",
+                        "name": "fallback_only",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Use 1 for a single round",
+                        "name": "rounds",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Previous voter hashes for a single round",
+                        "name": "X-ChainScanner-Exclude",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "hash": {
+                                    "type": "string"
+                                },
+                                "network": {
+                                    "type": "string"
+                                },
+                                "result": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/admin/api/v1/config": {
             "get": {
                 "description": "Returns supported_assets for on-chain payments, site and epay defaults, and separate okpay and xlayer hosted payment settings. The xlayer allow_tokens list controls the tokens shown for OKX OnchainOS.\nThe authenticated admin variant (/admin/api/v1/config) also includes provider credentials, internal callback settings and the merchant X Layer receiving address.",
@@ -4573,6 +5189,80 @@
                 }
             }
         },
+        "data.MigrationIssue": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "data.MigrationTarget": {
+            "type": "object",
+            "properties": {
+                "store_id": {
+                    "type": "string"
+                },
+                "target": {
+                    "type": "string"
+                }
+            }
+        },
+        "data.NodeMigration": {
+            "type": "object",
+            "properties": {
+                "completed": {
+                    "type": "integer"
+                },
+                "conflicts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/data.MigrationIssue"
+                    }
+                },
+                "external": {
+                    "type": "boolean"
+                },
+                "pending": {
+                    "type": "integer"
+                },
+                "store_id": {
+                    "type": "string"
+                },
+                "target": {
+                    "type": "string"
+                }
+            }
+        },
+        "engine.ScanProgress": {
+            "type": "object",
+            "properties": {
+                "cursor_height": {
+                    "type": "integer"
+                },
+                "lag_ms": {
+                    "type": "integer"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "target_height": {
+                    "type": "integer"
+                }
+            }
+        },
         "gorm.DeletedAt": {
             "type": "object",
             "properties": {
@@ -5054,6 +5744,123 @@
                 "updated_at": {
                     "type": "string",
                     "example": "2026-04-16 12:00:00"
+                }
+            }
+        },
+        "nodes.Node": {
+            "type": "object",
+            "properties": {
+                "checked_at_ms": {
+                    "type": "integer"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "height_unit": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "latency_ms": {
+                    "type": "integer"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "origin": {
+                    "type": "string"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "purpose": {
+                    "type": "string"
+                },
+                "read_failure": {
+                    "type": "string"
+                },
+                "read_retry_at_ms": {
+                    "type": "integer"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "scannable": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "weight": {
+                    "type": "integer"
+                }
+            }
+        },
+        "nodes.NodeOptions": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "history_api_key": {
+                    "type": "string"
+                },
+                "history_url": {
+                    "type": "string"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "purpose": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "weight": {
+                    "type": "integer"
+                }
+            }
+        },
+        "nodes.NodePatch": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "history_api_key": {
+                    "type": "string"
+                },
+                "history_url": {
+                    "type": "string"
+                },
+                "purpose": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "weight": {
+                    "type": "integer"
                 }
             }
         },
@@ -5564,6 +6371,32 @@
                 "to_address": {
                     "type": "string",
                     "example": "0x0000000000000000000000000000000000000000"
+                }
+            }
+        },
+        "scanneradmin.ConnectionInfo": {
+            "type": "object",
+            "properties": {
+                "embedded": {
+                    "type": "boolean"
+                },
+                "migration": {
+                    "type": "boolean"
+                },
+                "node_settings": {
+                    "type": "boolean"
+                },
+                "protocols": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "target": {
+                    "type": "string"
                 }
             }
         }

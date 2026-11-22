@@ -25,14 +25,18 @@ func scannerCandidates(network string, protocols []string, use string) ([]mdb.Rp
 	}
 	rows := make([]mdb.RpcNode, 0, len(result.Nodes))
 	for _, n := range result.Nodes {
-		if !slices.Contains(protocols, n.Protocol) {
-			continue
+		protocol := n.Protocol
+		if !slices.Contains(protocols, protocol) {
+			protocol = n.NodeEndpoint.Identity().Protocol
+			if !slices.Contains(protocols, protocol) {
+				continue
+			}
 		}
 		status := mdb.RpcNodeStatusUnknown
 		if n.Status == "ok" {
 			status = mdb.RpcNodeStatusOk
 		}
-		row := mdb.RpcNode{Network: n.Network, Type: n.Protocol, Url: n.URL, ApiKey: n.APIKey, Purpose: n.Purpose, Weight: n.Weight, Enabled: n.Enabled, Status: status}
+		row := mdb.RpcNode{Network: n.Network, Type: protocol, Url: n.URL, ApiKey: n.APIKey, Purpose: n.Purpose, Weight: n.Weight, Enabled: n.Enabled, Status: status}
 		row.ID = uint64(n.ID)
 		rows = append(rows, row)
 	}

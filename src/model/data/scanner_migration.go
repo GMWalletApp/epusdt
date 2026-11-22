@@ -102,8 +102,10 @@ func MigrateScannerNodes(ctx context.Context, c config.ScannerConnection, apply 
 				matched = true
 			case exists:
 				group.issue = "settings_conflict"
-			case scanner.ValidateNetwork(scanner.Network{Name: o.Network, Protocol: o.Protocol, URL: o.URL}) != nil:
-				group.issue = "invalid_endpoint"
+			default:
+				if _, err := o.ValidatedEndpoint(); err != nil {
+					group.issue = "invalid_endpoint"
+				}
 			}
 		}
 		if apply && group.issue == "" && !matched {

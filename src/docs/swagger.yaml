@@ -776,6 +776,54 @@ definitions:
         example: 3f79bb7b435b05321651daefd374cdc9f5f72c467ea3f9f3c5f6e6d7e8f9a0b1
         type: string
     type: object
+  data.MigrationIssue:
+    properties:
+      host:
+        type: string
+      id:
+        type: integer
+      network:
+        type: string
+      reason:
+        type: string
+    type: object
+  data.MigrationTarget:
+    properties:
+      store_id:
+        type: string
+      target:
+        type: string
+    type: object
+  data.NodeMigration:
+    properties:
+      completed:
+        type: integer
+      conflicts:
+        items:
+          $ref: '#/definitions/data.MigrationIssue'
+        type: array
+      external:
+        type: boolean
+      pending:
+        type: integer
+      store_id:
+        type: string
+      target:
+        type: string
+    type: object
+  engine.ScanProgress:
+    properties:
+      cursor_height:
+        type: integer
+      lag_ms:
+        type: integer
+      network:
+        type: string
+      status:
+        type: string
+      target_height:
+        type: integer
+    type: object
   gorm.DeletedAt:
     properties:
       time:
@@ -1150,6 +1198,83 @@ definitions:
       updated_at:
         example: "2026-04-16 12:00:00"
         type: string
+    type: object
+  nodes.Node:
+    properties:
+      checked_at_ms:
+        type: integer
+      enabled:
+        type: boolean
+      height:
+        type: integer
+      height_unit:
+        type: string
+      id:
+        type: integer
+      latency_ms:
+        type: integer
+      network:
+        type: string
+      origin:
+        type: string
+      protocol:
+        type: string
+      purpose:
+        type: string
+      read_failure:
+        type: string
+      read_retry_at_ms:
+        type: integer
+      role:
+        type: string
+      scannable:
+        type: boolean
+      status:
+        type: string
+      url:
+        type: string
+      weight:
+        type: integer
+    type: object
+  nodes.NodeOptions:
+    properties:
+      api_key:
+        type: string
+      enabled:
+        type: boolean
+      history_api_key:
+        type: string
+      history_url:
+        type: string
+      network:
+        type: string
+      protocol:
+        type: string
+      purpose:
+        type: string
+      url:
+        type: string
+      weight:
+        type: integer
+    type: object
+  nodes.NodePatch:
+    properties:
+      api_key:
+        type: string
+      enabled:
+        type: boolean
+      history_api_key:
+        type: string
+      history_url:
+        type: string
+      purpose:
+        type: string
+      role:
+        type: string
+      url:
+        type: string
+      weight:
+        type: integer
     type: object
   request.CreateTransactionRequest:
     properties:
@@ -1546,6 +1671,23 @@ definitions:
         type: integer
       to_address:
         example: "0x0000000000000000000000000000000000000000"
+        type: string
+    type: object
+  scanneradmin.ConnectionInfo:
+    properties:
+      embedded:
+        type: boolean
+      migration:
+        type: boolean
+      node_settings:
+        type: boolean
+      protocols:
+        additionalProperties:
+          items:
+            type: string
+          type: array
+        type: object
+      target:
         type: string
     type: object
 info:
@@ -2126,6 +2268,382 @@ paths:
       summary: Update chain
       tags:
       - Admin Chains
+  /admin/api/v1/chainscanner/admin/blacklist:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              properties:
+                host:
+                  type: string
+                source:
+                  type: string
+              type: object
+            type: array
+      security:
+      - AdminJWT: []
+      summary: List blocked node hosts
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/blacklist/{host}:
+    delete:
+      parameters:
+      - description: Hostname
+        in: path
+        name: host
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      security:
+      - AdminJWT: []
+      summary: Remove an administrator host block
+      tags:
+      - ChainScanner
+    put:
+      parameters:
+      - description: Hostname
+        in: path
+        name: host
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      security:
+      - AdminJWT: []
+      summary: Block a node host
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/connection:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/scanneradmin.ConnectionInfo'
+      security:
+      - AdminJWT: []
+      summary: Get scanner connection and supported operations
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/migration:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/data.NodeMigration'
+      security:
+      - AdminJWT: []
+      summary: Preview legacy node migration
+      tags:
+      - ChainScanner
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Target returned by the preview
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/data.MigrationTarget'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/data.NodeMigration'
+      security:
+      - AdminJWT: []
+      summary: Apply migration to the confirmed scanner
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/nodes:
+    get:
+      parameters:
+      - description: Limit to one network
+        in: query
+        name: network
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/nodes.Node'
+            type: array
+      security:
+      - AdminJWT: []
+      summary: List scanner nodes
+      tags:
+      - ChainScanner
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Node configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/nodes.NodeOptions'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/nodes.Node'
+      security:
+      - AdminJWT: []
+      summary: Add a regular node
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/nodes/{id}:
+    delete:
+      parameters:
+      - description: Node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+      security:
+      - AdminJWT: []
+      summary: Remove a node
+      tags:
+      - ChainScanner
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Changed fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/nodes.NodePatch'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/nodes.Node'
+      security:
+      - AdminJWT: []
+      summary: Update node settings or activation
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/nodes/{id}/test:
+    post:
+      parameters:
+      - description: Node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/nodes.Node'
+      security:
+      - AdminJWT: []
+      summary: Check one enabled node
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/nodes/fallback:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Fallback node configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/nodes.NodeOptions'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/nodes.Node'
+      security:
+      - AdminJWT: []
+      summary: Add a fallback node
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/nodes/test:
+    post:
+      parameters:
+      - description: Limit to one network
+        in: query
+        name: network
+        type: string
+      - description: Also check manual verification nodes
+        in: query
+        name: include_manual
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/nodes.Node'
+            type: array
+      security:
+      - AdminJWT: []
+      summary: Check enabled nodes
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/progress:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/engine.ScanProgress'
+            type: array
+      security:
+      - AdminJWT: []
+      summary: Get scanner progress by network
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/heights/{network}:
+    get:
+      parameters:
+      - description: Network
+        in: path
+        name: network
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: integer
+      security:
+      - AdminJWT: []
+      summary: Get the scanner height
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/transactions/{network}/{hash}:
+    get:
+      parameters:
+      - description: Network
+        in: path
+        name: network
+        required: true
+        type: string
+      - description: Transaction hash
+        in: path
+        name: hash
+        required: true
+        type: string
+      - description: Allow manual verification nodes
+        in: query
+        name: manual
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              hash:
+                type: string
+              network:
+                type: string
+              result:
+                type: object
+            type: object
+      security:
+      - AdminJWT: []
+      summary: Look up a transaction
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/transactions/{network}/{hash}/strict:
+    get:
+      parameters:
+      - description: Network
+        in: path
+        name: network
+        required: true
+        type: string
+      - description: Transaction hash
+        in: path
+        name: hash
+        required: true
+        type: string
+      - description: Allow manual verification nodes
+        in: query
+        name: manual
+        type: boolean
+      - description: Restrict lookup to fallback nodes
+        in: query
+        name: fallback_only
+        type: boolean
+      - description: Use 1 for a single round
+        in: query
+        name: rounds
+        type: integer
+      - description: Previous voter hashes for a single round
+        in: header
+        name: X-ChainScanner-Exclude
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              hash:
+                type: string
+              network:
+                type: string
+              result:
+                type: object
+            type: object
+      security:
+      - AdminJWT: []
+      summary: Verify a transaction with independent nodes
+      tags:
+      - ChainScanner
   /admin/api/v1/config:
     get:
       description: |-
