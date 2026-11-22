@@ -7,7 +7,8 @@ revision=${1:-main}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 git init -q "$tmp/upstream"
-git -C "$tmp/upstream" fetch -q --depth=1 https://github.com/GMWalletApp/ChainScanner.git "$revision"
+repository=${CHAINSCANNER_REPOSITORY:-https://github.com/GMWalletApp/ChainScanner.git}
+git -C "$tmp/upstream" fetch -q --depth=1 "$repository" "$revision"
 commit=$(git -C "$tmp/upstream" rev-parse FETCH_HEAD)
 git -C "$tmp/upstream" archive "$commit" > "$tmp/source.tar"
 mkdir "$tmp/tree"

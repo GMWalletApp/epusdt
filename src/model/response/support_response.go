@@ -20,7 +20,11 @@ type EpayPublicConfig struct {
 }
 
 type SitePublicConfig struct {
-	WithdrawalReminderEnabled bool   `json:"withdrawal_reminder_enabled" example:"true"`
+	CashierScript             string `json:"cashier_script,omitempty"`        // Public support widget installation snippet. Empty disables the widget.
+	CashierScriptOrigin       string `json:"cashier_script_origin,omitempty"` // Deployment-authorized HTTPS origin for native widgets. Other origins isolate the snippet.
+	WithdrawalReminderEnabled bool   `json:"withdrawal_reminder_enabled" example:"false"`
+	PaymentReminderTitle      string `json:"payment_reminder_title"` // Optional on-chain payment reminder title. Empty uses the checkout language.
+	PaymentReminderBody       string `json:"payment_reminder_body"`  // Optional plain text. {amount} inserts the formatted payment amount and token.
 	CashierName               string `json:"cashier_name" example:"Acme Cashier"`
 	LogoURL                   string `json:"logo_url" example:"https://cdn.example.com/logo.png"`
 	WebsiteTitle              string `json:"website_title" example:"Acme Payments"`

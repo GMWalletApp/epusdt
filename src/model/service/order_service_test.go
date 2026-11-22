@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	scanner "github.com/GMWalletApp/ChainScanner"
 	"io"
@@ -21,7 +22,9 @@ import (
 	"github.com/GMWalletApp/epusdt/util/constant"
 	"github.com/GMWalletApp/epusdt/util/http_client"
 	"github.com/go-resty/resty/v2"
+	"github.com/spf13/viper"
 	"github.com/xssnick/tonutils-go/address"
+	"gorm.io/gorm"
 )
 
 func newCreateTransactionRequest(orderID string, amount float64) *request.CreateTransactionRequest {
@@ -172,7 +175,7 @@ func TestCreateTransactionAssignsIncrementedAmountsAndLocks(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -191,7 +194,7 @@ func TestCreateTransactionAssignsIncrementedAmountsAndLocks(t *testing.T) {
 	if got := fmt.Sprintf("%.2f", resp2.ActualAmount); got != "1.01" {
 		t.Fatalf("second actual amount = %s, want 1.01", got)
 	}
-	if resp1.ReceiveAddress != "wallet_1" || resp2.ReceiveAddress != "wallet_1" {
+	if resp1.ReceiveAddress != testutil.TronAddress || resp2.ReceiveAddress != testutil.TronAddress {
 		t.Fatalf("unexpected receive addresses: %s, %s", resp1.ReceiveAddress, resp2.ReceiveAddress)
 	}
 	if resp1.Token != "USDT" || resp2.Token != "USDT" {
@@ -215,6 +218,90 @@ func TestCreateTransactionAssignsIncrementedAmountsAndLocks(t *testing.T) {
 	}
 }
 
+func TestCreateTransactionWatchesShuffledWalletBeforeLock(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	orig := shuffleWalletAddresses
+	t.Cleanup(func() { shuffleWalletAddresses = orig })
+	shuffleWalletAddresses = func(wallets []mdb.WalletAddress) {
+		for i, wallet := range wallets {
+			if wallet.Address == testutil.SecondTronAddress {
+				wallets[0], wallets[i] = wallets[i], wallets[0]
+				return
+			}
+		}
+	}
+
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
+		t.Fatalf("add wallet 1: %v", err)
+	}
+	if _, err := data.AddWalletAddress(testutil.SecondTronAddress); err != nil {
+		t.Fatalf("add wallet 2: %v", err)
+	}
+
+	previousWatch := EnsurePaymentWatch
+	t.Cleanup(func() { EnsurePaymentWatch = previousWatch })
+	watchUnavailable := errors.New("subscription unavailable")
+	var watchErr error = watchUnavailable
+	var watchCalls int
+	EnsurePaymentWatch = func(network, address string) error {
+		watchCalls++
+		if network != mdb.NetworkTron || address != testutil.SecondTronAddress {
+			t.Fatalf("subscription = %s/%s, want tron/wallet_shuffle_2", network, address)
+		}
+		owner, err := data.GetTradeIdByWalletAddressAndAmountAndToken(network, address, "USDT", 1)
+		if err != nil || owner != "" {
+			t.Fatalf("reservation before subscription: owner=%q err=%v", owner, err)
+		}
+		return watchErr
+	}
+
+	req := newCreateTransactionRequest("order_shuffle_1", 1)
+	if resp, err := CreateTransaction(req, nil); resp != nil || !errors.Is(err, watchUnavailable) {
+		t.Fatalf("failed subscription: response=%v err=%v", resp, err)
+	}
+	watchErr = nil
+	resp, err := CreateTransaction(req, nil)
+	if err != nil {
+		t.Fatalf("create transaction: %v", err)
+	}
+	if resp.ReceiveAddress != testutil.SecondTronAddress {
+		t.Fatalf("receive address = %s, want wallet_shuffle_2 after shuffle", resp.ReceiveAddress)
+	}
+	owner, err := data.GetTradeIdByWalletAddressAndAmountAndToken(mdb.NetworkTron, resp.ReceiveAddress, resp.Token, resp.ActualAmount)
+	if watchCalls != 2 || err != nil || owner != resp.TradeId {
+		t.Fatalf("after retry: subscriptions=%d lock owner=%q want %q err=%v", watchCalls, owner, resp.TradeId, err)
+	}
+}
+
+func TestCreateTransactionRandomWalletAssignmentUsesMoreThanFirstAddress(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
+		t.Fatalf("add wallet 1: %v", err)
+	}
+	if _, err := data.AddWalletAddress(testutil.SecondTronAddress); err != nil {
+		t.Fatalf("add wallet 2: %v", err)
+	}
+	if _, err := data.AddWalletAddress(testutil.ThirdTronAddress); err != nil {
+		t.Fatalf("add wallet 3: %v", err)
+	}
+
+	seen := map[string]int{}
+	for i := 1; i <= 24; i++ {
+		resp, err := CreateTransaction(newCreateTransactionRequest(fmt.Sprintf("order_rand_%d", i), float64(i)), nil)
+		if err != nil {
+			t.Fatalf("create transaction %d: %v", i, err)
+		}
+		seen[resp.ReceiveAddress]++
+	}
+	if len(seen) < 2 {
+		t.Fatalf("assigned addresses = %v, want more than one wallet", seen)
+	}
+}
+
 func TestCreateTransactionUsesConfiguredAmountPrecision(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
@@ -222,7 +309,7 @@ func TestCreateTransactionUsesConfiguredAmountPrecision(t *testing.T) {
 	if err := data.SetSetting(mdb.SettingGroupSystem, mdb.SettingKeyAmountPrecision, "4", mdb.SettingTypeInt); err != nil {
 		t.Fatalf("set amount precision: %v", err)
 	}
-	if _, err := data.AddWalletAddress("wallet_precision_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -247,7 +334,7 @@ func TestCreateTransactionStoresNormalizedMerchantAmount(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_normalized_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -294,7 +381,7 @@ func TestCreateTransactionUsesRateAPIWhenForcedSettingIsNotPositive(t *testing.T
 	if err := data.SetSetting("rate", "rate.mode", config.RateModeAuto, "string"); err != nil {
 		t.Fatalf("set rate.mode: %v", err)
 	}
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -323,10 +410,10 @@ func TestCreateTransactionUsesDefaultForcedRateWithoutRateAPI(t *testing.T) {
 	if err := data.SetSetting("rate", "rate.api_url", "", "string"); err != nil {
 		t.Fatalf("clear rate.api_url: %v", err)
 	}
-	if _, err := data.AddWalletAddress("wallet_default_rate_usdt"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
-	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkSolana, "SolDefaultRateAddress001"); err != nil {
+	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkSolana, testutil.SolanaAddress); err != nil {
 		t.Fatalf("add solana wallet: %v", err)
 	}
 	if err := dao.Mdb.Create(&mdb.ChainToken{
@@ -607,7 +694,7 @@ func TestSwitchNetworkCreatesTonSubOrderAndRawLock(t *testing.T) {
 	if err := data.SetSetting("rate", "rate.forced_rate_list", `{"cny":{"usdt":0.1,"ton":0.5}}`, "json"); err != nil {
 		t.Fatalf("set forced rate: %v", err)
 	}
-	if _, err := data.AddWalletAddress("TTestTronAddress001"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 	addr := address.MustParseAddr("EQC6KV4zs8TJtSZapOrRFmqSkxzpq-oSCoxekQRKElf4nC1I")
@@ -656,7 +743,7 @@ func TestSwitchNetworkCompletesWaitSelectPlaceholderInPlace(t *testing.T) {
 	if err := data.SetSetting("rate", "rate.forced_rate_list", `{"cny":{"usdt":0.1}}`, "json"); err != nil {
 		t.Fatalf("set forced rate: %v", err)
 	}
-	if _, err := data.AddWalletAddress("TWaitSelectAddress001"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 
@@ -691,7 +778,7 @@ func TestSwitchNetworkCompletesWaitSelectPlaceholderInPlace(t *testing.T) {
 	if switched.PaymentUrl != "" {
 		t.Fatalf("switch payment_url = %q, want empty for unselected chain parent", switched.PaymentUrl)
 	}
-	if switched.Token != "USDT" || switched.Network != mdb.NetworkTron || switched.ReceiveAddress != "TWaitSelectAddress001" {
+	if switched.Token != "USDT" || switched.Network != mdb.NetworkTron || switched.ReceiveAddress != testutil.TronAddress {
 		t.Fatalf("switch chain fields = token %q network %q address %q", switched.Token, switched.Network, switched.ReceiveAddress)
 	}
 	if got := fmt.Sprintf("%.2f", switched.ActualAmount); got != "1.00" {
@@ -734,7 +821,7 @@ func TestSwitchNetworkAfterWaitSelectCompletionUsesExistingSubOrderFlow(t *testi
 	if err := data.SetSetting("rate", "rate.forced_rate_list", `{"cny":{"usdt":0.1}}`, "json"); err != nil {
 		t.Fatalf("set forced rate: %v", err)
 	}
-	if _, err := data.AddWalletAddress("TWaitSelectAddress002"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.SecondTronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkEthereum, "0xA1B2c3D4e5F60718293aBcDeF001122334455668"); err != nil {
@@ -796,7 +883,7 @@ func TestSwitchNetworkRejectsUnsupportedTonToken(t *testing.T) {
 	if err := data.SetSetting("rate", "rate.forced_rate_list", `{"cny":{"usdt":0.1}}`, "json"); err != nil {
 		t.Fatalf("set forced rate: %v", err)
 	}
-	if _, err := data.AddWalletAddress("TTestTronAddress002"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.SecondTronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 	parentResp, err := CreateTransaction(newCreateTransactionRequest("order_switch_gram_1", 10), nil)
@@ -967,7 +1054,7 @@ func TestTonCreditConfirmsParentAndChildTogether(t *testing.T) {
 	if err := data.SetSetting("rate", "rate.forced_rate_list", `{"cny":{"usdt":0.1,"ton":0.5}}`, "json"); err != nil {
 		t.Fatalf("set forced rate: %v", err)
 	}
-	if _, err := data.AddWalletAddress("TTestTronAddressForTonSub"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 	addr := address.MustParseAddr("EQC6KV4zs8TJtSZapOrRFmqSkxzpq-oSCoxekQRKElf4nC1I")
@@ -1035,7 +1122,7 @@ func TestOrderProcessingMarksPaidAndReleasesLock(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -1083,7 +1170,7 @@ func TestOrderProcessingRejectsDuplicateBlockForSameOrder(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -1125,7 +1212,7 @@ func TestOrderProcessingDoesNotReviveExpiredOrder(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -1168,10 +1255,10 @@ func TestOrderProcessingOnlyOneOrderClaimsABlockTransaction(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
-	if _, err := data.AddWalletAddress("wallet_2"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.SecondTronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -1268,7 +1355,7 @@ func TestOrderProcessingSubOrderReturnsErrorWhenParentNotWaitPay(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("TTestTronAddress001"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkEthereum, "0xA1B2c3D4e5F60718293aBcDeF001122334455667"); err != nil {
@@ -1314,7 +1401,7 @@ func TestOrderProcessingSubOrderReturnsErrorWhenParentMissing(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("TTestTronAddress001"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkEthereum, "0xA1B2c3D4e5F60718293aBcDeF001122334455667"); err != nil {
@@ -1363,7 +1450,7 @@ func TestOrderProcessingSubOrderPaidParentKeepsOwnFields(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("TTestTronAddress001"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkEthereum, "0xA1B2c3D4e5F60718293aBcDeF001122334455667"); err != nil {
@@ -1454,7 +1541,7 @@ func TestOrderProcessingParentDirectPayExpiresOkPayProviderOrder(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("TTestTronAddress001"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 
@@ -1532,7 +1619,7 @@ func TestOrderProcessingSubOrderExpiresSiblingsAndReleasesLocks(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("TTestTronAddress001"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkEthereum, "0xA1B2c3D4e5F60718293aBcDeF001122334455667"); err != nil {
@@ -1645,5 +1732,251 @@ func queueTestTonCredit(t *testing.T, tr *TonObservedTransfer) {
 	e := scanner.Activity{Network: "ton", TxID: tr.TxHashHex, TimeMS: tr.BlockTimeMs, Addresses: []string{addr}}
 	if err := observeCredit(e, addr, tr.Token, tr.RawAmount, tr.BlockID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCreateTransactionIdempotentReplayReturnsOriginalOrder(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	apiKey := &mdb.ApiKey{Pid: "1000", SecretKey: "test-key"}
+	apiKey.ID = 41
+	req := newCreateTransactionRequest("idempotent-placeholder", 12.34)
+	req.Token = ""
+	req.Network = ""
+	req.RedirectUrl = "https://example.com/return"
+	req.Name = "Same order"
+
+	first, err := CreateTransaction(req, apiKey)
+	if err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	viper.Set("order_expiration_time", 60)
+	second, err := CreateTransaction(req, apiKey)
+	if err != nil {
+		t.Fatalf("idempotent replay: %v", err)
+	}
+	if second.TradeId != first.TradeId || second.OrderId != first.OrderId {
+		t.Fatalf("replay returned a different order: first=%+v second=%+v", first, second)
+	}
+	if second.ExpirationTime != first.ExpirationTime {
+		t.Fatalf("replay extended expiration: first=%d second=%d", first.ExpirationTime, second.ExpirationTime)
+	}
+	var count int64
+	if err := dao.Mdb.Model(&mdb.Orders{}).Where("order_id = ?", req.OrderId).Count(&count).Error; err != nil {
+		t.Fatalf("count orders: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("order count = %d, want 1", count)
+	}
+}
+
+func TestCreateTransactionIdempotentReplayRejectsChangedRequest(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	apiKey := &mdb.ApiKey{Pid: "1000", SecretKey: "test-key"}
+	apiKey.ID = 42
+	req := newCreateTransactionRequest("idempotent-conflict", 12.34)
+	req.Token = ""
+	req.Network = ""
+	if _, err := CreateTransaction(req, apiKey); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+
+	changed := *req
+	changed.Amount = 12.35
+	if _, err := CreateTransaction(&changed, apiKey); err != constant.OrderAlreadyExists {
+		t.Fatalf("changed amount error = %v, want %v", err, constant.OrderAlreadyExists)
+	}
+	changed = *req
+	changed.NotifyUrl = "https://93.184.216.35/other-callback"
+	if _, err := CreateTransaction(&changed, apiKey); err != constant.OrderAlreadyExists {
+		t.Fatalf("changed callback error = %v, want %v", err, constant.OrderAlreadyExists)
+	}
+}
+
+func TestCreateTransactionIdempotentReplayRejectsOtherMerchant(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	owner := &mdb.ApiKey{Pid: "1000", SecretKey: "test-key"}
+	owner.ID = 43
+	other := &mdb.ApiKey{}
+	other.ID = 44
+	req := newCreateTransactionRequest("idempotent-owner", 12.34)
+	req.Token = ""
+	req.Network = ""
+	if _, err := CreateTransaction(req, owner); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	if _, err := CreateTransaction(req, other); err != constant.OrderAlreadyExists {
+		t.Fatalf("other merchant error = %v, want %v", err, constant.OrderAlreadyExists)
+	}
+}
+
+func TestCreateTransactionConcurrentReplayCreatesOneOrder(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	apiKey := &mdb.ApiKey{Pid: "1000", SecretKey: "test-key"}
+	apiKey.ID = 45
+	const workers = 8
+	responses := make(chan string, workers)
+	errors := make(chan error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := newCreateTransactionRequest("idempotent-concurrent", 12.34)
+			req.Token = ""
+			req.Network = ""
+			resp, err := CreateTransaction(req, apiKey)
+			if err != nil {
+				errors <- err
+				return
+			}
+			responses <- resp.TradeId
+		}()
+	}
+	wg.Wait()
+	close(errors)
+	close(responses)
+	for err := range errors {
+		t.Fatalf("concurrent create: %v", err)
+	}
+	var tradeID string
+	for got := range responses {
+		if tradeID == "" {
+			tradeID = got
+		}
+		if got != tradeID {
+			t.Fatalf("concurrent replay returned trade_id %q, want %q", got, tradeID)
+		}
+	}
+	var count int64
+	if err := dao.Mdb.Model(&mdb.Orders{}).Where("order_id = ?", "idempotent-concurrent").Count(&count).Error; err != nil {
+		t.Fatalf("count orders: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("order count = %d, want 1", count)
+	}
+}
+
+func TestGMPayReplayPreservesConflictForLegacyRowsAndEPay(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+	owner := &mdb.ApiKey{BaseModel: mdb.BaseModel{ID: 1}, Pid: "1000", SecretKey: "test-key"}
+	request := newCreateTransactionRequest("legacy", 12.34)
+	request.Token, request.Network = "", ""
+	legacy := &mdb.Orders{TradeId: "old-trade", OrderId: request.OrderId, ApiKeyID: owner.ID,
+		Amount: request.Amount, Currency: request.Currency, NotifyUrl: request.NotifyUrl, PaymentType: mdb.PaymentTypeGmpay}
+	if err := dao.Mdb.Create(legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateTransaction(request, owner); err != constant.OrderAlreadyExists {
+		t.Fatalf("legacy retry: got %v", err)
+	}
+	request.OrderId, request.PaymentType = "epay-compat", mdb.PaymentTypeEpay
+	if _, err := CreateTransaction(request, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateTransaction(request, owner); err != constant.OrderAlreadyExists {
+		t.Fatalf("EPay retry: got %v", err)
+	}
+}
+
+func TestGMPayReplayAfterConcurrentOrderInsertReleasesOnlyLosingReservation(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+	owner := &mdb.ApiKey{BaseModel: mdb.BaseModel{ID: 1}, Pid: "1000", SecretKey: "test-key"}
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
+		t.Fatal(err)
+	}
+	request := newCreateTransactionRequest("competing-checkouts", 12.34)
+	// Let the same merchant's first create win after this caller has already
+	// read an empty result, forcing the database uniqueness conflict.
+	var winner *mdb.Orders
+	if err := dao.Mdb.Callback().Query().After("gorm:query").Register("test:other_gateway", func(tx *gorm.DB) {
+		order, ok := tx.Statement.Dest.(*mdb.Orders)
+		if !ok || order.ID != 0 || winner != nil {
+			return
+		}
+		winner = &mdb.Orders{TradeId: "winning-trade", OrderId: request.OrderId, ApiKeyID: owner.ID,
+			Amount: 12.34, Currency: "CNY", Token: "USDT", Network: "tron",
+			PayProvider: mdb.PaymentProviderOnChain, PaymentType: mdb.PaymentTypeGmpay, NotifyUrl: request.NotifyUrl,
+			ReceiveAddress: testutil.TronAddress, ActualAmount: 12.34, Status: mdb.StatusWaitPay}
+		winner.CreateRequestHash = gmpayCreateRequestHash(winner, request.Amount)
+		if err := data.LockTransaction(winner.Network, winner.ReceiveAddress, winner.Token, winner.TradeId, winner.ActualAmount, time.Hour); err != nil {
+			t.Fatal(err)
+		}
+		if err := insertMerchantOrder(dao.Mdb, winner, owner); err != nil {
+			t.Fatal(err)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	replay, err := CreateTransaction(request, owner)
+	if err != nil || winner == nil || replay.TradeId != winner.TradeId || replay.ReceiveAddress != winner.ReceiveAddress || replay.ActualAmount != winner.ActualAmount {
+		t.Fatalf("competing create returned %+v, %v", replay, err)
+	}
+	var locks []mdb.TransactionLock
+	if err := dao.RuntimeDB.Find(&locks).Error; err != nil || len(locks) != 1 || locks[0].TradeId != winner.TradeId {
+		t.Fatalf("reservations after concurrent insert: %+v, %v", locks, err)
+	}
+}
+
+func TestWalletRemovedDuringNewAddressAssignment(t *testing.T) {
+	for _, path := range []string{"create", "first-choice", "sub-order"} {
+		t.Run(path, func(t *testing.T) {
+			defer testutil.SetupTestDatabases(t)()
+			wallet, err := data.AddWalletAddress(testutil.TronAddress)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var parent mdb.Orders
+			if path != "create" {
+				parent = mdb.Orders{TradeId: "parent", OrderId: "merchant", Currency: "CNY", Amount: 1, Status: mdb.StatusWaitSelect}
+				if path == "sub-order" {
+					parent.Status = mdb.StatusWaitPay
+					parent.Token, parent.Network, parent.PayProvider = "USDT", mdb.PaymentProviderOkPay, mdb.PaymentProviderOkPay
+				}
+				if err := dao.Mdb.Create(&parent).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			previous := EnsurePaymentWatch
+			t.Cleanup(func() { EnsurePaymentWatch = previous })
+			// Interleave the wallet change after selection, exactly when the
+			// scanner acknowledges the watch and before the order is persisted.
+			EnsurePaymentWatch = func(string, string) error {
+				if path == "sub-order" {
+					return data.DeleteWalletAddressById(wallet.ID)
+				}
+				return data.ChangeWalletAddressStatus(wallet.ID, mdb.TokenStatusDisable)
+			}
+			if path == "create" {
+				_, err = CreateTransaction(newCreateTransactionRequest("merchant", 1), nil)
+			} else {
+				_, err = SwitchNetwork(&request.SwitchNetworkRequest{TradeId: parent.TradeId, Token: "USDT", Network: mdb.NetworkTron})
+			}
+			if !errors.Is(err, constant.NotAvailableWalletAddress) {
+				t.Fatalf("stale allocation error = %v", err)
+			}
+
+			var locks int64
+			if err := dao.RuntimeDB.Model(&mdb.TransactionLock{}).Count(&locks).Error; err != nil || locks != 0 {
+				t.Fatalf("reservation after rollback: %d, %v", locks, err)
+			}
+			var stored []mdb.Orders
+			if err := dao.Mdb.Find(&stored).Error; err != nil {
+				t.Fatal(err)
+			}
+			if path == "create" && len(stored) != 0 || path != "create" && (len(stored) != 1 || stored[0].Status != parent.Status || stored[0].ReceiveAddress != "" || stored[0].IsSelected) {
+				t.Fatalf("unexpected orders after rollback: %+v", stored)
+			}
+		})
 	}
 }

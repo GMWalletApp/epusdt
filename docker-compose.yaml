@@ -26,12 +26,14 @@ services:
       dockerfile: Dockerfile
     image: gmwallet/epusdt:latest
     container_name: epusdt
+    read_only: ${EPUSDT_READ_ONLY:-false}
     restart: always
     ports:
       - "${EPUSDT_PORT:-8000}:8000"
     environment:
       EPUSDT_CONFIG: "/app/runtime/.env"
       EPUSDT_INSTALL:
+      CASHIER_SCRIPT_ORIGIN:
       APP_URI: "${APP_URI:-http://127.0.0.1:8000}"
       HTTP_LISTEN: "0.0.0.0:8000"
       CHAINSCANNER_URL:

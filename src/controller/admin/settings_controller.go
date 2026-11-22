@@ -63,7 +63,10 @@ import (
 //     brand.site_title       (string) — payment page title / website title (preferred)
 //     brand.success_copy     (string) — text shown on payment success (preferred)
 //     brand.support_url      (string) — support / help URL
-//     brand.withdrawal_reminder_enabled (bool) — show the exchange withdrawal reminder (default true)
+//     brand.cashier_script   (string) — optional public support widget installation snippet
+//     brand.withdrawal_reminder_enabled (bool) — show the on-chain payment reminder (default false)
+//     brand.payment_reminder_title (string) — optional plain-text title
+//     brand.payment_reminder_body (string) — optional plain-text body supporting {amount}
 //     brand.background_color (string) — checkout background color
 //     brand.background_image_url (string) — checkout background image URL
 //     brand.site_name        (string) — legacy cashier/site display name
@@ -117,7 +120,7 @@ func (c *BaseAdminController) ListSettings(ctx echo.Context) error {
 // @Description  okpay group keys: okpay.enabled, okpay.shop_id, okpay.shop_token, okpay.api_url, okpay.callback_url, okpay.return_url, okpay.timeout_seconds, okpay.allow_tokens.
 // @Description  xlayer group keys: xlayer.enabled, xlayer.api_key, xlayer.api_secret, xlayer.passphrase, xlayer.to_address, xlayer.return_url, xlayer.timeout_seconds, xlayer.allow_tokens. The Onchain OS Payment base URL is fixed to https://web3.okx.com in code; any leftover xlayer.api_url row is ignored.
 // @Description  rate group keys: rate.mode (fixed|auto, default fixed), rate.cache_ttl_seconds (10-86400, default 300), rate.forced_rate_list (JSON map, e.g. {"cny":{"usdt":0.14635,"ton":0.5}}; base/coin keys are normalized to lowercase; empty is restored to the built-in CNY USDT/USDC default), rate.api_url (optional; non-empty value must be a public http/https URL), rate.adjust_percent, rate.okx_c2c_enabled.
-// @Description  brand group keys: brand.checkout_name, brand.logo_url, brand.site_title, brand.success_copy, brand.support_url, brand.background_color, brand.background_image_url, brand.withdrawal_reminder_enabled. Legacy aliases brand.site_name, brand.page_title and brand.pay_success_text are also supported.
+// @Description  brand group keys: brand.checkout_name, brand.logo_url, brand.site_title, brand.success_copy, brand.support_url, brand.cashier_script, brand.background_color, brand.background_image_url, brand.withdrawal_reminder_enabled, brand.payment_reminder_title, brand.payment_reminder_body. Legacy aliases brand.site_name, brand.page_title and brand.pay_success_text are also supported.
 // @Description  system group keys: system.order_expiration_time, system.amount_precision (int, 2-6, default 2), system.log_level (debug|info|warn|error, default error).
 // @Tags         Admin Settings
 // @Security     AdminJWT
@@ -146,11 +149,21 @@ func (c *BaseAdminController) UpsertSettings(ctx echo.Context) error {
 		code, msg := constant.ResolveErrno(err)
 		return result{Key: key, OK: false, ErrorCode: code, Error: msg}
 	}
+	var telegramChanges telegramSettingChanges
 	for _, item := range req.Items {
 		key := strings.TrimSpace(item.Key)
 		if key == "" {
 			out = append(out, errorResult(item.Key, constant.SettingItemErr))
 			continue
+		}
+		if key == mdb.SettingKeyBrandReminderTitle || key == mdb.SettingKeyBrandReminderBody || key == mdb.SettingKeyBrandCashierScript {
+			text, ok := item.Value.(string)
+			if !ok || !strings.EqualFold(strings.TrimSpace(item.Group), mdb.SettingGroupBrand) {
+				out = append(out, errorResult(key, constant.SettingItemErr))
+				continue
+			}
+			item.Group, item.Type = mdb.SettingGroupBrand, mdb.SettingTypeString
+			item.Value = strings.TrimSpace(text)
 		}
 		value, err := normalizeSettingValue(item.Value)
 		if err != nil {
@@ -190,6 +203,8 @@ func (c *BaseAdminController) UpsertSettings(ctx echo.Context) error {
 			item.Group = mdb.SettingGroupSystem
 			item.Type = mdb.SettingTypeString
 		}
+		telegramChanged := strings.HasPrefix(key, "system.telegram_") &&
+			strings.TrimSpace(data.GetSettingString(key, "")) != strings.TrimSpace(value)
 		if err := data.SetSetting(item.Group, key, value, item.Type); err != nil {
 			out = append(out, errorResult(key, err))
 			continue
@@ -200,31 +215,43 @@ func (c *BaseAdminController) UpsertSettings(ctx echo.Context) error {
 				continue
 			}
 		}
+		if telegramChanged {
+			telegramChanges.record(key)
+		}
 		out = append(out, result{Key: key, OK: true})
 	}
 	if err := data.EnsureDefaultForcedRateList(); err != nil {
 		out = append(out, errorResult(mdb.SettingKeyRateForcedRateList, err))
 	}
 
-	// When telegram credentials are updated via settings, reload the
-	// command bot so operators don't need to restart the process, and
-	// sync the notification_channels row so the notify dispatcher picks
-	// up the new values immediately.
-	telegramKeys := map[string]bool{
-		"system.telegram_bot_token":               true,
-		"system.telegram_chat_id":                 true,
-		"system.telegram_payment_notice_enabled":  true,
-		"system.telegram_abnormal_notice_enabled": true,
-	}
-	for _, item := range req.Items {
-		if telegramKeys[strings.TrimSpace(item.Key)] {
-			telegram.ReloadBotAsync("settings upsert")
-			go dao.SyncTelegramChannelFromSettings()
-			break
-		}
-	}
+	telegramChanges.apply()
 
 	return c.SucJson(ctx, out)
+}
+
+// Push notification preferences and the command bot share only the system credentials.
+type telegramSettingChanges struct {
+	credentials   bool
+	notifications bool
+}
+
+func (changes *telegramSettingChanges) record(key string) {
+	switch key {
+	case "system.telegram_bot_token", "system.telegram_chat_id":
+		changes.credentials = true
+		changes.notifications = true
+	case "system.telegram_payment_notice_enabled", "system.telegram_abnormal_notice_enabled":
+		changes.notifications = true
+	}
+}
+
+func (changes telegramSettingChanges) apply() {
+	if changes.notifications {
+		dao.SyncTelegramChannelFromSettings()
+	}
+	if changes.credentials {
+		telegram.ReloadBotAsync("command bot settings changed")
+	}
 }
 
 func normalizeSettingValue(value interface{}) (string, error) {
@@ -496,9 +523,14 @@ func (c *BaseAdminController) DeleteSetting(ctx echo.Context) error {
 	if key == "" {
 		return c.SucJson(ctx, nil)
 	}
+	var telegramChanges telegramSettingChanges
+	if strings.HasPrefix(key, "system.telegram_") && data.GetSettingString(key, "") != "" {
+		telegramChanges.record(key)
+	}
 	if err := data.DeleteSetting(key); err != nil {
 		return c.FailJson(ctx, err)
 	}
+	telegramChanges.apply()
 	if key == mdb.SettingKeyRateForcedRateList {
 		if err := data.EnsureDefaultForcedRateList(); err != nil {
 			return c.FailJson(ctx, err)

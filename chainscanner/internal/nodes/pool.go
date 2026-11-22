@@ -14,23 +14,63 @@ import (
 // Run shares one cursor and one scheduler across subscribers to a network.
 func (r *NodeRegistry) Run(ctx context.Context, n chains.Network) {
 	r.store.WhileWatched(ctx, n.Name, func(live context.Context) {
-		p := newRegistryPool(live, r, n)
-		defer p.Close()
-		saveNode := p.observe
-		interval := time.Duration(n.IntervalSeconds) * time.Second
-		if interval <= 0 {
-			interval = 5 * time.Second
+		for live.Err() == nil {
+			changed := r.watchChanges(n.Name)
+			period, cancel := context.WithCancel(live)
+			finished := make(chan struct{})
+			go func() {
+				select {
+				case <-changed:
+					cancel()
+				case <-finished:
+				}
+			}()
+			r.runPeriod(period, n)
+			close(finished)
+			cancel()
 		}
-		p.observe = func(cfg chains.Network, sample headSample) {
-			if node, ok := p.inventory[cfg]; ok && node.Origin != "fallback" && sample.err == nil {
-				head := p.bestRecentTip(sample.height, interval)
-				r.store.RecordScanHead(live, n.Name, head-max(n.Confirmations-1, 0), sample.start)
-			}
-			saveNode(cfg, sample)
-		}
-		open := func(context.Context, chains.Network) (chains.Source, error) { return borrowedPool{p}, nil }
-		engine.RunWithSource(live, r.store, n, open, func(chains.Source) <-chan struct{} { return p.Wakeups() })
 	})
+}
+
+func (r *NodeRegistry) watchChanges(network string) chan struct{} {
+	r.watchMu.Lock()
+	defer r.watchMu.Unlock()
+	if r.changes == nil {
+		r.changes = make(map[string]chan struct{})
+	}
+	if r.changes[network] == nil {
+		r.changes[network] = make(chan struct{})
+	}
+	return r.changes[network]
+}
+
+func (r *NodeRegistry) changed(network string) {
+	r.revision.Add(1)
+	r.watchMu.Lock()
+	defer r.watchMu.Unlock()
+	if ch := r.changes[network]; ch != nil {
+		close(ch)
+		delete(r.changes, network)
+	}
+}
+
+func (r *NodeRegistry) runPeriod(live context.Context, n chains.Network) {
+	p := newRegistryPool(live, r, n)
+	defer p.Close()
+	saveNode := p.observe
+	interval := time.Duration(n.IntervalSeconds) * time.Second
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	p.observe = func(cfg chains.Network, sample headSample) {
+		if node, ok := p.inventory[cfg]; ok && node.Role != "fallback" && sample.err == nil {
+			head := p.bestRecentTip(sample.height, interval)
+			r.store.RecordScanHead(live, n.Name, head-max(n.Confirmations-1, 0), sample.start)
+		}
+		saveNode(cfg, sample)
+	}
+	open := func(context.Context, chains.Network) (chains.Source, error) { return borrowedPool{p}, nil }
+	engine.RunWithSource(live, r.store, n, open, func(chains.Source) <-chan struct{} { return p.Wakeups() })
 }
 
 type nodePool struct {
@@ -99,7 +139,7 @@ func (p *nodePool) refresh(ctx context.Context) error {
 		origins := make(map[chains.Network]Node, len(rows))
 		var preferred, owned, discovered []chains.Network
 		for _, n := range rows {
-			if !n.Scannable || (strings.HasPrefix(p.settings.Protocol, "solidity-") && !strings.HasPrefix(n.Protocol, "solidity-")) {
+			if !n.Enabled || n.Purpose == "manual_verify" || !n.Scannable || (strings.HasPrefix(p.settings.Protocol, "solidity-") && !strings.HasPrefix(n.Protocol, "solidity-")) {
 				continue
 			}
 			cfg := p.registry.network(n, p.settings)
@@ -132,7 +172,8 @@ func (p *nodePool) refresh(ctx context.Context) error {
 		// active scanner's read cooldown for this node.
 		for _, n := range p.nodes {
 			row := origins[n.cfg]
-			n.fallback = row.Origin == "fallback"
+			n.weight = row.Weight
+			n.fallback = row.Role == "fallback"
 			if row.ReadRetryAt > 0 && time.UnixMilli(row.ReadRetryAt).After(n.retry) {
 				n.retry = time.UnixMilli(row.ReadRetryAt)
 			}

@@ -1,14 +1,23 @@
 package route
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	scanner "github.com/GMWalletApp/ChainScanner"
+	"github.com/GMWalletApp/epusdt/config"
+	"github.com/GMWalletApp/epusdt/model/dao"
+	"github.com/GMWalletApp/epusdt/model/data"
+	"github.com/GMWalletApp/epusdt/model/mdb"
+	"github.com/labstack/echo/v4"
 )
 
 func TestScannerAdminBlacklistAndFallback(t *testing.T) {
@@ -63,9 +72,21 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	if w.Code == 200 {
 		t.Fatal("admin route accessible without JWT")
 	}
-	var progress []struct{ Network, Status string }
+	unauthedStream := httptest.NewRecorder()
+	e.ServeHTTP(unauthedStream, httptest.NewRequest("GET", base+"/admin/progress/stream", nil))
+	if unauthedStream.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated progress stream: %d", unauthedStream.Code)
+	}
+	var progress []struct {
+		Network, Status string
+		Success         *uint64 `json:"scan_success_count"`
+		Failure         *uint64 `json:"scan_failure_count"`
+	}
 	if err := json.Unmarshal([]byte(call("GET", "/admin/progress", "", 200)), &progress); err != nil || len(progress) != 1 || progress[0].Network != "solana" || progress[0].Status != "idle" {
 		t.Fatalf("scanner progress: %+v, %v", progress, err)
+	}
+	if p := progress[0]; p.Success == nil || p.Failure == nil || *p.Success != 0 || *p.Failure != 0 {
+		t.Fatalf("idle scanner counters: %+v", p)
 	}
 	const host = "provider.example"
 	for i, endpoint := range []string{"/admin/nodes", "/admin/nodes/fallback"} {
@@ -77,7 +98,9 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	}
 	path := "/admin/blacklist/keyword:provider"
 	call("PUT", path, "", 204)
-	call("PUT", path, "", 204)
+	call("PUT", "/admin/blacklist/keyword%3Aprovider", "", 204)
+	call("PUT", "/admin/blacklist/exact%3Aother.example", "", 204)
+	call("DELETE", "/admin/blacklist/exact%3Aother.example", "", 204)
 	if !strings.Contains(call("GET", "/admin/blacklist", "", 200), "keyword:provider") {
 		t.Fatal("missing persisted blacklist rule")
 	}
@@ -121,8 +144,27 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	defer second.Close()
 	call("POST", "/admin/nodes/fallback", fmt.Sprintf(`{"network":"solana","protocol":"http","url":%q}`, second.URL), 201)
 	var node scanner.Node
-	if err := json.Unmarshal([]byte(call("POST", "/admin/nodes", fmt.Sprintf(`{"network":"solana","protocol":"http","url":%q}`, rpc.URL), 201)), &node); err != nil {
+	legacy := mdb.RpcNode{Network: "solana", Type: "http", Url: rpc.URL, Enabled: true, Purpose: "general", Weight: 2}
+	if err := dao.Mdb.Create(&legacy).Error; err != nil {
 		t.Fatal(err)
+	}
+	var migration data.NodeMigration
+	if err := json.Unmarshal([]byte(call("GET", "/admin/migration", "", 200)), &migration); err != nil || migration.Pending != 1 || !migration.External {
+		t.Fatal("migration preview", err, migration)
+	}
+	payload, _ := json.Marshal(migration.MigrationTarget)
+	call("POST", "/admin/migration", string(payload), 200)
+	imported, err := reg.List(t.Context(), "solana")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range imported {
+		if n.URL == rpc.URL {
+			node = n
+		}
+	}
+	if node.ID == 0 {
+		t.Fatal("missing migrated voter")
 	}
 	checked := call("POST", fmt.Sprintf("/admin/nodes/%d/test", node.ID), "", 200)
 	var result scanner.Node
@@ -146,7 +188,82 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 			t.Fatal("missing transaction result", b)
 		}
 	}
+	call("PATCH", fmt.Sprintf("/admin/nodes/%d", node.ID), `{"enabled":false}`, 200)
+	call("GET", "/transactions/solana/"+signature+"/strict", "", 503)
+	call("PATCH", fmt.Sprintf("/admin/nodes/%d", node.ID), `{"enabled":true,"purpose":"manual_verify"}`, 200)
+	call("GET", "/transactions/solana/"+signature+"/strict", "", 503)
+	call("GET", "/transactions/solana/"+signature+"/strict?manual=true", "", 200)
+	call("PATCH", fmt.Sprintf("/admin/nodes/%d", node.ID), `{"purpose":"general"}`, 200)
 	call("GET", "/transactions/solana/invalid", "", 400)
 	call("GET", "/transactions/solana/invalid/strict", "", 400)
 	call("GET", "/heights/solana", "", 200)
+}
+
+func TestScannerProgressStreamRecoversAndCancelsUpstream(t *testing.T) {
+	const adminToken = "scanner-stream-private-admin-token"
+	var requests atomic.Int32
+	started, stopped := make(chan struct{}), make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/admin/progress" || r.Header.Get("Authorization") != "Bearer "+adminToken {
+			t.Errorf("unexpected scanner request to %s", r.URL.Path)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		switch requests.Add(1) {
+		case 1:
+			// A legacy scanner supplies only its historical fields.
+			fmt.Fprintln(w, `[
+				{"network":"base","cursor_height":7,"status":"ok"}
+			]`)
+		case 2:
+			http.Error(w, "upstream diagnostic: "+adminToken, http.StatusServiceUnavailable)
+		case 3:
+			fmt.Fprintln(w, `[{"network":"base","cursor_height":9,"status":"ok","scan_success_count":3,"scan_failure_count":1}]`)
+		default:
+			close(started)
+			<-r.Context().Done()
+			close(stopped)
+		}
+	}))
+	defer upstream.Close()
+	e := echo.New()
+	e.GET("/stream", scannerProgressStream(config.ScannerConnection{URL: upstream.URL, AdminToken: adminToken}, 5*time.Millisecond))
+	api := httptest.NewServer(e)
+	defer api.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, api.URL+"/stream", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := api.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") || resp.Header.Get("X-Accel-Buffering") != "no" {
+		t.Fatalf("stream response: %s, %v", resp.Status, resp.Header)
+	}
+	input := bufio.NewScanner(resp.Body)
+	for _, want := range []string{
+		"retry: 5000", "",
+		"event: progress", `data: [{"network":"base","cursor_height":7,"status":"ok"}]`, "",
+		"event: scanner_error", "data: {}", "",
+		"event: progress", `data: [{"network":"base","cursor_height":9,"status":"ok","scan_success_count":3,"scan_failure_count":1}]`, "",
+	} {
+		if !input.Scan() || input.Text() != want {
+			t.Fatalf("stream line = %q, want %q, err %v", input.Text(), want, input.Err())
+		}
+	}
+	select {
+	case <-started:
+	case <-ctx.Done():
+		t.Fatal("next scanner request did not start")
+	}
+	cancel()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("closing the dashboard left an upstream request active")
+	}
 }

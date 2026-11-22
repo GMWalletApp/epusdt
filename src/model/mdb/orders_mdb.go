@@ -45,10 +45,13 @@ const (
 )
 
 type Orders struct {
-	TradeId               string `gorm:"column:trade_id;uniqueIndex:orders_trade_id_uindex" json:"trade_id" example:"3nQ9pL2xV7sK1mR8cT4yB_aZ"`
-	OrderId               string `gorm:"column:order_id;uniqueIndex:orders_order_id_uindex" json:"order_id" example:"ORD20260416001"`
-	ParentTradeId         string `gorm:"column:parent_trade_id;index:idx_orders_parent_trade_id;default:''" json:"parent_trade_id"`
-	ReviewTransactionHash string `gorm:"size:128" json:"review_transaction_hash,omitempty"`
+	TradeId string `gorm:"column:trade_id;uniqueIndex:orders_trade_id_uindex" json:"trade_id" example:"3nQ9pL2xV7sK1mR8cT4yB_aZ"`
+	OrderId string `gorm:"column:order_id;uniqueIndex:orders_order_id_uindex" json:"order_id" example:"ORD20260416001"`
+	// Legacy orders have no creation hash and keep the duplicate-order behavior.
+	CreateRequestHash       string `gorm:"size:64;<-:create" json:"-"`
+	CreateResponseExpiresAt int64  `gorm:"<-:create" json:"-"`
+	ParentTradeId           string `gorm:"column:parent_trade_id;index:idx_orders_parent_trade_id;default:''" json:"parent_trade_id"`
+	ReviewTransactionHash   string `gorm:"size:128" json:"review_transaction_hash,omitempty"`
 	// Existing orders retain their historical transaction IDs. New settlements
 	// also acquire a unique key inside the payment transaction across instances.
 	SettlementKey      *string `gorm:"size:64;uniqueIndex:idx_order_settlement_key" json:"-"`
@@ -60,7 +63,7 @@ type Orders struct {
 	Token              string  `gorm:"column:token" json:"token" example:"USDT"`
 	Network            string  `gorm:"column:network" json:"network" example:"tron"`
 	// 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
-	Status      int    `gorm:"column:status;default:1" json:"status" enums:"1,2,3,4,5,6" example:"1"`
+	Status      int    `gorm:"column:status;default:1;index:orders_status_index" json:"status" enums:"1,2,3,4,5,6" example:"1"`
 	NotifyUrl   string `gorm:"column:notify_url" json:"notify_url" example:"https://example.com/notify"`
 	RedirectUrl string `gorm:"column:redirect_url" json:"redirect_url" example:"https://example.com/success"`
 	Name        string `gorm:"column:name" json:"name" example:"VIP月卡"`
@@ -81,8 +84,10 @@ type Orders struct {
 	//
 	// Existing rows default to on_chain for backward compatibility so upgrades
 	// can rely on AutoMigrate without rewriting old orders.
-	PayProvider string `gorm:"column:pay_provider;size:32;default:on_chain;index:orders_pay_provider_index" json:"pay_provider" example:"on_chain"`
-	ApiKeyID    uint64 `gorm:"column:api_key_id;default:0;index:orders_api_key_id_index" json:"api_key_id" example:"1"`
+	PayProvider          string `gorm:"column:pay_provider;size:32;default:on_chain;index:orders_pay_provider_index" json:"pay_provider" example:"on_chain"`
+	CallbackSigningKeyID uint64 `gorm:"not null;default:0" json:"-"`
+	ApiKeyID             uint64 `gorm:"column:api_key_id;default:0;index:orders_api_key_id_index" json:"api_key_id" example:"1"`
+	CallbackVersion      int    `gorm:"column:callback_version;not null;default:1" json:"-"`
 	// PayBySubId holds the primary-key ID of the sub-order that settled this parent order.
 	// Zero when the parent order was paid directly (no sub-order involved).
 	PayBySubId uint64 `gorm:"column:pay_by_sub_id;default:0" json:"pay_by_sub_id" example:"0"`

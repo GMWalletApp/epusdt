@@ -41,6 +41,7 @@ type SourcePool struct {
 }
 
 type endpoint struct {
+	weight, picks              int
 	fallback                   bool // operator-funded history endpoint; failed ranges only
 	lastUse                    uint64
 	measured, accepted         headSample

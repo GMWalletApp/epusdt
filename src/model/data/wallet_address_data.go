@@ -1,13 +1,14 @@
 package data
 
 import (
-	scanner "github.com/GMWalletApp/ChainScanner"
 	"strings"
 
+	scanner "github.com/GMWalletApp/ChainScanner"
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	addressutil "github.com/GMWalletApp/epusdt/util/address"
 	"github.com/GMWalletApp/epusdt/util/constant"
+	"gorm.io/gorm"
 )
 
 // AddWalletAddress 创建钱包 (默认 tron 网络，用于 Telegram 添加)
@@ -22,31 +23,36 @@ func normalizeWalletNetwork(network string) string {
 	return strings.ToLower(strings.TrimSpace(network))
 }
 
-func normalizeWalletAddressByNetwork(network, address string) string {
-	address = strings.TrimSpace(address)
-	if isEVMNetwork(normalizeWalletNetwork(network)) {
-		return strings.ToLower(address)
-	}
-	return address
-}
-
-func normalizeWalletAddressByNetworkE(network, address string) (string, error) {
+// ReceivingAddress returns a wallet address suitable for storage, payment and
+// scanner subscription. TON keeps the user-friendly form used in the cashier.
+func ReceivingAddress(network, address string) (string, error) {
 	network = normalizeWalletNetwork(network)
 	address = strings.TrimSpace(address)
+	if network == mdb.NetworkXLayer {
+		// Historical hosted X Layer wallet records use the EVM address format.
+		network = mdb.NetworkEthereum
+	}
+	if isEVMNetwork(network) || network == mdb.NetworkAptos || network == mdb.NetworkSui {
+		address = strings.ToLower(address)
+	}
+	var canonical string
+	var err error
 	if network == mdb.NetworkTon {
-		return addressutil.NormalizeTonAddress(address)
+		canonical, err = addressutil.NormalizeTonAddress(address)
+	} else {
+		canonical, err = scanner.Canonical(network, address)
 	}
-	if network == mdb.NetworkAptos || network == mdb.NetworkSui {
-		return addressutil.NormalizeMoveAddress(address)
+	if err != nil {
+		return "", constant.InvalidReceivingAddress
 	}
-	return normalizeWalletAddressByNetwork(network, address), nil
+	return canonical, nil
 }
 
 // AddWalletAddressWithNetwork 创建指定网络的钱包地址
 func AddWalletAddressWithNetwork(network, address string) (*mdb.WalletAddress, error) {
 	network = normalizeWalletNetwork(network)
 	var err error
-	address, err = normalizeWalletAddressByNetworkE(network, address)
+	address, err = ReceivingAddress(network, address)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +94,7 @@ func AddWalletAddressWithNetwork(network, address string) (*mdb.WalletAddress, e
 func GetWalletAddressByNetworkAndAddress(network, address string) (*mdb.WalletAddress, error) {
 	network = normalizeWalletNetwork(network)
 	var err error
-	address, err = normalizeWalletAddressByNetworkE(network, address)
+	address, err = ReceivingAddress(network, address)
 	if err != nil {
 		return nil, err
 	}
@@ -127,6 +133,39 @@ func GetAvailableWalletAddress() ([]mdb.WalletAddress, error) {
 	return WalletAddressList, err
 }
 
+// PaymentWatchAddresses reads the full scanner subscription from one database
+// snapshot. Orders remain payable after their wallet is disabled or deleted.
+func PaymentWatchAddresses() ([]scanner.Watch, error) {
+	wallets := dao.Mdb.Model(&mdb.WalletAddress{}).Select("network, address").
+		Where("status = ?", mdb.TokenStatusEnable)
+	orders := dao.Mdb.Model(&mdb.Orders{}).Select("network, receive_address AS address").
+		Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusConfirming}).
+		Where("(pay_provider IS NULL OR pay_provider IN ?)", []string{"", mdb.PaymentProviderOnChain}).
+		Where("receive_address <> '' AND token <> '' AND actual_amount > 0")
+	var watches []scanner.Watch
+	err := dao.Mdb.Raw("? UNION ?", wallets, orders).Scan(&watches).Error
+	return watches, err
+}
+
+// WithReceivingWallet commits a new address assignment only while its wallet
+// is enabled. The order write acquires SQLite's writer lock before the check,
+// so removal and assignment cannot commit in the wrong order.
+func WithReceivingWallet(walletID uint64, save func(*gorm.DB) error) error {
+	return dao.Mdb.Transaction(func(tx *gorm.DB) error {
+		if err := save(tx); err != nil {
+			return err
+		}
+		var count int64
+		if err := tx.Model(&mdb.WalletAddress{}).Where("id = ? AND status = ?", walletID, mdb.TokenStatusEnable).Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return constant.NotAvailableWalletAddress
+		}
+		return nil
+	})
+}
+
 // GetAvailableWalletAddressByNetwork 获得指定网络的所有可用钱包地址
 func GetAvailableWalletAddressByNetwork(network string) ([]mdb.WalletAddress, error) {
 	network = normalizeWalletNetwork(network)
@@ -138,18 +177,15 @@ func GetAvailableWalletAddressByNetwork(network string) ([]mdb.WalletAddress, er
 	if err != nil {
 		return nil, err
 	}
-	if isEVMNetwork(network) {
-		for i := range list {
-			list[i].Address = strings.ToLower(strings.TrimSpace(list[i].Address))
-		}
-	} else if network == mdb.NetworkTon {
-		for i := range list {
-			if normalized, err := addressutil.NormalizeTonAddress(list[i].Address); err == nil {
-				list[i].Address = normalized
-			}
+	available := list[:0]
+	for _, row := range list {
+		address, err := ReceivingAddress(network, row.Address)
+		if err == nil {
+			row.Address = address
+			available = append(available, row)
 		}
 	}
-	return list, err
+	return available, nil
 }
 
 // GetAllWalletAddress 获得所有钱包地址

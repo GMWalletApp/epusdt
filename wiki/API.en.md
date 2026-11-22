@@ -135,9 +135,10 @@ function epaySign(array $params, string $secretKey): string
 | `token` | string | Conditional | Receiving asset. Pair with network or omit both. |
 | `network` | string | Conditional | Network ID from public config, for example `binance`. |
 | `amount` | number | Yes | Fiat amount, greater than 0.01. |
-| `notify_url` | string | Yes | Asynchronous success callback URL. |
+| `notify_url` | string | Conditional | If omitted, uses the merchant API key’s default callback URL. One of the two is required. |
 | `redirect_url` | string | No | Browser return URL. |
 | `name` | string | No | Product or order name. |
+| `callback_version` | integer | No | GMPay JSON format, default 1. Set to 2 and sign this field to receive the signed payment network. |
 | `payment_type` | string | No | Defaults to GMPay. EPay (case-insensitive) selects EPay callback format and requires a numeric PID. Include any nonempty value in the signature. |
 | `signature` | string | Yes | 64-character lowercase HMAC-SHA256 signature. |
 
@@ -182,7 +183,9 @@ A placeholder has no address or token and an `actual_amount` of zero. Expiration
 
 ## Public checkout configuration
 
-`GET /payments/gmpay/v1/config` returns the checkout branding, available on-chain assets, EPay defaults, and the public `okpay` and `xlayer` provider settings. Each entry in `supported_assets` requires an enabled chain, an available receiving address and an enabled token configured for payment. Hosted methods expose their own `enabled` flag and `allow_tokens` list.
+`GET /payments/gmpay/v1/config` returns the checkout branding, available on-chain assets, EPay defaults, and the public `okpay` and `xlayer` provider settings. Pass the cashier order ID as `?trade_id=...` to list on-chain options for that order. New options require a valid receiving address and an exchange rate that gives at least 0.01 tokens for the stored amount and currency. Existing payable reservations remain available at their original quote. Once the order family reaches its switch limit, only its existing on-chain reservations are listed. Omitting the parameter or looking up a terminal order returns the general list.
+
+Each entry in the general `supported_assets` list requires an enabled chain, an available receiving address and an enabled token configured for payment. Hosted methods expose their own `enabled` flag and `allow_tokens` list.
 
 ```json
 {
@@ -218,7 +221,7 @@ A placeholder has no address or token and an `actual_amount` of zero. Expiration
       "support_link": "https://example.com/support",
       "background_color": "#0f172a",
       "background_image_url": "https://cdn.example.com/background.png",
-      "withdrawal_reminder_enabled": true
+      "withdrawal_reminder_enabled": false
     },
     "epay": {
       "default_token": "",
@@ -241,7 +244,7 @@ A placeholder has no address or token and an `actual_amount` of zero. Expiration
 
 ### Exchange withdrawal reminder
 
-After loading config, show the reminder only when `site.withdrawal_reminder_enabled` is true, the on-chain order is awaiting payment, a receiving address is available and `actual_amount > 0`. Treat a missing flag on older versions as true. Display the expected **net received amount** after exchange fees using the same precision and token as the order. [Light preview](img/withdrawal-reminder-light.png) · [Dark preview](img/withdrawal-reminder-dark.png)
+After loading config, show the reminder only when `site.withdrawal_reminder_enabled` is true, the on-chain order is awaiting payment, a receiving address is available and `actual_amount > 0`. New installations default to false. Hide the reminder when older versions omit the flag. Display the expected **net received amount** after exchange fees using the same precision and token as the order. [Light preview](img/withdrawal-reminder-light.png) · [Dark preview](img/withdrawal-reminder-dark.png)
 
 Administrators read `GET /admin/api/v1/settings?group=brand`. The stored value of `brand.withdrawal_reminder_enabled` is the string `"true"` or `"false"`. To change it, send the following authenticated `PUT /admin/api/v1/settings` request. Check the returned item’s `ok` flag and reopen checkout.
 
@@ -258,6 +261,8 @@ The `payment_url` returned at creation points to `GET /pay/checkout-counter/{tra
 ```
 
 Fetch `GET /pay/checkout-counter-resp/{trade_id}` for display details. This response uses **milliseconds** for `created_at` and `expiration_time`. Poll the status endpoint for subsequent changes.
+
+For EPay orders, use `redirect_url` after successful payment to obtain the signed return. Buyers leaving before payment can use `merchant_home_url`, which contains the merchant homepage when a valid HTTP(S) return URL is available.
 
 ```json
 {
@@ -317,6 +322,8 @@ Checkout returns `payment_type` in lowercase (`gmpay` or `epay`), which selects 
 
 `GET /pay/check-status/{trade_id}`
 
+For the cashier, append `?checkout=true`. If this payment attempt expired because its parent was paid, the response uses the parent’s `trade_id`, `status: 2`, and its `redirect_url` when configured. EPay returns the parent’s signed-return endpoint. Opening the expired attempt in the cashier also returns the paid parent’s details. Without the query parameter the status endpoint always reports the requested order.
+
 ```json
 {
   "status_code": 200,
@@ -375,12 +382,14 @@ Send a GET query or a POST form to `/payments/epay/v1/order/create-transaction/s
 /pay/checkout-counter/{trade_id}
 ```
 
+For orders created with this version, repeating the same signed fields as the same merchant reopens the original pending cashier. Both GET and POST are supported. A retry preserves the payment deadline. A changed request, a closed payment window, or an order created before request fingerprints were stored returns `10002`.
+
 | Field | Location | Type | Required | Description |
 | --- | --- | --- | --- | --- |
 | `pid` | query/form | string | Yes | Merchant PID. Use a numeric PID for callbacks. |
 | `money` | query/form | number | Yes | Fiat amount. |
 | `out_trade_no` | query/form | string | Yes | Merchant order ID. |
-| `notify_url` | query/form | string | Yes | Merchant callback URL. |
+| `notify_url` | query/form | string | Conditional | If omitted, uses the merchant API key’s default callback URL. One of the two is required. |
 | `return_url` | query/form | string | No | Browser return URL. |
 | `name` | query/form | string | No | Product or order name. |
 | `type` | query/form | string | No | Empty, `alipay`, or an enabled `token.network` selector. |
@@ -408,11 +417,13 @@ Fresh installations seed `cny` and leave default token and network empty. Existi
 
 ## Merchant callbacks
 
+Each order keeps its callback URL, PID, and signing key at creation. Rotation, deactivation, and deletion of the merchant API key preserve the signatures used for notifications, retries, and EPay success redirects. Merchants should retain the verification key for each order. Orders created before upgrading use the credentials still available at upgrade time. Previously overwritten keys cannot be recovered.
+
 EPUSDT notifies the order’s `notify_url` after successful payment. Verify the signature, match the order and amount, and process repeated notifications idempotently. Acknowledge with HTTP 200 and a body of `ok` or `success` (case-insensitive). Failed delivery is retried according to `order_notice_max_retry` and `callback_retry_base_seconds`, with exponential backoff capped at five minutes.
 
 ### GMPay
 
-GMPay sends JSON via POST. Look up the local merchant key by `pid` and verify the HMAC using the same canonicalization as order creation. The body omits `payment_type`.
+GMPay sends JSON via POST. Look up the local merchant key by `pid` and verify the HMAC using the same canonicalization as order creation. The body omits `payment_type`. With `callback_version=2`, the body includes `network` in the HMAC. For a switched order, the merchant order ID and trade ID identify the parent. The token, amount received, receiving address and transaction ID describe the settled payment.
 
 ```json
 {
@@ -508,5 +519,6 @@ Use the HTTP status for transport handling and the numeric `status_code` for bus
 | `10044` | 400 | Invalid redirect URL |
 | `10045` | 400 | Order merchant key unavailable |
 | `10046` | 400 | Unable to sign EPay return parameters |
+| `10049` | 400 | Invalid receiving address for the selected network |
 
 [Full application error list](../src/util/constant/errno.go)

@@ -107,13 +107,24 @@ func TestAdditionalNetworkSettlement(t *testing.T) {
 }
 
 func TestBaseUSDCSettlementUsesSeededContract(t *testing.T) {
+	testSeededERC20Settlement(t, mdb.NetworkBase, "USDC",
+		"0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", "0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca")
+}
+
+func TestArbitrumUSDTSettlementUsesSeededContract(t *testing.T) {
+	testSeededERC20Settlement(t, mdb.NetworkArbitrum, "USDT",
+		"0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9", "0xaf88d065e77c8cc2239327c5edb3a432268e5831")
+}
+
+func testSeededERC20Settlement(t *testing.T, network, symbol, contract, otherContract string) {
+	t.Helper()
 	defer testutil.SetupTestDatabases(t)()
 	dao.ResetMdbTableInitForTest()
 	defer dao.ResetMdbTableInitForTest()
 	dao.MdbTableInit()
 	const recipient = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	order := mdb.Orders{TradeId: "base-usdc", OrderId: "order", Network: mdb.NetworkBase,
-		Token: "USDC", Amount: 1, ActualAmount: 1, ReceiveAddress: recipient, Status: mdb.StatusWaitPay}
+	order := mdb.Orders{TradeId: "seeded-token", OrderId: "order", Network: network,
+		Token: symbol, Amount: 1, ActualAmount: 1, ReceiveAddress: recipient, Status: mdb.StatusWaitPay}
 	if err := dao.Mdb.Create(&order).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -124,8 +135,8 @@ func TestBaseUSDCSettlementUsesSeededContract(t *testing.T) {
 		contract string
 		want     int
 	}{
-		{"0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca", mdb.StatusWaitPay},    // Bridged USDbC
-		{"0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", mdb.StatusConfirming}, // Circle USDC
+		{otherContract, mdb.StatusWaitPay},
+		{contract, mdb.StatusConfirming},
 	} {
 		log := json.RawMessage(fmt.Sprintf(`{"address":%q,"topics":["0x%s","0x%064x","0x%064s"],"data":"0x%064x"}`, tc.contract, transferSignature, 1, recipient[2:], 1000000))
 		evidence, err := json.Marshal(scanner.Evidence{Transaction: json.RawMessage(`{"hash":"digest"}`), Logs: []json.RawMessage{log}})

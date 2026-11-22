@@ -197,7 +197,7 @@ Restart=always
 RestartSec=3
 ```
 
-The working directory stays at `/opt/epusdt` because the program extracts its `www/` assets next to the binary.
+The working directory is `/opt/epusdt`. The gateway serves its frontend from the executable.
 
 ## What `init-password` Does
 
@@ -244,7 +244,7 @@ It performs these checks on the local machine:
 - downloads real GitHub Release artifacts
 - installs `epusdt`
 - when `upgrade-tag` is provided, verifies `upgrade --no-restart`, the default non-interactive `upgrade`, and both the `n` / Enter branches of `upgrade --prompt-restart`
-- verifies the systemd service, `www/index.html`, config output, logs, and status
+- verifies the systemd service, HTTP frontend, config output, logs, and status
 - verifies that `init-password` succeeds once and later returns `10040` after the admin password is changed
 
 Requirements:

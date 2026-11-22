@@ -36,6 +36,7 @@ func (r *NodeRegistry) Handler(consumers map[string]string, token string) (http.
 	key := sha256.Sum256([]byte(token))
 	admin := http.NewServeMux()
 	r.registerBlacklistRoutes(admin)
+	r.registerManagement(admin)
 	admin.HandleFunc("GET /v1/admin/progress", func(w http.ResponseWriter, req *http.Request) {
 		rows, err := r.store.ScanProgress(req.Context())
 		nodeReply(w, 200, rows, err)
@@ -45,6 +46,17 @@ func (r *NodeRegistry) Handler(consumers map[string]string, token string) (http.
 		nodeReply(w, 200, nodes, err)
 	})
 	addNode := func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path == "/v1/admin/nodes/import" {
+			var storeID string
+			if err := r.db.QueryRowContext(req.Context(), "SELECT value FROM registry_identity WHERE id=1").Scan(&storeID); err != nil {
+				nodeReply(w, 503, nil, err)
+				return
+			}
+			if req.URL.Query().Get("store_id") != storeID {
+				http.Error(w, "scanner database changed", http.StatusPreconditionFailed)
+				return
+			}
+		}
 		var e NodeOptions
 		d := json.NewDecoder(http.MaxBytesReader(w, req.Body, 8192))
 		d.DisallowUnknownFields()
@@ -52,10 +64,11 @@ func (r *NodeRegistry) Handler(consumers map[string]string, token string) (http.
 			nodeReply(w, 400, nil, errInvalidNode)
 			return
 		}
-		n, err := r.add(req.Context(), e, req.URL.Path == "/v1/admin/nodes/fallback")
+		n, err := r.insert(req.Context(), e, req.URL.Path == "/v1/admin/nodes/fallback", req.URL.Path == "/v1/admin/nodes/import")
 		nodeReply(w, 201, n, err)
 	}
 	admin.HandleFunc("POST /v1/admin/nodes", addNode)
+	admin.HandleFunc("POST /v1/admin/nodes/import", addNode)
 	admin.HandleFunc("POST /v1/admin/nodes/fallback", addNode)
 	admin.HandleFunc("DELETE /v1/admin/nodes/{id}", func(w http.ResponseWriter, req *http.Request) {
 		id, err := nodeID(req)
@@ -80,7 +93,7 @@ func (r *NodeRegistry) Handler(consumers map[string]string, token string) (http.
 		defer r.batch.Unlock()
 		// A full inventory can take several per-node timeouts. Client cancellation stops the batch.
 		_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
-		nodes, err := r.testAll(req.Context(), req.URL.Query().Get("network"))
+		nodes, err := r.testAll(req.Context(), req.URL.Query().Get("network"), req.URL.Query().Get("include_manual") == "true")
 		nodeReply(w, 200, nodes, err)
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -111,7 +124,7 @@ func nodeReply(w http.ResponseWriter, code int, value any, err error) {
 		switch {
 		case errors.Is(err, errBlacklistHost):
 			http.Error(w, err.Error(), 400)
-		case errors.Is(err, errConfiguredRule):
+		case errors.Is(err, errDisabledNode), errors.Is(err, errConfiguredRule):
 			http.Error(w, err.Error(), 409)
 		case errors.Is(err, errInvalidNode):
 			http.Error(w, "invalid node", 400)
@@ -133,7 +146,7 @@ func nodeReply(w http.ResponseWriter, code int, value any, err error) {
 	json.NewEncoder(w).Encode(value)
 }
 
-func (r *NodeRegistry) testAll(ctx context.Context, network string) ([]Node, error) {
+func (r *NodeRegistry) testAll(ctx context.Context, network string, includeManual bool) ([]Node, error) {
 	nodes, err := r.List(ctx, network)
 	if err != nil {
 		return nil, err
@@ -147,7 +160,7 @@ func (r *NodeRegistry) testAll(ctx context.Context, network string) ([]Node, err
 			defer wg.Done()
 			for id := range jobs {
 				_, e := r.Test(ctx, id)
-				if e != nil && !errors.Is(e, sql.ErrNoRows) {
+				if e != nil && !errors.Is(e, sql.ErrNoRows) && !errors.Is(e, errDisabledNode) {
 					once.Do(func() { err = e })
 				}
 			}
@@ -155,6 +168,9 @@ func (r *NodeRegistry) testAll(ctx context.Context, network string) ([]Node, err
 	}
 send:
 	for _, n := range nodes {
+		if !n.Enabled || (!includeManual && n.Purpose == "manual_verify") {
+			continue
+		}
 		select {
 		case <-ctx.Done():
 			break send

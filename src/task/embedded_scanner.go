@@ -35,7 +35,7 @@ func startEmbeddedScanner(ctx context.Context, path string, networks []scanner.N
 		store.Close()
 		return config.ScannerConnection{}, nil, err
 	}
-	conn := config.ScannerConnection{ConsumerToken: rand.Text(), AdminToken: rand.Text(), Transport: "http"}
+	conn := config.ScannerConnection{Embedded: true, ConsumerToken: rand.Text(), AdminToken: rand.Text(), Transport: "http"}
 	handler, err := registry.Handler(map[string]string{paymentConsumer: conn.ConsumerToken}, conn.AdminToken)
 	if err != nil {
 		store.Close()

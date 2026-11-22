@@ -9,6 +9,7 @@ import (
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/util/constant"
+	"github.com/GMWalletApp/epusdt/util/security"
 	"github.com/labstack/echo/v4"
 )
 
@@ -85,6 +86,11 @@ func (c *BaseAdminController) CreateApiKey(ctx echo.Context) error {
 		return c.FailJson(ctx, err)
 	}
 
+	req.NotifyUrl = strings.TrimSpace(req.NotifyUrl)
+	if req.NotifyUrl != "" && security.ValidatePublicHTTPURL(req.NotifyUrl) != nil {
+		return c.FailJson(ctx, constant.NotifyURLErr)
+	}
+
 	// Retry on unique-index violation: two concurrent creates could
 	// both see the same max PID from NextPid() and race on INSERT.
 	// The loser re-reads and retries with the now-higher max.
@@ -159,7 +165,11 @@ func (c *BaseAdminController) UpdateApiKey(ctx echo.Context) error {
 		fields["ip_whitelist"] = *req.IpWhitelist
 	}
 	if req.NotifyUrl != nil {
-		fields["notify_url"] = *req.NotifyUrl
+		u := strings.TrimSpace(*req.NotifyUrl)
+		if u != "" && security.ValidatePublicHTTPURL(u) != nil {
+			return c.FailJson(ctx, constant.NotifyURLErr)
+		}
+		fields["notify_url"] = u
 	}
 	if err := data.UpdateApiKeyFields(id, fields); err != nil {
 		return c.FailJson(ctx, err)

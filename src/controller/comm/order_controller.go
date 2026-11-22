@@ -14,7 +14,10 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-const EPayTypeContextKey = "epay_type"
+const (
+	EPayTypeContextKey        = "epay_type"
+	EPayRequestHashContextKey = "epay_request_hash"
+)
 
 // apiKeyFromContext returns the api_keys row stamped by CheckApiSign.
 // Returns nil when the middleware didn't run (should not happen on authed routes).
@@ -29,6 +32,7 @@ func apiKeyFromContext(ctx echo.Context) *mdb.ApiKey {
 // @Summary      Create transaction
 // @Description  Create a payment transaction order. Accepts JSON body (application/json) or form-encoded body (application/x-www-form-urlencoded).
 // @Description  GMPay may omit both token and network to create a status=4 placeholder order; EPay submit.php can also create one when neither request parameters nor database defaults provide token/network. Supplying only one of token/network is invalid.
+// @Description  Authenticated GMPay retries with the same order_id and original normalized inputs return the same trade_id, current order state and original creation deadline. A changed request, a different merchant, an EPay-format order, or an order created before replay support returns status_code 10002.
 // @Description  payment_type is optional for GMPay. If it is sent, it is a normal signed parameter and must be included when calculating signature.
 // @Description  GMPay signature uses lowercase hexadecimal HMAC-SHA256 with secret_key as the HMAC key. Legacy MD5 signatures are not accepted.
 // @Tags         Payment
@@ -41,13 +45,14 @@ func apiKeyFromContext(ctx echo.Context) *mdb.ApiKey {
 // @Param        token formData string false "Crypto token (e.g. TON, USDT); omit together with network to create a placeholder where supported"
 // @Param        network formData string false "Network (e.g. ton, tron); omit together with token to create a placeholder where supported"
 // @Param        amount formData number false "Amount"
-// @Param        notify_url formData string false "Callback URL"
+// @Param        notify_url formData string false "Callback URL (defaults to the merchant API key setting)"
 // @Param        signature formData string false "Lowercase hexadecimal HMAC-SHA256 signature"
 // @Param        redirect_url formData string false "Redirect URL"
 // @Param        name formData string false "Order name"
 // @Param        payment_type formData string false "Optional GMPay compatibility flag; include in signature when sent"
+// @Param        callback_version formData int false "Signed GMPay JSON callback version. Version 2 includes the payment network." Enums(1,2)
 // @Success      200 {object} response.ApiResponse{data=response.CreateTransactionResponse}
-// @Failure      400 {object} response.ApiResponse "Stable errno in status_code: 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel"
+// @Failure      400 {object} response.ApiResponse "Stable errno in status_code: 10002 order ID conflict, 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel"
 // @Failure      401 {object} response.ApiResponse "Invalid merchant signature (status_code=401)"
 // @Router       /payments/gmpay/v1/order/create-transaction [post]
 func (c *BaseCommController) CreateTransaction(ctx echo.Context) (err error) {
@@ -116,7 +121,7 @@ func (c *BaseCommController) SwitchNetwork(ctx echo.Context) (err error) {
 // @Param        pid query integer false "API key PID (GET query)"
 // @Param        money query number false "Amount (fiat, GET query)"
 // @Param        out_trade_no query string false "Merchant order ID (GET query)"
-// @Param        notify_url query string false "Callback URL (GET query)"
+// @Param        notify_url query string false "Callback URL (defaults to the merchant API key setting)"
 // @Param        return_url query string false "Redirect URL after payment (GET query)"
 // @Param        name query string false "Order name (GET query)"
 // @Param        type query string false "Either alipay or a supported token.network selector such as usdt.tron (GET query)"
@@ -125,14 +130,14 @@ func (c *BaseCommController) SwitchNetwork(ctx echo.Context) (err error) {
 // @Param        pid formData integer true "API key PID"
 // @Param        money formData number true "Amount (fiat)"
 // @Param        out_trade_no formData string true "Merchant order ID"
-// @Param        notify_url formData string true "Callback URL"
+// @Param        notify_url formData string false "Callback URL (defaults to the merchant API key setting)"
 // @Param        return_url formData string false "Redirect URL after payment"
 // @Param        name formData string false "Order name"
 // @Param        type formData string false "Either alipay or a supported token.network selector such as usdt.tron"
 // @Param        sign formData string true "MD5 signature"
 // @Param        sign_type formData string false "Signature type (MD5)"
 // @Success      302 "Redirect to checkout counter"
-// @Failure      400 {object} response.ApiResponse "Stable errno in status_code: 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel"
+// @Failure      400 {object} response.ApiResponse "Stable errno in status_code: 10002 order ID conflict, 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel"
 // @Failure      401 {object} response.ApiResponse "Invalid merchant signature (status_code=401)"
 // @Router       /payments/epay/v1/order/create-transaction/submit.php [post]
 // @Router       /payments/epay/v1/order/create-transaction/submit.php [get]
@@ -145,6 +150,7 @@ func (c *BaseCommController) CreateTransactionAndRedirect(ctx echo.Context) (err
 	if raw, ok := ctx.Get(EPayTypeContextKey).(string); ok {
 		req.EpayType = strings.TrimSpace(raw)
 	}
+	req.EPaySubmitHash, _ = ctx.Get(EPayRequestHashContextKey).(string)
 	if err = c.ValidateStruct(ctx, req); err != nil {
 		log.Sugar.Errorf("validate request error: %v", err)
 		return c.FailJson(ctx, err)

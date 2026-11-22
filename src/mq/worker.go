@@ -17,23 +17,6 @@ import (
 	"github.com/GMWalletApp/epusdt/util/sign"
 )
 
-// resolveOrderApiKey returns the api_keys row that signed the order.
-// Every order must carry an ApiKeyID (the default key is always seeded
-// at bootstrap, and the middleware/EPAY inline flow always stamps it).
-// If the row is missing or disabled, we return an error — using any
-// other secret would produce a signature the merchant can't verify.
-// The admin can resend the callback after fixing the key.
-func resolveOrderApiKey(order *mdb.Orders) (*mdb.ApiKey, error) {
-	row, err := service.ResolveOrderApiKey(order)
-	if err != nil || row == nil || row.ID == 0 {
-		if err != nil {
-			return nil, err
-		}
-		return nil, errors.New("api key unavailable")
-	}
-	return row, nil
-}
-
 const batchSize = 100
 
 const sqliteBusyRetryAttempts = 3
@@ -193,9 +176,9 @@ func processCallback(tradeID string, limiter <-chan struct{}) {
 }
 
 func sendOrderCallback(order *mdb.Orders) error {
-	apiKeyRow, err := resolveOrderApiKey(order)
-	if err != nil || apiKeyRow == nil || apiKeyRow.ID == 0 {
-		return errors.New("no api key row available for callback")
+	apiKeyRow, err := service.ResolveOrderApiKey(order)
+	if err != nil {
+		return err
 	}
 
 	switch {
@@ -207,9 +190,10 @@ func sendOrderCallback(order *mdb.Orders) error {
 
 		epayResp, err := http_client.GetHttpClient().R().SetQueryParams(formData).Get(order.NotifyUrl)
 		if err != nil {
-			return err
+			// HTTP errors can include the full signed callback URL.
+			return errors.New("EPay callback request failed")
 		}
-		log.Sugar.Infof("[mq] epay notify_url response status: %d, body: %s", epayResp.StatusCode(), string(epayResp.Body()))
+		log.Sugar.Infof("[mq] epay notify_url response status: %d", epayResp.StatusCode())
 		if epayResp.StatusCode() != http.StatusOK {
 			return errors.New(epayResp.Status())
 		}
@@ -219,17 +203,29 @@ func sendOrderCallback(order *mdb.Orders) error {
 
 	default:
 
+		settled := order
+		if order.PayBySubId != 0 {
+			var child mdb.Orders
+			if err := dao.Mdb.Where("id = ? AND parent_trade_id = ? AND status = ?", order.PayBySubId, order.TradeId, mdb.StatusPaySuccess).
+				Take(&child).Error; err != nil {
+				return err
+			}
+			settled = &child
+		}
 		client := http_client.GetHttpClient()
 		orderResp := response.OrderNotifyResponse{
 			Pid:                apiKeyRow.Pid,
 			TradeId:            order.TradeId,
 			OrderId:            order.OrderId,
 			Amount:             order.Amount,
-			ActualAmount:       order.ActualAmount,
-			ReceiveAddress:     order.ReceiveAddress,
-			Token:              order.Token,
-			BlockTransactionId: order.BlockTransactionId,
+			ActualAmount:       settled.ActualAmount,
+			ReceiveAddress:     settled.ReceiveAddress,
+			Token:              settled.Token,
+			BlockTransactionId: settled.BlockTransactionId,
 			Status:             mdb.StatusPaySuccess,
+		}
+		if order.CallbackVersion == 2 {
+			orderResp.Network = settled.Network
 		}
 		signature, err := sign.GetHMACSHA256(orderResp, apiKeyRow.SecretKey)
 		if err != nil {

@@ -163,6 +163,16 @@ func TestDiscoveryOwnershipChangedDuringProbe(t *testing.T) {
 }
 
 func TestEndpointIdentityBoundaries(t *testing.T) {
+	for _, pair := range [][2]NodeEndpoint{
+		{{"sui", "http", "https://node.example"}, {"sui", "grpc", "grpcs://node.example:443/"}},
+		{{"aptos", "rest", "https://node.example/v1/"}, {"aptos", "http", "https://node.example/v1"}},
+		{{"solana", "jsonrpc", "https://node.example"}, {"solana", "http", "https://node.example"}},
+		{{"tron", "rest", "https://node.example"}, {"tron", "http", "https://node.example"}},
+	} {
+		if pair[0].identity() != pair[1].identity() || pair[0].Identity() != pair[1].identity() {
+			t.Fatalf("protocol aliases differ: %v", pair)
+		}
+	}
 	base := NodeEndpoint{"base", "http", "https://Example.com:443/"}
 	if base.identity() != (NodeEndpoint{"base", "jsonrpc", "https://example.com"}).identity() {
 		t.Fatal("root alias was not collapsed")

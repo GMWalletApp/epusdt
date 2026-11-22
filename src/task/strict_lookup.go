@@ -37,6 +37,8 @@ func (c *strictClient) query(ctx context.Context, network, hash string, single b
 	target := strings.TrimRight(c.client.URL, "/") + "/v1/transactions/" + url.PathEscape(network) + "/" + url.PathEscape(hash) + "/strict"
 	if single {
 		target += "?rounds=1"
+	} else {
+		target += "?manual=true"
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {

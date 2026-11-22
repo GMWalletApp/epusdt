@@ -330,18 +330,63 @@ func ExpireSiblingSubOrdersWithTransaction(tx *gorm.DB, parentTradeId string, ex
 		Update("status", mdb.StatusExpired).Error
 }
 
-// MarkOrderSelected sets is_selected=true for the given trade_id.
-func MarkOrderSelected(tradeId string) error {
-	return dao.Mdb.Model(&mdb.Orders{}).
-		Where("trade_id = ?", tradeId).
-		Update("is_selected", true).Error
+// SelectCheckoutOrder selects one payable family member atomically. When refreshing
+// a reused on-chain child, both it and the parent must retain their reservations.
+// Hosted children's deadlines remain controlled by their external provider.
+func SelectCheckoutOrder(db *gorm.DB, rootID string, selected *mdb.Orders, renew bool) error {
+	var saved mdb.Orders
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if renew {
+			if err := RefreshOrderExpirationWithTransaction(tx, rootID); err != nil {
+				return err
+			}
+			if selected.TradeId != rootID && (selected.PayProvider == "" || selected.PayProvider == mdb.PaymentProviderOnChain) {
+				if err := RefreshOrderExpirationWithTransaction(tx, selected.TradeId); err != nil {
+					return err
+				}
+			}
+		}
+		result := tx.Model(&mdb.Orders{}).Where("trade_id = ? AND status = ?", selected.TradeId, mdb.StatusWaitPay).
+			Where("((trade_id = ? AND COALESCE(parent_trade_id, '') = '') OR parent_trade_id = ?)", rootID, rootID).
+			Update("is_selected", true)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return constant.OrderStatusConflict
+		}
+		if err := tx.Model(&mdb.Orders{}).Where("(trade_id = ? OR parent_trade_id = ?)", rootID, rootID).
+			Where("trade_id <> ? AND is_selected = ?", selected.TradeId, true).Update("is_selected", false).Error; err != nil {
+			return err
+		}
+		return tx.Where("trade_id = ?", selected.TradeId).Take(&saved).Error
+	})
+	if err == nil {
+		*selected = saved
+	}
+	return err
 }
 
-// CompleteWaitSelectOrder fills a placeholder order with concrete chain fields
+// SelectedCheckoutChild also handles older databases where both parent and child
+// could be flagged as selected. The next selection reconciles those flags.
+func SelectedCheckoutChild(rootID string) (*mdb.Orders, error) {
+	var child mdb.Orders
+	err := dao.Mdb.Where("parent_trade_id = ? AND is_selected = ?", rootID, true).
+		Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusConfirming, mdb.StatusManualReview}).
+		Order("id DESC").Limit(1).Find(&child).Error
+	return &child, err
+}
+
+// CompleteWaitSelectOrder turns a waiting placeholder into an on-chain order.
+func CompleteWaitSelectOrder(tradeID string, network string, token string, receiveAddress string, actualAmount float64) (bool, error) {
+	return CompleteWaitSelectOrderWithTransaction(dao.Mdb, tradeID, network, token, receiveAddress, actualAmount)
+}
+
+// CompleteWaitSelectOrderWithTransaction fills a placeholder order with concrete chain fields
 // and makes it payable. It only updates status=WaitSelect rows so concurrent
 // switch-network attempts cannot overwrite a payable order.
-func CompleteWaitSelectOrder(tradeID string, network string, token string, receiveAddress string, actualAmount float64) (bool, error) {
-	result := dao.Mdb.Model(&mdb.Orders{}).
+func CompleteWaitSelectOrderWithTransaction(tx *gorm.DB, tradeID string, network string, token string, receiveAddress string, actualAmount float64) (bool, error) {
+	result := tx.Model(&mdb.Orders{}).
 		Where("trade_id = ?", tradeID).
 		Where("status = ?", mdb.StatusWaitSelect).
 		Updates(map[string]interface{}{
@@ -396,16 +441,6 @@ func CompleteWaitSelectXLayerOrderWithTransaction(tx *gorm.DB, tradeID string, t
 			"created_at":      time.Now(),
 		})
 	return result.RowsAffected > 0, result.Error
-}
-
-// MarkProviderSwitchParentSelectedWithTransaction marks a switch-network parent
-// as selected for a hosted payment provider, preserving any existing on-chain
-// reservation while extending the parent's payment window.
-func MarkProviderSwitchParentSelectedWithTransaction(tx *gorm.DB, tradeID string) (bool, error) {
-	return refreshOrderExpirationWithTransaction(tx, tradeID, map[string]interface{}{
-		"status":      mdb.StatusWaitPay,
-		"is_selected": true,
-	})
 }
 
 // ExpireOrderByTradeID marks a waiting order as expired. Used to retire failed

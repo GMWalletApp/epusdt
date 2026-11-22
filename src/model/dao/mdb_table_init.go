@@ -2,6 +2,7 @@ package dao
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,12 +13,12 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var once sync.Once
+var initializeTables = sync.OnceValue(migrateTables)
 
 // ResetMdbTableInitForTest resets the install/startup migration guard so tests
 // can exercise fresh temporary databases in the same process.
 func ResetMdbTableInitForTest() {
-	once = sync.Once{}
+	initializeTables = sync.OnceValue(migrateTables)
 }
 
 // MdbTableInit performs AutoMigrate for all primary DB tables and seeds
@@ -27,39 +28,43 @@ func ResetMdbTableInitForTest() {
 // established.  The install wizard (see install/installer.go) writes the
 // .env file before bootstrap runs, so this function always finds the DB
 // available.
-func MdbTableInit() {
-	once.Do(func() {
-		migrations := []struct {
-			name  string
-			model interface{}
-		}{
-			{"Orders", &mdb.Orders{}},
-			{"PaymentConfirmation", &mdb.PaymentConfirmation{}},
-			{"WalletAddress", &mdb.WalletAddress{}},
-			{"AdminUser", &mdb.AdminUser{}},
-			{"ApiKey", &mdb.ApiKey{}},
-			{"Setting", &mdb.Setting{}},
-			{"RateCache", &mdb.RateCache{}},
-			{"NotificationChannel", &mdb.NotificationChannel{}},
-			{"Chain", &mdb.Chain{}},
-			{"ChainToken", &mdb.ChainToken{}},
-			{"RpcNode", &mdb.RpcNode{}},
-			{"ProviderOrder", &mdb.ProviderOrder{}},
-		}
-		for _, m := range migrations {
-			if err := Mdb.AutoMigrate(m.model); err != nil {
-				color.Red.Printf("[store_db] AutoMigrate DB(%s),err=%s\n", m.name, err)
-				return
-			}
-		}
+func MdbTableInit() error { return initializeTables() }
 
-		seedChains()
-		backfillRpcNodePurpose()
-		seedRpcNodes()
-		seedChainTokens()
-		seedDefaultSettings()
-		seedTelegramChannelFromSettings()
-	})
+func migrateTables() error {
+	migrations := []struct {
+		name  string
+		model interface{}
+	}{
+		{"Orders", &mdb.Orders{}},
+		{"PaymentConfirmation", &mdb.PaymentConfirmation{}},
+		{"WalletAddress", &mdb.WalletAddress{}},
+		{"AdminUser", &mdb.AdminUser{}},
+		{"ApiKey", &mdb.ApiKey{}},
+		{"CallbackSigningKey", &mdb.CallbackSigningKey{}},
+		{"Setting", &mdb.Setting{}},
+		{"RateCache", &mdb.RateCache{}},
+		{"NotificationChannel", &mdb.NotificationChannel{}},
+		{"Chain", &mdb.Chain{}},
+		{"ChainToken", &mdb.ChainToken{}},
+		{"RpcNode", &mdb.RpcNode{}},
+		{"ScannerNodeMigration", &mdb.ScannerNodeMigration{}},
+		{"ProviderOrder", &mdb.ProviderOrder{}},
+	}
+	for _, m := range migrations {
+		if err := Mdb.AutoMigrate(m.model); err != nil {
+			return fmt.Errorf("migrate %s: %w", m.name, err)
+		}
+	}
+
+	if err := backfillCallbackSigningKeys(Mdb); err != nil {
+		return fmt.Errorf("backfill callback signing keys: %w", err)
+	}
+	seedChains()
+	backfillRpcNodePurpose()
+	seedChainTokens()
+	seedDefaultSettings()
+	seedTelegramChannelFromSettings()
+	return nil
 }
 
 // seedChains inserts the built-in networks as enabled rows. Uses
@@ -152,59 +157,18 @@ func seedChainTokens() {
 	).Error; err != nil {
 		color.Red.Printf("[store_db] seed A7A5 chain_tokens err=%s\n", err)
 	}
-}
 
-// seedRpcNodes inserts default RPC endpoints for each chain. Checks per
-// (network, url) so re-runs are idempotent and admin edits persist.
-func seedRpcNodes() {
-	defaults := defaultRpcNodes()
-	for _, d := range defaults {
-		var count int64
-		if err := Mdb.Model(&mdb.RpcNode{}).
-			Where("network = ? AND url = ?", d.Network, d.Url).
-			Count(&count).Error; err != nil {
-			color.Red.Printf("[store_db] seed rpc_nodes check err=%s\n", err)
-			continue
-		}
-		if count > 0 {
-			continue
-		}
-		if err := Mdb.Create(&d).Error; err != nil {
-			color.Red.Printf("[store_db] seed rpc_nodes err=%s\n", err)
-		}
+	// Some merchants already configured Arbitrum USD₮0 using its on-chain
+	// symbol or another alias. Respect those rows, including soft deletions.
+	const arbitrumUSDT = "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
+	if err := Mdb.Exec(`INSERT INTO chain_tokens
+		(network, symbol, contract_address, decimals, enabled, created_at, updated_at)
+		SELECT ?, 'USDT', ?, 6, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+		WHERE NOT EXISTS (SELECT 1 FROM chain_tokens WHERE network = ?
+			AND (symbol = 'USDT' COLLATE NOCASE OR contract_address = ? COLLATE NOCASE))`,
+		mdb.NetworkArbitrum, arbitrumUSDT, mdb.NetworkArbitrum, arbitrumUSDT).Error; err != nil {
+		color.Red.Printf("[store_db] seed Arbitrum USDT err=%s\n", err)
 	}
-}
-
-func defaultRpcNodes() []mdb.RpcNode {
-	defaults := []mdb.RpcNode{
-		{Network: mdb.NetworkSui, Url: "https://fullnode.mainnet.sui.io:443", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkBase, Url: "wss://base-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkOptimism, Url: "wss://optimism-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkBase, Url: "https://mainnet.base.org", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkOptimism, Url: "https://mainnet.optimism.io", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkAvalanche, Url: "wss://avalanche-c-chain-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkAvalanche, Url: "https://api.avax.network/ext/bc/C/rpc", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkArc, Url: "wss://rpc.mainnet.arc.io", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkArc, Url: "https://rpc.mainnet.arc.io", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkMonad, Url: "wss://rpc.monad.xyz", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkMonad, Url: "https://rpc.monad.xyz", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkHyperEVM, Url: "https://rpc.hyperliquid.xyz/evm", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkArbitrum, Url: "wss://arbitrum-one-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkArbitrum, Url: "https://arb1.arbitrum.io/rpc", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkTron, Url: "https://api.trongrid.io", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkEthereum, Url: "wss://ethereum.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkSolana, Url: "https://api.mainnet-beta.solana.com", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkBsc, Url: "wss://bsc-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkBsc, Url: "https://bsc-rpc.publicnode.com", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkPolygon, Url: "wss://polygon-bor-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkPlasma, Url: "wss://rpc.plasma.to", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkTon, Url: "https://ton-blockchain.github.io/global.config.json", Type: mdb.RpcNodeTypeLite, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkAptos, Url: "https://aptos-rest.publicnode.com/", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkEthereum, Url: "https://rpc.epusdt.com/ethereum", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeManualVerify, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkBsc, Url: "https://rpc.epusdt.com/binance", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeManualVerify, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkPolygon, Url: "https://rpc.epusdt.com/polygon", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeManualVerify, Status: mdb.RpcNodeStatusUnknown},
-	}
-	return defaults
 }
 
 func backfillRpcNodePurpose() {
@@ -224,7 +188,7 @@ func seedDefaultSettings() {
 	}
 	defaultRateMode := defaultRateModeForSeed()
 	defaults := []mdb.Setting{
-		{Group: mdb.SettingGroupBrand, Key: mdb.SettingKeyBrandWithdrawalReminder, Value: "true", Type: mdb.SettingTypeBool},
+		{Group: mdb.SettingGroupBrand, Key: mdb.SettingKeyBrandWithdrawalReminder, Value: "false", Type: mdb.SettingTypeBool},
 		{Group: mdb.SettingGroupSystem, Key: mdb.SettingKeyAmountPrecision, Value: "2", Type: mdb.SettingTypeInt},
 		{Group: mdb.SettingGroupSystem, Key: mdb.SettingKeyStrictPayment, Value: "true", Type: mdb.SettingTypeBool},
 		{Group: mdb.SettingGroupSystem, Key: mdb.SettingKeySystemLogLevel, Value: mdb.SettingDefaultSystemLogLevel, Type: mdb.SettingTypeString},

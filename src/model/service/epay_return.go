@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/GMWalletApp/epusdt/config"
-	"github.com/GMWalletApp/epusdt/model/data"
+	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/model/response"
 	"github.com/GMWalletApp/epusdt/util/constant"
@@ -46,6 +46,18 @@ func buildEPayReturnPath(tradeID string) string {
 	return "/pay/return/" + tradeID
 }
 
+// epayMerchantHome gives an unpaid buyer a destination outside the signed success flow.
+func epayMerchantHome(order *mdb.Orders) string {
+	if !isEPayOrder(order) {
+		return ""
+	}
+	target, err := url.Parse(strings.TrimSpace(order.RedirectUrl))
+	if err != nil || target.Hostname() == "" || target.User != nil || (target.Scheme != "https" && target.Scheme != "http") {
+		return ""
+	}
+	return (&url.URL{Scheme: target.Scheme, Host: target.Host, Path: "/"}).String()
+}
+
 func buildPublicRedirectURL(order *mdb.Orders) string {
 	if order == nil {
 		return ""
@@ -58,17 +70,17 @@ func buildPublicRedirectURL(order *mdb.Orders) string {
 }
 
 func ResolveOrderApiKey(order *mdb.Orders) (*mdb.ApiKey, error) {
-	if order == nil || order.ApiKeyID == 0 {
+	if order == nil || order.ApiKeyID == 0 || order.CallbackSigningKeyID == 0 {
 		return nil, constant.OrderApiKeyUnavailableErr
 	}
-	row, err := data.GetApiKeyByID(order.ApiKeyID)
-	if err != nil {
+	var row mdb.CallbackSigningKey
+	if err := dao.Mdb.Where("id = ? AND api_key_id = ?", order.CallbackSigningKeyID, order.ApiKeyID).Limit(1).Find(&row).Error; err != nil {
 		return nil, err
 	}
-	if row == nil || row.ID == 0 || row.Status != mdb.ApiKeyStatusEnable {
+	if row.ID == 0 {
 		return nil, constant.OrderApiKeyUnavailableErr
 	}
-	return row, nil
+	return &mdb.ApiKey{BaseModel: mdb.BaseModel{ID: row.ApiKeyID}, Pid: row.Pid, SecretKey: row.SecretKey}, nil
 }
 
 func epayResultType(order *mdb.Orders) string {
@@ -82,7 +94,7 @@ func epayResultType(order *mdb.Orders) string {
 }
 
 func BuildEPayResultParams(order *mdb.Orders, apiKeyRow *mdb.ApiKey) (map[string]string, error) {
-	if order == nil || apiKeyRow == nil {
+	if !isEPayOrder(order) || order.Status != mdb.StatusPaySuccess || apiKeyRow == nil || strings.TrimSpace(apiKeyRow.SecretKey) == "" {
 		return nil, constant.EPayReturnSignatureErr
 	}
 

@@ -127,6 +127,26 @@ func TestFallbackRepairsFailedBlocksAndResumesAfterRestart(t *testing.T) {
 		}
 		return w.Body.Bytes()
 	}
+	assertProgress := func(success, failure uint64) {
+		t.Helper()
+		api, err := registry.Handler(map[string]string{"merchant": user}, admin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest("GET", "/v1/admin/progress", nil)
+		req.Header.Set("Authorization", "Bearer "+admin)
+		w := httptest.NewRecorder()
+		api.ServeHTTP(w, req)
+		var rows []struct {
+			Network string  `json:"network"`
+			Success *uint64 `json:"scan_success_count"`
+			Failure *uint64 `json:"scan_failure_count"`
+		}
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &rows) != nil || len(rows) != 1 || rows[0].Network != "base" || rows[0].Success == nil || rows[0].Failure == nil || *rows[0].Success != success || *rows[0].Failure != failure {
+			t.Fatalf("want %d successes, %d failures; got HTTP %d %s", success, failure, w.Code, w.Body)
+		}
+	}
+	assertProgress(0, 0)
 	const route = "/v1/admin/nodes/fallback"
 	body := fmt.Sprintf(`{"network":"base","protocol":"http","url":%q,"api_key":"paid-token"}`, paid.URL)
 	add(route, user, body, 401)
@@ -168,6 +188,7 @@ func TestFallbackRepairsFailedBlocksAndResumesAfterRestart(t *testing.T) {
 	}
 	head.Store(43)
 	pumpTo(43)
+	assertProgress(3, 0)
 	mu.Lock()
 	first := slices.Clone(paidBlocks)
 	mu.Unlock()
@@ -194,6 +215,7 @@ func TestFallbackRepairsFailedBlocksAndResumesAfterRestart(t *testing.T) {
 	if h, err := store.Height(ctx, "base"); err != nil || h != 43 {
 		t.Fatal("skipped failed block", h, err)
 	}
+	assertProgress(3, 1)
 	pool.Close()
 	if err = store.Close(); err != nil {
 		t.Fatal(err)
@@ -202,7 +224,9 @@ func TestFallbackRepairsFailedBlocksAndResumesAfterRestart(t *testing.T) {
 	paidDown.Store(false)
 	head.Store(500)
 	open()
+	assertProgress(0, 0)
 	pumpTo(44)
+	assertProgress(1, 0)
 	mu.Lock()
 	all := slices.Clone(paidBlocks)
 	mu.Unlock()

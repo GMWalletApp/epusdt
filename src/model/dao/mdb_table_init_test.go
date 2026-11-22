@@ -12,101 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestDefaultRpcNodesIncludesManualVerifyEpusdtEvmNodes(t *testing.T) {
-	want := map[string]string{
-		mdb.NetworkEthereum: "https://rpc.epusdt.com/ethereum",
-		mdb.NetworkBsc:      "https://rpc.epusdt.com/binance",
-		mdb.NetworkPolygon:  "https://rpc.epusdt.com/polygon",
-	}
-	got := make(map[string]mdb.RpcNode)
-	for _, node := range defaultRpcNodes() {
-		if node.Purpose != mdb.RpcNodePurposeManualVerify {
-			continue
-		}
-		if _, ok := want[node.Network]; ok {
-			got[node.Network] = node
-		}
-	}
-
-	for network, url := range want {
-		node, ok := got[network]
-		if !ok {
-			t.Fatalf("missing manual_verify seed rpc node for %s", network)
-		}
-		if node.Url != url {
-			t.Fatalf("%s manual_verify seed url = %q, want %q", network, node.Url, url)
-		}
-		if node.Type != mdb.RpcNodeTypeHttp {
-			t.Fatalf("%s manual_verify seed type = %q, want %q", network, node.Type, mdb.RpcNodeTypeHttp)
-		}
-		if !node.Enabled {
-			t.Fatalf("%s manual_verify seed enabled = false, want true", network)
-		}
-		if node.Status != mdb.RpcNodeStatusUnknown {
-			t.Fatalf("%s manual_verify seed status = %q, want %q", network, node.Status, mdb.RpcNodeStatusUnknown)
-		}
-	}
-}
-
-func TestDefaultRpcNodesIncludesTonLiteGeneralNode(t *testing.T) {
-	var got *mdb.RpcNode
-	nodes := defaultRpcNodes()
-	for i := range nodes {
-		node := nodes[i]
-		if node.Network == mdb.NetworkTon && node.Type == mdb.RpcNodeTypeLite {
-			got = &node
-			break
-		}
-	}
-
-	if got == nil {
-		t.Fatal("missing TON lite seed rpc node")
-	}
-	if got.Url != "https://ton-blockchain.github.io/global.config.json" {
-		t.Fatalf("TON lite seed url = %q", got.Url)
-	}
-	if got.Purpose != mdb.RpcNodePurposeGeneral {
-		t.Fatalf("TON lite seed purpose = %q, want %q", got.Purpose, mdb.RpcNodePurposeGeneral)
-	}
-	if !got.Enabled {
-		t.Fatal("TON lite seed enabled = false, want true")
-	}
-	if got.Status != mdb.RpcNodeStatusUnknown {
-		t.Fatalf("TON lite seed status = %q, want %q", got.Status, mdb.RpcNodeStatusUnknown)
-	}
-}
-
-func TestDefaultRpcNodesIncludesAptosPublicNode(t *testing.T) {
-	var got *mdb.RpcNode
-	nodes := defaultRpcNodes()
-	for i := range nodes {
-		node := nodes[i]
-		if node.Network == mdb.NetworkAptos {
-			got = &node
-			break
-		}
-	}
-
-	if got == nil {
-		t.Fatal("missing Aptos seed rpc node")
-	}
-	if got.Url != "https://aptos-rest.publicnode.com/" {
-		t.Fatalf("Aptos seed url = %q", got.Url)
-	}
-	if got.Type != mdb.RpcNodeTypeHttp {
-		t.Fatalf("Aptos seed type = %q, want %q", got.Type, mdb.RpcNodeTypeHttp)
-	}
-	if got.Purpose != mdb.RpcNodePurposeGeneral {
-		t.Fatalf("Aptos seed purpose = %q, want %q", got.Purpose, mdb.RpcNodePurposeGeneral)
-	}
-	if !got.Enabled {
-		t.Fatal("Aptos seed enabled = false, want true")
-	}
-	if got.Status != mdb.RpcNodeStatusUnknown {
-		t.Fatalf("Aptos seed status = %q, want %q", got.Status, mdb.RpcNodeStatusUnknown)
-	}
-}
-
 func TestSeedChainsIncludesAptos(t *testing.T) {
 	db := setupSeedTableTestDB(t, &mdb.Chain{})
 	Mdb = db
@@ -164,6 +69,55 @@ func TestSeedChainTokensIncludesAptosAssets(t *testing.T) {
 		if want, ok := wantContract[key]; ok && row.ContractAddress != want {
 			t.Fatalf("%s contract_address = %q, want %q", key, row.ContractAddress, want)
 		}
+	}
+}
+
+func TestSeedArbitrumUSDTRespectsExistingAssets(t *testing.T) {
+	const contract = "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
+	for _, tc := range []struct {
+		name, symbol, address string
+		deleted               bool
+	}{
+		{name: "fresh"},
+		{name: "custom contract", symbol: "USDT", address: "0x1111111111111111111111111111111111111111"},
+		{name: "disabled alias", symbol: "USDT0", address: strings.ToLower(contract)},
+		{name: "removed alias", symbol: "USD₮0", address: contract, deleted: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			Mdb = setupSeedTableTestDB(t, &mdb.ChainToken{})
+			var existing mdb.ChainToken
+			if tc.symbol != "" {
+				existing = mdb.ChainToken{Network: mdb.NetworkArbitrum, Symbol: tc.symbol, ContractAddress: tc.address, Decimals: 8, MinAmount: 10}
+				if err := Mdb.Create(&existing).Error; err != nil {
+					t.Fatal(err)
+				}
+				if err := Mdb.Model(&existing).Update("enabled", false).Error; err != nil {
+					t.Fatal(err)
+				}
+				if tc.deleted {
+					if err := Mdb.Delete(&existing).Error; err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			seedChainTokens()
+			seedChainTokens()
+			var rows []mdb.ChainToken
+			if err := Mdb.Unscoped().Where("network = ? AND (symbol = ? OR contract_address = ? COLLATE NOCASE)", mdb.NetworkArbitrum, "USDT", contract).Find(&rows).Error; err != nil {
+				t.Fatal(err)
+			}
+			if len(rows) != 1 {
+				t.Fatalf("expected one Arbitrum USDT configuration, found %d", len(rows))
+			}
+			row := rows[0]
+			if tc.symbol == "" {
+				if row.Symbol != "USDT" || row.ContractAddress != contract || row.Decimals != 6 || !row.Enabled || row.DeletedAt.Valid {
+					t.Fatalf("unexpected seeded asset: %+v", row)
+				}
+			} else if row.ID != existing.ID || row.Symbol != tc.symbol || row.ContractAddress != tc.address || row.Decimals != 8 || row.MinAmount != 10 || row.Enabled || row.DeletedAt.Valid != tc.deleted {
+				t.Fatalf("changed existing asset: %+v", row)
+			}
+		})
 	}
 }
 
@@ -436,4 +390,47 @@ func setupSeedTableTestDB(t *testing.T, models ...interface{}) *gorm.DB {
 		t.Fatalf("migrate seed table: %v", err)
 	}
 	return db
+}
+
+func TestBackfillCallbackSigningKeysFreezesLegacyCredentials(t *testing.T) {
+	db := setupSeedTableTestDB(t, &mdb.Orders{}, &mdb.ApiKey{}, &mdb.CallbackSigningKey{})
+	merchant := &mdb.ApiKey{Pid: "1007", SecretKey: "test-before-upgrade"}
+	if err := db.Create(merchant).Error; err != nil {
+		t.Fatal(err)
+	}
+	order := &mdb.Orders{TradeId: "legacy", OrderId: "legacy", ApiKeyID: merchant.ID}
+	if err := db.Create(order).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Delete(merchant).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := backfillCallbackSigningKeys(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(order, order.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if order.CallbackSigningKeyID == 0 {
+		t.Fatal("upgrade lost the soft-deleted merchant")
+	}
+	original := order.CallbackSigningKeyID
+	if err := db.Unscoped().Model(merchant).Update("secret_key", "test-after-upgrade").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := backfillCallbackSigningKeys(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(order, order.ID).Error; err != nil || order.CallbackSigningKeyID != original {
+		t.Fatal("upgrade repinned a previous order", err)
+	}
+	merchant.SecretKey = "test-after-upgrade"
+	rotated, err := PinCallbackSigningKey(db, merchant)
+	if err != nil || rotated == original {
+		t.Fatal("rotation reused a stale credential", err)
+	}
+	var version mdb.CallbackSigningKey
+	if err := db.First(&version, original).Error; err != nil || version.SecretKey != "test-before-upgrade" {
+		t.Fatal("original signing credential lost", err)
+	}
 }

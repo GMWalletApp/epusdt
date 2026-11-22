@@ -16,6 +16,5 @@ func DBInit() error {
 		return err
 	}
 
-	MdbTableInit()
-	return nil
+	return MdbTableInit()
 }

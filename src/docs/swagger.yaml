@@ -2,7 +2,7 @@ definitions:
   admin.AdminAddWalletRequest:
     properties:
       address:
-        example: TTestTronAddress001
+        example: TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm
         type: string
       network:
         example: tron
@@ -21,9 +21,8 @@ definitions:
           Addresses listed as observation-only wallets. Private-key import
           and API-managed modes are out of scope for v1.
         example:
-        - TAddr001
-        - TAddr002
-        - TAddr003
+        - TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm
+        - TA9pkx4DFxrEw8JZzUtyDrh2uAat1LDuJL
         items:
           type: string
         type: array
@@ -184,51 +183,6 @@ definitions:
         type: string
     required:
     - config
-    type: object
-  admin.CreateRpcNodeRequest:
-    properties:
-      api_key:
-        example: ""
-        type: string
-      enabled:
-        example: true
-        type: boolean
-      network:
-        example: tron
-        type: string
-      purpose:
-        description: 用途 general=通用 manual_verify=补单专用 both=通用+补单
-        enum:
-        - general
-        - manual_verify
-        - both
-        example: general
-        type: string
-      type:
-        description: 连接类型 http=HTTP请求 ws=WebSocket长连接 lite=TON liteserver配置
-        enum:
-        - http
-        - ws
-        - lite
-        - grpc
-        - jsonrpc
-        - rest
-        - graphql
-        - ipc
-        - sse
-        - solidity-grpc
-        - solidity-http
-        example: http
-        type: string
-      url:
-        example: https://api.trongrid.io
-        type: string
-      weight:
-        example: 1
-        type: integer
-    required:
-    - network
-    - url
     type: object
   admin.LoginRequest:
     properties:
@@ -485,20 +439,6 @@ definitions:
         example: newSecret123abc456
         type: string
     type: object
-  admin.RpcHealthCheckResponse:
-    properties:
-      last_latency_ms:
-        example: 120
-        type: integer
-      status:
-        description: 健康状态 unknown=未知 ok=正常 down=异常
-        enum:
-        - unknown
-        - ok
-        - down
-        example: ok
-        type: string
-    type: object
   admin.RpcStatsChainResponse:
     properties:
       display_name:
@@ -693,32 +633,10 @@ definitions:
         example: 更新后的名称
         type: string
     type: object
-  admin.UpdateRpcNodeRequest:
-    properties:
-      api_key:
-        example: your-api-key
-        type: string
-      enabled:
-        example: true
-        type: boolean
-      purpose:
-        enum:
-        - general
-        - manual_verify
-        - both
-        example: manual_verify
-        type: string
-      url:
-        example: https://api.trongrid.io
-        type: string
-      weight:
-        example: 1
-        type: integer
-    type: object
   admin.WalletListItem:
     properties:
       address:
-        example: TTestTronAddress001
+        example: TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm
         type: string
       created_at:
         example: "2026-04-16 12:00:00"
@@ -856,6 +774,62 @@ definitions:
       password_hash:
         example: 3f79bb7b435b05321651daefd374cdc9f5f72c467ea3f9f3c5f6e6d7e8f9a0b1
         type: string
+    type: object
+  data.MigrationIssue:
+    properties:
+      host:
+        type: string
+      id:
+        type: integer
+      network:
+        type: string
+      reason:
+        type: string
+    type: object
+  data.MigrationTarget:
+    properties:
+      store_id:
+        type: string
+      target:
+        type: string
+    type: object
+  data.NodeMigration:
+    properties:
+      completed:
+        type: integer
+      conflicts:
+        items:
+          $ref: '#/definitions/data.MigrationIssue'
+        type: array
+      external:
+        type: boolean
+      pending:
+        type: integer
+      store_id:
+        type: string
+      target:
+        type: string
+    type: object
+  engine.ScanProgress:
+    properties:
+      cursor_height:
+        type: integer
+      lag_ms:
+        type: integer
+      network:
+        type: string
+      scan_failure_count:
+        description: ScanFailureCount counts terminal range failures after provider
+          failover.
+        type: integer
+      scan_success_count:
+        description: ScanSuccessCount counts committed scan ranges in the current
+          watch period.
+        type: integer
+      status:
+        type: string
+      target_height:
+        type: integer
     type: object
   gorm.DeletedAt:
     properties:
@@ -1155,73 +1129,6 @@ definitions:
         example: "2026-04-16 12:00:00"
         type: string
     type: object
-  mdb.RpcNode:
-    properties:
-      api_key:
-        example: your-api-key
-        type: string
-      created_at:
-        example: "2026-04-16 12:00:00"
-        type: string
-      deleted_at:
-        $ref: '#/definitions/gorm.DeletedAt'
-      enabled:
-        example: true
-        type: boolean
-      id:
-        example: 1
-        type: integer
-      last_checked_at:
-        example: "2026-04-16 12:00:00"
-        type: string
-      last_latency_ms:
-        example: 120
-        type: integer
-      network:
-        example: tron
-        type: string
-      purpose:
-        description: 用途 general=通用 manual_verify=补单专用 both=通用+补单
-        enum:
-        - general
-        - manual_verify
-        - both
-        example: general
-        type: string
-      status:
-        description: 健康状态 unknown=未知 ok=正常 down=异常
-        enum:
-        - unknown
-        - ok
-        - down
-        example: ok
-        type: string
-      type:
-        description: 连接类型 http=HTTP请求 ws=WebSocket长连接 lite=TON liteserver配置
-        enum:
-        - http
-        - ws
-        - lite
-        - grpc
-        - jsonrpc
-        - rest
-        - graphql
-        - ipc
-        - sse
-        - solidity-grpc
-        - solidity-http
-        example: http
-        type: string
-      updated_at:
-        example: "2026-04-16 12:00:00"
-        type: string
-      url:
-        example: https://api.trongrid.io
-        type: string
-      weight:
-        example: 1
-        type: integer
-    type: object
   mdb.Setting:
     properties:
       created_at:
@@ -1266,7 +1173,7 @@ definitions:
   mdb.WalletAddress:
     properties:
       address:
-        example: TTestTronAddress001
+        example: TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm
         type: string
       created_at:
         example: "2026-04-16 12:00:00"
@@ -1299,11 +1206,95 @@ definitions:
         example: "2026-04-16 12:00:00"
         type: string
     type: object
+  nodes.Node:
+    properties:
+      checked_at_ms:
+        type: integer
+      enabled:
+        type: boolean
+      height:
+        type: integer
+      height_unit:
+        type: string
+      id:
+        type: integer
+      latency_ms:
+        type: integer
+      network:
+        type: string
+      origin:
+        type: string
+      protocol:
+        type: string
+      purpose:
+        type: string
+      read_failure:
+        type: string
+      read_retry_at_ms:
+        type: integer
+      role:
+        type: string
+      scannable:
+        type: boolean
+      status:
+        type: string
+      url:
+        type: string
+      weight:
+        type: integer
+    type: object
+  nodes.NodeOptions:
+    properties:
+      api_key:
+        type: string
+      enabled:
+        type: boolean
+      history_api_key:
+        type: string
+      history_url:
+        type: string
+      network:
+        type: string
+      protocol:
+        type: string
+      purpose:
+        type: string
+      url:
+        type: string
+      weight:
+        type: integer
+    type: object
+  nodes.NodePatch:
+    properties:
+      api_key:
+        type: string
+      enabled:
+        type: boolean
+      history_api_key:
+        type: string
+      history_url:
+        type: string
+      purpose:
+        type: string
+      role:
+        type: string
+      url:
+        type: string
+      weight:
+        type: integer
+    type: object
   request.CreateTransactionRequest:
     properties:
       amount:
         example: 100
         type: number
+      callback_version:
+        description: CallbackVersion 2 opts a GMPay merchant into the signed network
+          field.
+        enum:
+        - 1
+        - 2
+        type: integer
       currency:
         description: 法币 如：cny
         example: cny
@@ -1341,7 +1332,6 @@ definitions:
         type: string
     required:
     - currency
-    - notify_url
     - signature
     type: object
   request.ManualPaymentRequest:
@@ -1388,6 +1378,11 @@ definitions:
     type: object
   response.CheckStatusResponse:
     properties:
+      redirect_url:
+        description: Populated when an expired attempt resolves to a paid parent with
+          a return URL.
+        example: https://example.com/return
+        type: string
       status:
         description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
         enum:
@@ -1430,6 +1425,10 @@ definitions:
         description: 是否已选择当前支付方式；status=4 占位订单和刚补全的占位父单为 false
         example: false
         type: boolean
+      merchant_home_url:
+        description: EPay merchant homepage for leaving checkout before payment succeeds
+        example: https://merchant.example/
+        type: string
       network:
         description: 网络 TRON ETH；status=4 占位订单为空
         example: tron
@@ -1647,8 +1646,24 @@ definitions:
       cashier_name:
         example: Acme Cashier
         type: string
+      cashier_script:
+        description: Public support widget installation snippet. Empty disables the
+          widget.
+        type: string
+      cashier_script_origin:
+        description: Deployment-authorized HTTPS origin for native widgets. Other
+          origins isolate the snippet.
+        type: string
       logo_url:
         example: https://cdn.example.com/logo.png
+        type: string
+      payment_reminder_body:
+        description: Optional plain text. {amount} inserts the formatted payment amount
+          and token.
+        type: string
+      payment_reminder_title:
+        description: Optional on-chain payment reminder title. Empty uses the checkout
+          language.
         type: string
       support_link:
         example: https://example.com/support
@@ -1657,7 +1672,7 @@ definitions:
         example: Acme Payments
         type: string
       withdrawal_reminder_enabled:
-        example: true
+        example: false
         type: boolean
     type: object
   response.TokenDetails:
@@ -1697,6 +1712,23 @@ definitions:
         type: integer
       to_address:
         example: "0x0000000000000000000000000000000000000000"
+        type: string
+    type: object
+  scanneradmin.ConnectionInfo:
+    properties:
+      embedded:
+        type: boolean
+      migration:
+        type: boolean
+      node_settings:
+        type: boolean
+      protocols:
+        additionalProperties:
+          items:
+            type: string
+          type: array
+        type: object
+      target:
         type: string
     type: object
 info:
@@ -2277,11 +2309,411 @@ paths:
       summary: Update chain
       tags:
       - Admin Chains
+  /admin/api/v1/chainscanner/admin/blacklist:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              properties:
+                host:
+                  type: string
+                source:
+                  type: string
+              type: object
+            type: array
+      security:
+      - AdminJWT: []
+      summary: List blocked node hosts
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/blacklist/{host}:
+    delete:
+      parameters:
+      - description: Hostname
+        in: path
+        name: host
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      security:
+      - AdminJWT: []
+      summary: Remove an administrator host block
+      tags:
+      - ChainScanner
+    put:
+      parameters:
+      - description: Hostname
+        in: path
+        name: host
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      security:
+      - AdminJWT: []
+      summary: Block a node host
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/connection:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/scanneradmin.ConnectionInfo'
+      security:
+      - AdminJWT: []
+      summary: Get scanner connection and supported operations
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/migration:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/data.NodeMigration'
+      security:
+      - AdminJWT: []
+      summary: Preview legacy node migration
+      tags:
+      - ChainScanner
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Target returned by the preview
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/data.MigrationTarget'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/data.NodeMigration'
+      security:
+      - AdminJWT: []
+      summary: Apply migration to the confirmed scanner
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/nodes:
+    get:
+      parameters:
+      - description: Limit to one network
+        in: query
+        name: network
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/nodes.Node'
+            type: array
+      security:
+      - AdminJWT: []
+      summary: List scanner nodes
+      tags:
+      - ChainScanner
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Node configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/nodes.NodeOptions'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/nodes.Node'
+      security:
+      - AdminJWT: []
+      summary: Add a regular node
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/nodes/{id}:
+    delete:
+      parameters:
+      - description: Node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+      security:
+      - AdminJWT: []
+      summary: Remove a node
+      tags:
+      - ChainScanner
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Changed fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/nodes.NodePatch'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/nodes.Node'
+      security:
+      - AdminJWT: []
+      summary: Update node settings or activation
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/nodes/{id}/test:
+    post:
+      parameters:
+      - description: Node ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/nodes.Node'
+      security:
+      - AdminJWT: []
+      summary: Check one enabled node
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/nodes/fallback:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Fallback node configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/nodes.NodeOptions'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/nodes.Node'
+      security:
+      - AdminJWT: []
+      summary: Add a fallback node
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/nodes/test:
+    post:
+      parameters:
+      - description: Limit to one network
+        in: query
+        name: network
+        type: string
+      - description: Also check manual verification nodes
+        in: query
+        name: include_manual
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/nodes.Node'
+            type: array
+      security:
+      - AdminJWT: []
+      summary: Check enabled nodes
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/progress:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/engine.ScanProgress'
+            type: array
+      security:
+      - AdminJWT: []
+      summary: Get scanner progress by network
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/admin/progress/stream:
+    get:
+      description: The progress event contains the same JSON array as GET /admin/progress.
+        EPUSDT reads the configured scanner on connection and every five seconds.
+        A scanner_error event indicates a temporarily unavailable snapshot. The stream
+        stays open for recovery.
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: Server-sent events with progress snapshots or scanner errors
+          schema:
+            type: string
+      security:
+      - AdminJWT: []
+      summary: Stream scanner progress by network
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/heights/{network}:
+    get:
+      parameters:
+      - description: Network
+        in: path
+        name: network
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: integer
+      security:
+      - AdminJWT: []
+      summary: Get the scanner height
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/transactions/{network}/{hash}:
+    get:
+      parameters:
+      - description: Network
+        in: path
+        name: network
+        required: true
+        type: string
+      - description: Transaction hash
+        in: path
+        name: hash
+        required: true
+        type: string
+      - description: Allow manual verification nodes
+        in: query
+        name: manual
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              hash:
+                type: string
+              network:
+                type: string
+              result:
+                type: object
+            type: object
+      security:
+      - AdminJWT: []
+      summary: Look up a transaction
+      tags:
+      - ChainScanner
+  /admin/api/v1/chainscanner/transactions/{network}/{hash}/strict:
+    get:
+      parameters:
+      - description: Network
+        in: path
+        name: network
+        required: true
+        type: string
+      - description: Transaction hash
+        in: path
+        name: hash
+        required: true
+        type: string
+      - description: Allow manual verification nodes
+        in: query
+        name: manual
+        type: boolean
+      - description: Restrict lookup to fallback nodes
+        in: query
+        name: fallback_only
+        type: boolean
+      - description: Use 1 for a single round
+        in: query
+        name: rounds
+        type: integer
+      - description: Previous voter hashes for a single round
+        in: header
+        name: X-ChainScanner-Exclude
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              hash:
+                type: string
+              network:
+                type: string
+              result:
+                type: object
+            type: object
+      security:
+      - AdminJWT: []
+      summary: Verify a transaction with independent nodes
+      tags:
+      - ChainScanner
   /admin/api/v1/config:
     get:
       description: |-
         Returns supported_assets for on-chain payments, site and epay defaults, and separate okpay and xlayer hosted payment settings. The xlayer allow_tokens list controls the tokens shown for OKX OnchainOS.
         The authenticated admin variant (/admin/api/v1/config) also includes provider credentials, internal callback settings and the merchant X Layer receiving address.
+      parameters:
+      - description: Public cashier only. Filter on-chain options using the stored
+          order currency and amount.
+        in: query
+        name: trade_id
+        type: string
       produces:
       - application/json
       responses:
@@ -2678,12 +3110,15 @@ paths:
       - Admin Notifications
   /admin/api/v1/orders:
     get:
-      description: Returns paginated orders with optional filters
+      description: Returns one row per merchant order with the actual settlement details
       parameters:
-      - description: Network filter
+      - collectionFormat: multi
+        description: Settlement network filter
         in: query
+        items:
+          type: string
         name: network
-        type: string
+        type: array
       - description: Token filter
         in: query
         name: token
@@ -2696,10 +3131,13 @@ paths:
         in: query
         name: keyword
         type: string
-      - description: Order status filter
+      - collectionFormat: multi
+        description: Order status filter
         in: query
+        items:
+          type: integer
         name: status
-        type: integer
+        type: array
       - description: Start time (Unix seconds)
         in: query
         name: start_at
@@ -2741,7 +3179,8 @@ paths:
       - Admin Orders
   /admin/api/v1/orders/{trade_id}:
     get:
-      description: Returns full order detail by trade_id
+      description: Returns settlement details for a merchant order or the individual
+        payment attempt for a child trade ID
       parameters:
       - description: Trade ID
         in: path
@@ -2890,10 +3329,13 @@ paths:
     get:
       description: Stream matching orders as a CSV file (max 10k rows)
       parameters:
-      - description: Network filter
+      - collectionFormat: multi
+        description: Settlement network filter
         in: query
+        items:
+          type: string
         name: network
-        type: string
+        type: array
       - description: Token filter
         in: query
         name: token
@@ -2906,10 +3348,13 @@ paths:
         in: query
         name: keyword
         type: string
-      - description: Order status filter
+      - collectionFormat: multi
+        description: Order status filter
         in: query
+        items:
+          type: integer
         name: status
-        type: integer
+        type: array
       - description: Start time (Unix seconds)
         in: query
         name: start_at
@@ -2936,13 +3381,16 @@ paths:
       - Admin Orders
   /admin/api/v1/orders/list-with-sub:
     get:
-      description: Returns paginated orders; each item embeds its child orders in
-        sub_orders
+      description: Returns one row per merchant order with settlement details and
+        all payment attempts in sub_orders
       parameters:
-      - description: Network filter
+      - collectionFormat: multi
+        description: Settlement network filter
         in: query
+        items:
+          type: string
         name: network
-        type: string
+        type: array
       - description: Token filter
         in: query
         name: token
@@ -2955,10 +3403,13 @@ paths:
         in: query
         name: keyword
         type: string
-      - description: Order status filter
+      - collectionFormat: multi
+        description: Order status filter
         in: query
+        items:
+          type: integer
         name: status
-        type: integer
+        type: array
       - description: Start time (Unix seconds)
         in: query
         name: start_at
@@ -2998,156 +3449,6 @@ paths:
       summary: List orders with sub-orders
       tags:
       - Admin Orders
-  /admin/api/v1/rpc-nodes:
-    get:
-      description: Returns RPC nodes, optionally filtered by network
-      parameters:
-      - description: Network filter
-        in: query
-        name: network
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.ApiResponse'
-            - properties:
-                data:
-                  items:
-                    $ref: '#/definitions/mdb.RpcNode'
-                  type: array
-              type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.ApiResponse'
-      security:
-      - AdminJWT: []
-      summary: List RPC nodes
-      tags:
-      - Admin RPC Nodes
-    post:
-      consumes:
-      - application/json
-      description: Create a new RPC node
-      parameters:
-      - description: RPC node payload
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/admin.CreateRpcNodeRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.ApiResponse'
-            - properties:
-                data:
-                  $ref: '#/definitions/mdb.RpcNode'
-              type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.ApiResponse'
-      security:
-      - AdminJWT: []
-      summary: Create RPC node
-      tags:
-      - Admin RPC Nodes
-  /admin/api/v1/rpc-nodes/{id}:
-    delete:
-      description: Soft-delete an RPC node
-      parameters:
-      - description: RPC node ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/response.ApiResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.ApiResponse'
-      security:
-      - AdminJWT: []
-      summary: Delete RPC node
-      tags:
-      - Admin RPC Nodes
-    patch:
-      consumes:
-      - application/json
-      description: Patch RPC node fields
-      parameters:
-      - description: RPC node ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Fields to update
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/admin.UpdateRpcNodeRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/response.ApiResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.ApiResponse'
-      security:
-      - AdminJWT: []
-      summary: Update RPC node
-      tags:
-      - Admin RPC Nodes
-  /admin/api/v1/rpc-nodes/{id}/health-check:
-    post:
-      description: Perform an on-demand health probe on an RPC node
-      parameters:
-      - description: RPC node ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.ApiResponse'
-            - properties:
-                data:
-                  $ref: '#/definitions/admin.RpcHealthCheckResponse'
-              type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.ApiResponse'
-      security:
-      - AdminJWT: []
-      summary: Health check RPC node
-      tags:
-      - Admin RPC Nodes
   /admin/api/v1/settings:
     get:
       description: |-
@@ -3192,7 +3493,7 @@ paths:
         okpay group keys: okpay.enabled, okpay.shop_id, okpay.shop_token, okpay.api_url, okpay.callback_url, okpay.return_url, okpay.timeout_seconds, okpay.allow_tokens.
         xlayer group keys: xlayer.enabled, xlayer.api_key, xlayer.api_secret, xlayer.passphrase, xlayer.to_address, xlayer.return_url, xlayer.timeout_seconds, xlayer.allow_tokens. The Onchain OS Payment base URL is fixed to https://web3.okx.com in code; any leftover xlayer.api_url row is ignored.
         rate group keys: rate.mode (fixed|auto, default fixed), rate.cache_ttl_seconds (10-86400, default 300), rate.forced_rate_list (JSON map, e.g. {"cny":{"usdt":0.14635,"ton":0.5}}; base/coin keys are normalized to lowercase; empty is restored to the built-in CNY USDT/USDC default), rate.api_url (optional; non-empty value must be a public http/https URL), rate.adjust_percent, rate.okx_c2c_enabled.
-        brand group keys: brand.checkout_name, brand.logo_url, brand.site_title, brand.success_copy, brand.support_url, brand.background_color, brand.background_image_url, brand.withdrawal_reminder_enabled. Legacy aliases brand.site_name, brand.page_title and brand.pay_success_text are also supported.
+        brand group keys: brand.checkout_name, brand.logo_url, brand.site_title, brand.success_copy, brand.support_url, brand.cashier_script, brand.background_color, brand.background_image_url, brand.withdrawal_reminder_enabled, brand.payment_reminder_title, brand.payment_reminder_body. Legacy aliases brand.site_name, brand.page_title and brand.pay_success_text are also supported.
         system group keys: system.order_expiration_time, system.amount_precision (int, 2-6, default 2), system.log_level (debug|info|warn|error, default error).
       parameters:
       - description: Settings payload
@@ -3600,6 +3901,12 @@ paths:
         name: trade_id
         required: true
         type: string
+      - description: When true, an expired child of a paid parent returns the parent
+          trade_id, paid status and optional redirect_url. Otherwise the requested
+          order status is returned.
+        in: query
+        name: checkout
+        type: boolean
       produces:
       - application/json
       responses:
@@ -3623,6 +3930,7 @@ paths:
     get:
       description: |-
         Return checkout initialization data when the order exists. This endpoint only confirms order existence and returns base order data; call /pay/check-status/{trade_id} for the current order status (1=waiting payment, 2=paid, 3=expired, 4=waiting token/network selection, 5=confirming on-chain payment, 6=manual review required).
+        A pending parent resumes its selected attempt. An expired child of a paid parent returns the paid parent checkout details and return URL.
         When status=4, actual_amount is 0 and token/network/receive_address are empty; this state is produced by GMPay placeholders or EPay submit.php when no token/network request values or defaults resolve to a concrete payment asset. The cashier should guide the payer to choose an on-chain token/network or OkPay and then call /pay/switch-network.
         For EPay orders with a merchant return_url, the response redirect_url is rewritten to the internal /pay/return/{trade_id} hop; the database still stores the merchant's raw return_url.
       parameters:
@@ -3778,7 +4086,7 @@ paths:
         in: query
         name: out_trade_no
         type: string
-      - description: Callback URL (GET query)
+      - description: Callback URL (defaults to the merchant API key setting)
         in: query
         name: notify_url
         type: string
@@ -3818,10 +4126,9 @@ paths:
         name: out_trade_no
         required: true
         type: string
-      - description: Callback URL
+      - description: Callback URL (defaults to the merchant API key setting)
         in: formData
         name: notify_url
-        required: true
         type: string
       - description: Redirect URL after payment
         in: formData
@@ -3850,9 +4157,10 @@ paths:
         "302":
           description: Redirect to checkout counter
         "400":
-          description: 'Stable errno in status_code: 10009 invalid params, 10041 invalid
-            notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported
-            asset, 10003 no wallet, 10005 no amount channel'
+          description: 'Stable errno in status_code: 10002 order ID conflict, 10009
+            invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014
+            chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount
+            channel'
           schema:
             $ref: '#/definitions/response.ApiResponse'
         "401":
@@ -3883,7 +4191,7 @@ paths:
         in: query
         name: out_trade_no
         type: string
-      - description: Callback URL (GET query)
+      - description: Callback URL (defaults to the merchant API key setting)
         in: query
         name: notify_url
         type: string
@@ -3923,10 +4231,9 @@ paths:
         name: out_trade_no
         required: true
         type: string
-      - description: Callback URL
+      - description: Callback URL (defaults to the merchant API key setting)
         in: formData
         name: notify_url
-        required: true
         type: string
       - description: Redirect URL after payment
         in: formData
@@ -3955,9 +4262,10 @@ paths:
         "302":
           description: Redirect to checkout counter
         "400":
-          description: 'Stable errno in status_code: 10009 invalid params, 10041 invalid
-            notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported
-            asset, 10003 no wallet, 10005 no amount channel'
+          description: 'Stable errno in status_code: 10002 order ID conflict, 10009
+            invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014
+            chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount
+            channel'
           schema:
             $ref: '#/definitions/response.ApiResponse'
         "401":
@@ -3972,6 +4280,12 @@ paths:
       description: |-
         Returns supported_assets for on-chain payments, site and epay defaults, and separate okpay and xlayer hosted payment settings. The xlayer allow_tokens list controls the tokens shown for OKX OnchainOS.
         The authenticated admin variant (/admin/api/v1/config) also includes provider credentials, internal callback settings and the merchant X Layer receiving address.
+      parameters:
+      - description: Public cashier only. Filter on-chain options using the stored
+          order currency and amount.
+        in: query
+        name: trade_id
+        type: string
       produces:
       - application/json
       responses:
@@ -3999,6 +4313,7 @@ paths:
       description: |-
         Create a payment transaction order. Accepts JSON body (application/json) or form-encoded body (application/x-www-form-urlencoded).
         GMPay may omit both token and network to create a status=4 placeholder order; EPay submit.php can also create one when neither request parameters nor database defaults provide token/network. Supplying only one of token/network is invalid.
+        Authenticated GMPay retries with the same order_id and original normalized inputs return the same trade_id, current order state and original creation deadline. A changed request, a different merchant, an EPay-format order, or an order created before replay support returns status_code 10002.
         payment_type is optional for GMPay. If it is sent, it is a normal signed parameter and must be included when calculating signature.
         GMPay signature uses lowercase hexadecimal HMAC-SHA256 with secret_key as the HMAC key. Legacy MD5 signatures are not accepted.
       parameters:
@@ -4029,7 +4344,7 @@ paths:
         in: formData
         name: amount
         type: number
-      - description: Callback URL
+      - description: Callback URL (defaults to the merchant API key setting)
         in: formData
         name: notify_url
         type: string
@@ -4050,6 +4365,14 @@ paths:
         in: formData
         name: payment_type
         type: string
+      - description: Signed GMPay JSON callback version. Version 2 includes the payment
+          network.
+        enum:
+        - 1
+        - 2
+        in: formData
+        name: callback_version
+        type: integer
       produces:
       - application/json
       responses:
@@ -4063,9 +4386,10 @@ paths:
                   $ref: '#/definitions/response.CreateTransactionResponse'
               type: object
         "400":
-          description: 'Stable errno in status_code: 10009 invalid params, 10041 invalid
-            notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported
-            asset, 10003 no wallet, 10005 no amount channel'
+          description: 'Stable errno in status_code: 10002 order ID conflict, 10009
+            invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014
+            chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount
+            channel'
           schema:
             $ref: '#/definitions/response.ApiResponse'
         "401":

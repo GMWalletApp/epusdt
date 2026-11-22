@@ -396,6 +396,8 @@ admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protoco
 
 Devuelve una fila por red configurada sin consultar los nodos. `target_height` incluye las confirmaciones y `cursor_height` indica hasta dónde se ha escaneado sin huecos. `lag_ms` mide el tiempo mínimo observado que lleva pendiente una altura elegible. El historial en memoria se reinicia al arrancar o al iniciar otra suscripción tras quedar la red inactiva. El estado es `warning` por encima de 300 000 ms y `ok` en otro caso. Para `idle`, `warming` y `stale` el retraso es null.
 
+`scan_success_count` y `scan_failure_count` cuentan los rangos escaneados con éxito y los fallidos durante el período de seguimiento actual. Los reintentos con otros nodos producen un solo resultado por rango. Un intento de recuperación posterior produce otro resultado. Las consultas de altura, las pruebas de nodos, la inactividad y las cancelaciones no añaden muestras. Ambos contadores se reinician a cero al finalizar la última suscripción o al reiniciar el servicio. Las versiones anteriores omiten estos campos.
+
 <a id="test-one"></a>
 
 ### `POST /v1/admin/nodes/{id}/test`

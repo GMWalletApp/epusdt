@@ -13,8 +13,8 @@ import (
 // list page. Zero values are ignored so callers can pass only what the
 // user actually filtered on.
 type OrderListFilter struct {
-	Status   int
-	Network  string
+	Statuses []int
+	Networks []string
 	Token    string
 	Address  string
 	Keyword  string // matches trade_id / order_id / block_transaction_id
@@ -22,9 +22,6 @@ type OrderListFilter struct {
 	EndAt    *time.Time
 	Page     int
 	PageSize int
-	// ParentOnly restricts the result to top-level orders only
-	// (parent_trade_id = ''). Sub-orders are excluded from the listing.
-	ParentOnly bool
 }
 
 // ListOrders returns a paginated order slice plus the total count under
@@ -54,15 +51,12 @@ func ListOrders(f OrderListFilter) ([]mdb.Orders, int64, error) {
 }
 
 func buildOrderListQuery(f OrderListFilter) *gorm.DB {
-	tx := dao.Mdb.Model(&mdb.Orders{})
-	if f.ParentOnly {
-		tx = tx.Where("parent_trade_id = ?", "")
+	tx := merchantOrders()
+	if len(f.Statuses) > 0 {
+		tx = tx.Where("status IN ?", f.Statuses)
 	}
-	if f.Status > 0 {
-		tx = tx.Where("status = ?", f.Status)
-	}
-	if f.Network != "" {
-		tx = tx.Where("network = ?", strings.ToLower(f.Network))
+	if len(f.Networks) > 0 {
+		tx = tx.Where("network IN ?", f.Networks)
 	}
 	if f.Token != "" {
 		tx = tx.Where("token = ?", strings.ToUpper(f.Token))
@@ -72,7 +66,11 @@ func buildOrderListQuery(f OrderListFilter) *gorm.DB {
 	}
 	if f.Keyword != "" {
 		kw := "%" + strings.TrimSpace(f.Keyword) + "%"
-		tx = tx.Where("trade_id LIKE ? OR order_id LIKE ? OR block_transaction_id LIKE ?", kw, kw, kw)
+		tx = tx.Where(`CAST(id AS TEXT) LIKE ? OR trade_id LIKE ? OR order_id LIKE ? OR block_transaction_id LIKE ?
+			OR EXISTS (SELECT 1 FROM orders AS attempt
+				WHERE attempt.parent_trade_id = orders.trade_id AND attempt.deleted_at IS NULL
+				  AND (attempt.trade_id LIKE ? OR attempt.order_id LIKE ? OR attempt.block_transaction_id LIKE ? OR attempt.review_transaction_hash LIKE ?))`,
+			kw, kw, kw, kw, kw, kw, kw, kw)
 	}
 	if f.StartAt != nil {
 		tx = tx.Where("created_at >= ?", *f.StartAt)
@@ -83,6 +81,13 @@ func buildOrderListQuery(f OrderListFilter) *gorm.DB {
 	return tx
 }
 
+// OrdersForExport returns the same merchant orders as the paginated list.
+func OrdersForExport(f OrderListFilter) ([]mdb.Orders, error) {
+	var rows []mdb.Orders
+	err := buildOrderListQuery(f).Order("id DESC").Limit(10000).Find(&rows).Error
+	return rows, err
+}
+
 // CountOrdersByStatus returns how many orders exist in each status.
 // Used by the dashboard overview card.
 func CountOrdersByStatus() (map[int]int64, error) {
@@ -91,7 +96,7 @@ func CountOrdersByStatus() (map[int]int64, error) {
 		Total  int64
 	}
 	var rows []row
-	err := dao.Mdb.Model(&mdb.Orders{}).
+	err := merchantOrders().
 		Select("status, COUNT(*) AS total").
 		Group("status").
 		Scan(&rows).Error

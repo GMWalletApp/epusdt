@@ -3,6 +3,7 @@ package route
 import (
 	"bufio"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -240,7 +241,7 @@ func TestAdminProtectedRoute_NoToken(t *testing.T) {
 		"/admin/api/v1/dashboard/rpc-stats",
 		"/admin/api/v1/settings",
 		"/admin/api/v1/settings/rate/status",
-		"/admin/api/v1/rpc-nodes",
+		"/admin/api/v1/chainscanner/admin/nodes",
 		"/admin/api/v1/notification-channels",
 	}
 	for _, path := range protectedRoutes {
@@ -398,7 +399,7 @@ func TestAdminApiKeys_CRUD(t *testing.T) {
 
 	// Create a new key.
 	rec = doPostAdmin(e, "/admin/api/v1/api-keys", map[string]interface{}{
-		"name": "test-created-key",
+		"name": "test-created-key", "notify_url": "https://93.184.216.34/default",
 	}, token)
 	t.Logf("CreateApiKey: %s", rec.Body.String())
 	resp := assertOK(t, rec)
@@ -415,6 +416,20 @@ func TestAdminApiKeys_CRUD(t *testing.T) {
 	}, token)
 	t.Logf("UpdateApiKey: %s", rec.Body.String())
 	assertOK(t, rec)
+
+	for _, want := range []string{"https://93.184.216.34/default", "https://93.184.216.34/edited", ""} {
+		if want != "https://93.184.216.34/default" {
+			assertOK(t, doPatchAdmin(e, "/admin/api/v1/api-keys/"+keyIDStr, map[string]interface{}{"notify_url": want}, token))
+		}
+		key, err := data.GetApiKeyByID(uint64(keyID.(float64)))
+		if err != nil || key.NotifyUrl != want {
+			t.Fatal("default callback address was not saved", err)
+		}
+	}
+	rec = doPatchAdmin(e, "/admin/api/v1/api-keys/"+keyIDStr, map[string]interface{}{"notify_url": "invalid"}, token)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"status_code":10041`) {
+		t.Fatal("invalid default callback address accepted")
+	}
 
 	// Get secret.
 	rec = doGetAdmin(e, "/admin/api/v1/api-keys/"+keyIDStr+"/secret", token)
@@ -512,123 +527,10 @@ func TestAdminChainTokens_CRUD(t *testing.T) {
 
 // ─── RPC Nodes ────────────────────────────────────────────────────────────────
 
-// TestAdminRpcNodes_CRUD verifies CRUD operations for RPC nodes.
-func TestAdminRpcNodes_CRUD(t *testing.T) {
+func TestRetiredNodeRoutes(t *testing.T) {
 	e, token := setupAdminTestEnv(t)
-
-	// List — empty initially.
-	rec := doGetAdmin(e, "/admin/api/v1/rpc-nodes", token)
-	t.Logf("ListRpcNodes: %s", rec.Body.String())
-	assertOK(t, rec)
-
-	// Create.
-	rec = doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]interface{}{
-		"network": "ethereum",
-		"url":     "https://eth-mainnet.example.com",
-		"type":    "http",
-	}, token)
-	t.Logf("CreateRpcNode: %s", rec.Body.String())
-	resp := assertOK(t, rec)
-	dataObj, _ := resp["data"].(map[string]interface{})
-	nodeID := dataObj["id"]
-	if nodeID == nil {
-		t.Fatal("CreateRpcNode missing id")
-	}
-	if got, _ := dataObj["purpose"].(string); got != mdb.RpcNodePurposeGeneral {
-		t.Fatalf("created purpose = %q, want %q", got, mdb.RpcNodePurposeGeneral)
-	}
-	nodeIDStr := fmt.Sprintf("%.0f", nodeID.(float64))
-
-	// Update.
-	rec = doPatchAdmin(e, "/admin/api/v1/rpc-nodes/"+nodeIDStr, map[string]interface{}{
-		"url":     "https://eth-mainnet2.example.com",
-		"purpose": mdb.RpcNodePurposeManualVerify,
-	}, token)
-	t.Logf("UpdateRpcNode: %s", rec.Body.String())
-	assertOK(t, rec)
-	updatedNode, err := data.GetRpcNodeByID(uint64(nodeID.(float64)))
-	if err != nil {
-		t.Fatalf("reload rpc node: %v", err)
-	}
-	if updatedNode.Purpose != mdb.RpcNodePurposeManualVerify {
-		t.Fatalf("updated purpose = %q, want %q", updatedNode.Purpose, mdb.RpcNodePurposeManualVerify)
-	}
-
-	// Health check — network likely unreachable in test, but route must not 404/500.
-	rec = doPostAdmin(e, "/admin/api/v1/rpc-nodes/"+nodeIDStr+"/health-check", nil, token)
-	t.Logf("HealthCheckRpcNode: status=%d body=%s", rec.Code, rec.Body.String())
-	if rec.Code == http.StatusNotFound {
-		t.Fatalf("health-check route returned 404")
-	}
-
-	// Delete.
-	rec = doDeleteAdmin(e, "/admin/api/v1/rpc-nodes/"+nodeIDStr, token)
-	t.Logf("DeleteRpcNode: %s", rec.Body.String())
-	assertOK(t, rec)
-}
-
-func TestAdminRpcNodes_RejectsURLTypeMismatch(t *testing.T) {
-	e, token := setupAdminTestEnv(t)
-
-	rec := doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]interface{}{
-		"network": "ethereum",
-		"url":     "wss://eth-mainnet.example.com",
-		"type":    mdb.RpcNodeTypeHttp,
-	}, token)
-	t.Logf("CreateRpcNode(http with wss): status=%d body=%s", rec.Code, rec.Body.String())
-	if rec.Code == http.StatusOK {
-		t.Fatalf("expected create mismatch to fail, got 200: %s", rec.Body.String())
-	}
-	assertErrorCode(t, rec, 10022)
-
-	rec = doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]interface{}{
-		"network": "ethereum",
-		"url":     "https://eth-mainnet.example.com",
-		"type":    mdb.RpcNodeTypeWs,
-	}, token)
-	t.Logf("CreateRpcNode(ws with https): status=%d body=%s", rec.Code, rec.Body.String())
-	if rec.Code == http.StatusOK {
-		t.Fatalf("expected create mismatch to fail, got 200: %s", rec.Body.String())
-	}
-	assertErrorCode(t, rec, 10023)
-
-	rec = doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]interface{}{
-		"network": "ethereum",
-		"url":     "https://eth-mainnet.example.com",
-		"type":    mdb.RpcNodeTypeHttp,
-		"purpose": "invalid-purpose",
-	}, token)
-	t.Logf("CreateRpcNode(invalid purpose): status=%d body=%s", rec.Code, rec.Body.String())
-	if rec.Code == http.StatusOK {
-		t.Fatalf("expected invalid purpose to fail, got 200: %s", rec.Body.String())
-	}
-	assertErrorCode(t, rec, 10020)
-
-	rec = doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]interface{}{
-		"network": "ethereum",
-		"url":     "https://eth-mainnet.example.com",
-		"type":    mdb.RpcNodeTypeHttp,
-	}, token)
-	resp := assertOK(t, rec)
-	dataObj, _ := resp["data"].(map[string]interface{})
-	nodeID := uint64(dataObj["id"].(float64))
-	nodeIDStr := fmt.Sprintf("%d", nodeID)
-
-	rec = doPatchAdmin(e, "/admin/api/v1/rpc-nodes/"+nodeIDStr, map[string]interface{}{
-		"url": "wss://eth-mainnet.example.com",
-	}, token)
-	t.Logf("UpdateRpcNode(http with wss): status=%d body=%s", rec.Code, rec.Body.String())
-	if rec.Code == http.StatusOK {
-		t.Fatalf("expected update mismatch to fail, got 200: %s", rec.Body.String())
-	}
-	assertErrorCode(t, rec, 10022)
-
-	node, err := data.GetRpcNodeByID(nodeID)
-	if err != nil {
-		t.Fatalf("reload rpc node: %v", err)
-	}
-	if node.Url != "https://eth-mainnet.example.com" {
-		t.Fatalf("node url changed after rejected update: %q", node.Url)
+	if r := doGetAdmin(e, "/admin/api/v1/rpc-nodes", token); r.Code == 200 {
+		t.Fatal("legacy node API is still registered")
 	}
 }
 
@@ -671,7 +573,7 @@ func TestAdminWallets_CRUD(t *testing.T) {
 	// Add a new wallet.
 	rec = doPostAdmin(e, "/admin/api/v1/wallets", map[string]interface{}{
 		"network": "ethereum",
-		"address": "0xTestEthAddress001",
+		"address": "0x1111111111111111111111111111111111111111",
 	}, token)
 	t.Logf("AddWallet: %s", rec.Body.String())
 	resp2 := assertOK(t, rec)
@@ -712,10 +614,14 @@ func TestAdminWallets_BatchImport(t *testing.T) {
 	e, token := setupAdminTestEnv(t)
 	rec := doPostAdmin(e, "/admin/api/v1/wallets/batch-import", map[string]interface{}{
 		"network":   "ethereum",
-		"addresses": []string{"0xBatchAddr001", "0xBatchAddr002"},
+		"addresses": []string{"0x1111111111111111111111111111111111111111", "0xInvalid"},
 	}, token)
-	t.Logf("BatchImportWallets: %s", rec.Body.String())
-	assertOK(t, rec)
+	resp := assertOK(t, rec)
+	rows := resp["data"].([]interface{})
+	if len(rows) != 2 || rows[0].(map[string]interface{})["ok"] != true ||
+		rows[1].(map[string]interface{})["error_code"] != float64(10049) {
+		t.Fatalf("unexpected wallet import result: %v", rows)
+	}
 }
 
 // ─── Orders ──────────────────────────────────────────────────────────────────
@@ -2289,7 +2195,7 @@ func TestAdminSettings_WithdrawalReminder(t *testing.T) {
 		}
 	}
 
-	checkConfig(true)
+	checkConfig(false)
 	save("brand", false, true)
 	if err := data.ReloadSettings(); err != nil {
 		t.Fatal(err)
@@ -2301,7 +2207,39 @@ func TestAdminSettings_WithdrawalReminder(t *testing.T) {
 	save("brand", true, true)
 	checkConfig(true)
 	assertOK(t, doDeleteAdmin(e, "/admin/api/v1/settings/"+key, token))
-	checkConfig(true)
+	checkConfig(false)
+}
+
+func TestAdminSettings_PaymentReminderCopy(t *testing.T) {
+	e, token := setupAdminTestEnv(t)
+	for _, field := range []string{"payment_reminder_title", "payment_reminder_body"} {
+		for _, tc := range []struct {
+			group string
+			input interface{}
+			ok    bool
+			want  string
+		}{
+			{"brand", "  转账说明\n请核对 {amount}  ", true, "转账说明\n请核对 {amount}"},
+			{"system", "wrong group", false, "转账说明\n请核对 {amount}"},
+			{"brand", false, false, "转账说明\n请核对 {amount}"},
+			{"brand", "  ", true, ""},
+		} {
+			item := map[string]interface{}{"group": tc.group, "key": "brand." + field, "type": "string", "value": tc.input}
+			rec := doPutAdmin(e, "/admin/api/v1/settings", map[string]interface{}{"items": []interface{}{item}}, token)
+			row := assertOK(t, rec)["data"].([]interface{})[0].(map[string]interface{})
+			if row["ok"] != tc.ok {
+				t.Fatalf("%s save %v: %v", field, tc.input, row)
+			}
+			if err := data.ReloadSettings(); err != nil {
+				t.Fatal(err)
+			}
+			pub := assertOK(t, doGet(e, "/payments/gmpay/v1/config"))
+			site := pub["data"].(map[string]interface{})["site"].(map[string]interface{})
+			if site[field] != tc.want {
+				t.Fatalf("%s = %v, want %q", field, site[field], tc.want)
+			}
+		}
+	}
 }
 
 func TestAdminSettings_UpsertBrandReflectsInConfig(t *testing.T) {
@@ -2544,31 +2482,61 @@ func TestAdminOrders_ListWithSubExcludesSubOrdersFromTopLevel(t *testing.T) {
 	}
 }
 
-func TestAdminRpcNodeProtocolSelection(t *testing.T) {
+func TestAdminOrders_SettledFamily(t *testing.T) {
 	e, token := setupAdminTestEnv(t)
-	for _, node := range []map[string]any{
-		{"network": "tron", "type": "solidity-grpc", "url": "grpcs://node.example:443"},
-		{"network": "base", "type": "graphql", "url": "https://node.example/graphql"},
-		{"network": "aptos", "type": "grpc", "url": "grpcs://node.example:443"},
-		{"network": "ethereum", "type": "sse", "url": "https://node.example/eth/v1/events"},
-	} {
-		assertOK(t, doPostAdmin(e, "/admin/api/v1/rpc-nodes", node, token))
-	}
-	invalid := map[string]any{"network": "sui", "type": "jsonrpc", "url": "https://node.example/"}
-	if r := doPostAdmin(e, "/admin/api/v1/rpc-nodes", invalid, token); r.Code == http.StatusOK {
-		t.Fatal("accepted retired Sui JSON-RPC")
-	}
-}
-
-func TestRpcNodeMustNameConcreteNetwork(t *testing.T) {
-	e, token := setupAdminTestEnv(t)
-	for _, name := range []string{"", "evm", "unsupported"} {
-		r := doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]any{"network": name, "type": "http", "url": "https://node.example"}, token)
-		if r.Code == http.StatusOK {
-			t.Fatalf("accepted network %q", name)
+	const base = "/admin/api/v1/orders"
+	parent := mdb.Orders{TradeId: "root", OrderId: "merchant", Network: "tron", Status: mdb.StatusPaySuccess, NotifyUrl: "https://merchant.example/callback", CallBackConfirm: mdb.CallBackConfirmOk}
+	child := mdb.Orders{TradeId: "attempt", OrderId: "merchant-sub", ParentTradeId: parent.TradeId, Network: "bsc", Token: "USDC", ActualAmount: 12.5, Status: mdb.StatusPaySuccess, BlockTransactionId: "tx-bsc", NotifyUrl: parent.NotifyUrl, CallBackConfirm: mdb.CallBackConfirmOk}
+	for _, o := range []*mdb.Orders{&parent, &child} {
+		if err := dao.Mdb.Create(o).Error; err != nil {
+			t.Fatal(err)
 		}
 	}
-	for _, name := range []string{"base", "ethereum", "binance"} {
-		assertOK(t, doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]any{"network": name, "type": "http", "url": "https://" + name + ".example"}, token))
+	if err := dao.Mdb.Model(&parent).UpdateColumn("pay_by_sub_id", child.ID).Error; err != nil {
+		t.Fatal(err)
 	}
+
+	for _, path := range []string{base, base + "/list-with-sub"} {
+		rec := doGetAdmin(e, path+"?network=base&network=bsc&status=1&status=2&keyword=tx-bsc&page_size=1", token)
+		var response struct {
+			Data struct {
+				Total int
+				List  []mdb.Orders
+			}
+		}
+		assertOK(t, rec)
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		if response.Data.Total != 1 || len(response.Data.List) != 1 || response.Data.List[0].TradeId != parent.TradeId || response.Data.List[0].Network != "bsc" {
+			t.Errorf("filtered %s: %s", path, rec.Body)
+		}
+	}
+	for _, id := range []string{parent.TradeId, child.TradeId} {
+		rec := doGetAdmin(e, base+"/"+id+"/with-sub", token)
+		var response struct {
+			Data struct {
+				mdb.Orders
+				Attempts []mdb.Orders `json:"sub_orders"`
+			}
+		}
+		assertOK(t, rec)
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		d := response.Data
+		if d.TradeId != parent.TradeId || d.BlockTransactionId != child.BlockTransactionId || d.PayBySubId != child.ID || len(d.Attempts) != 1 || d.Attempts[0].TradeId != child.TradeId {
+			t.Errorf("detail for %s: %s", id, rec.Body)
+		}
+	}
+	rec := doGetAdmin(e, base+"/export?network=bsc", token)
+	records, err := csv.NewReader(rec.Body).ReadAll()
+	if err != nil || rec.Code != http.StatusOK || len(records) != 2 || records[1][0] != parent.TradeId || records[1][6] != "bsc" || records[1][9] != "tx-bsc" {
+		t.Errorf("CSV %v: %v", records, err)
+	}
+	rec = doPostAdmin(e, base+"/"+child.TradeId+"/resend-callback", nil, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("resend on child: %d %s", rec.Code, rec.Body)
+	}
+	assertOK(t, doPostAdmin(e, base+"/"+parent.TradeId+"/resend-callback", nil, token))
 }

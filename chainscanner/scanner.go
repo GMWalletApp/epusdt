@@ -10,6 +10,7 @@ import (
 	"github.com/GMWalletApp/ChainScanner/internal/feed"
 	"github.com/GMWalletApp/ChainScanner/internal/nodes"
 	"github.com/xssnick/tonutils-go/address"
+	"github.com/xssnick/tonutils-go/liteclient"
 	"github.com/xssnick/tonutils-go/ton"
 	"github.com/xssnick/tonutils-go/tvm/cell"
 )
@@ -30,11 +31,15 @@ type (
 	Feed                = feed.Feed
 	Client              = feed.Client
 
-	SourcePool   = nodes.SourcePool
-	NodeRegistry = nodes.NodeRegistry
-	Node         = nodes.Node
-	NodeOptions  = nodes.NodeOptions
-	NodeEndpoint = nodes.NodeEndpoint
+	SourcePool             = nodes.SourcePool
+	MigrationManifest      = nodes.MigrationManifest
+	ManagementCapabilities = nodes.ManagementCapabilities
+	RouteInventory         = nodes.RouteInventory
+	NodeRoute              = nodes.Route
+	NodeRegistry           = nodes.NodeRegistry
+	Node                   = nodes.Node
+	NodeOptions            = nodes.NodeOptions
+	NodeEndpoint           = nodes.NodeEndpoint
 )
 
 var (
@@ -112,4 +117,12 @@ func TONReadSlice(ctx context.Context, n Network, master *ton.BlockIDExt, contra
 // Call before serving requests. The standalone node registry configures this automatically.
 func ConfigureNetworks(store *Store, networks map[string]Network, head func(context.Context, string) (int64, error)) {
 	engine.ConfigureNetworks(store, networks, head)
+}
+
+// ManagementProtocols lists admin-selectable transports, including height and strict lookup endpoints.
+func ManagementProtocols() map[string][]string { return nodes.ManagementProtocols() }
+
+// ConnectTONPeer opens a mainnet-verified ADNL connection for a selected registry endpoint.
+func ConnectTONPeer(ctx context.Context, pool *liteclient.ConnectionPool, raw string) error {
+	return chains.ConnectTONPeer(ctx, pool, raw)
 }

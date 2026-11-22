@@ -31,7 +31,8 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 	if err := dao.Mdb.Model(&mdb.Chain{}).Where("network = ?", net).Update("min_confirmations", 2).Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, row := range []any{&mdb.WalletAddress{Network: net, Address: wallet}, &mdb.ChainToken{Network: net, Symbol: "FOO", ContractAddress: contract, Decimals: 6, Enabled: true}} {
+	receiving := &mdb.WalletAddress{Network: net, Address: wallet}
+	for _, row := range []any{receiving, &mdb.ChainToken{Network: net, Symbol: "FOO", ContractAddress: contract, Decimals: 6, Enabled: true}} {
 		if err := dao.Mdb.Create(row).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -60,6 +61,21 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 	sub := paymentSubscriptions{feed: client}
 	if err = sub.ensure(net, wallet); err != nil {
 		t.Fatal(err)
+	}
+	// An outstanding invoice must still settle after both admin operations
+	// and after the gateway rebuilds its subscription from an empty cache.
+	if err := data.ChangeWalletAddressStatus(receiving.ID, mdb.TokenStatusDisable); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.refresh(ctx); err != nil || !sub.registered[scanner.Watch{Network: net, Address: wallet}] {
+		t.Fatalf("disabled wallet lost its pending payment watch: %v", err)
+	}
+	if err := data.DeleteWalletAddressById(receiving.ID); err != nil {
+		t.Fatal(err)
+	}
+	sub = paymentSubscriptions{feed: client}
+	if err := sub.refresh(ctx); err != nil || !sub.registered[scanner.Watch{Network: net, Address: wallet}] {
+		t.Fatalf("removed wallet lost its pending payment watch after restart: %v", err)
 	}
 	// Two transactions touch this wallet. Only the second contains an incoming transfer.
 	amounts := []string{strings.Repeat("0", 63) + "1", fmt.Sprintf("%064x", 1_000_000)}
@@ -248,7 +264,9 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 	if err := service.ConfirmPayment(ctx, client, remote.full, job); err == nil {
 		t.Fatal("settled twice")
 	}
-
+	if err := sub.refresh(ctx); err != nil || len(sub.registered) != 0 {
+		t.Fatalf("wallet subscription after final settlement: %v, %v", sub.registered, err)
+	}
 }
 
 func TestManualNodeProtocolPairingAndProbe(t *testing.T) {
@@ -379,4 +397,73 @@ func TestStreamLeavesFailedDeliveryUnacknowledged(t *testing.T) {
 	if err == nil || acked {
 		t.Fatalf("err=%v ack=%v", err, acked)
 	}
+}
+
+func TestPaymentWatchesRetainOutstandingOnChainOrders(t *testing.T) {
+	defer testutil.SetupTestDatabases(t)()
+	ctx := context.Background()
+	net := mdb.NetworkEthereum
+	primary := "0x" + strings.Repeat("ab", 20)
+	child := "0x" + strings.Repeat("cd", 20)
+	other := "0x" + strings.Repeat("ef", 20)
+	if _, err := data.AddWalletAddressWithNetwork(net, primary); err != nil {
+		t.Fatal(err)
+	}
+	// Use orders without a current wallet row to cover previously deleted
+	// wallets, including legacy rows with NULL pay_provider.
+	for _, invoice := range []struct {
+		id, parent, addr, provider string
+		status                     int
+	}{
+		{"parent", "", strings.ToUpper(primary[2:]), "", mdb.StatusWaitPay},
+		{"child", "parent", child, "", mdb.StatusConfirming},
+		{"second", "", child, "", mdb.StatusWaitPay},
+		{"paid", "", other, "", mdb.StatusPaySuccess},
+		{"expired", "", other, "", mdb.StatusExpired},
+		{"review", "", other, "", mdb.StatusManualReview},
+		{"placeholder", "", other, "", mdb.StatusWaitSelect},
+		{"hosted", "", other, mdb.PaymentProviderOkPay, mdb.StatusWaitPay},
+	} {
+		row := mdb.Orders{TradeId: invoice.id, OrderId: invoice.id, ParentTradeId: invoice.parent,
+			Status: invoice.status, PayProvider: invoice.provider, ReceiveAddress: invoice.addr, Network: net, Token: "FOO", ActualAmount: 1}
+		if err := dao.Mdb.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := dao.Mdb.Model(&mdb.Orders{}).Where("trade_id IN ?", []string{"second", "child"}).Update("pay_provider", nil).Error; err != nil {
+		t.Fatal(err)
+	}
+	store, err := scanner.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	scanner.ConfigureNetworks(store, map[string]scanner.Network{net: {Name: net}}, func(context.Context, string) (int64, error) { return 10, nil })
+	if err := store.SeedCursor(ctx, net, 10); err != nil {
+		t.Fatal(err)
+	}
+	sub := paymentSubscriptions{feed: store}
+	check := func(want ...string) {
+		t.Helper()
+		if err := sub.refresh(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if len(sub.registered) != len(want) {
+			t.Fatalf("registered %v, want %v", sub.registered, want)
+		}
+		for _, addr := range want {
+			if !sub.registered[scanner.Watch{Network: net, Address: addr}] {
+				t.Fatalf("missing %s in %v", addr, sub.registered)
+			}
+		}
+	}
+	check(primary, child)
+	if err := dao.Mdb.Model(&mdb.Orders{}).Where("trade_id = ?", "second").Update("status", mdb.StatusExpired).Error; err != nil {
+		t.Fatal(err)
+	}
+	check(primary, child)
+	if err := dao.Mdb.Model(&mdb.Orders{}).Where("trade_id = ?", "child").Update("status", mdb.StatusManualReview).Error; err != nil {
+		t.Fatal(err)
+	}
+	check(primary)
 }

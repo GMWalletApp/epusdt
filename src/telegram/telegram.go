@@ -24,19 +24,14 @@ var (
 	reloadMu    sync.Mutex
 )
 
-// BotStart connects the command bot. If no telegram channel is
-// configured yet it logs and returns; the service otherwise runs fine
-// and notifications still fan out as soon as a channel is added (those
-// use their own per-request bot; see notify/telegram_sender.go).
+// BotStart connects the command bot when its system settings are configured.
 func BotStart() {
 	if err := reloadBot("bootstrap"); err != nil {
 		log.Sugar.Errorf("[telegram] bot start failed: %v", err)
 	}
 }
 
-// ReloadBotAsync refreshes the command bot from notification_channels.
-// It is used by admin API handlers after telegram channel create/update/
-// status/delete so operators don't need to restart the service.
+// ReloadBotAsync applies the command bot credentials saved in system settings.
 func ReloadBotAsync(reason string) {
 	go func() {
 		if err := reloadBot(reason); err != nil {
@@ -82,7 +77,7 @@ func reloadBot(reason string) error {
 		return err
 	}
 	if cfg == nil {
-		log.Sugar.Infof("[telegram] no enabled telegram channel configured; command bot disabled (reason=%s)", reason)
+		log.Sugar.Infof("[telegram] command bot credentials missing in settings; command bot disabled (reason=%s)", reason)
 		return nil
 	}
 	adminChatID = cfg.ChatID
@@ -108,7 +103,7 @@ func reloadBot(reason string) error {
 }
 
 // RegisterHandle wires slash-command and text-message routes. The
-// admin whitelist uses the chat_id from the same channel row.
+// admin whitelist uses the chat_id from the command bot settings.
 func RegisterHandle() {
 	if bots == nil {
 		return

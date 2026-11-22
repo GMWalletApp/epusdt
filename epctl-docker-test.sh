@@ -214,7 +214,7 @@ wait_for_systemd() {
 wait_for_service_assets() {
   docker exec "${CONTAINER_NAME}" bash -euo pipefail -c '
 for _ in $(seq 1 30); do
-  if systemctl is-active --quiet epusdt && [[ -f /opt/epusdt/www/index.html ]]; then
+  if systemctl is-active --quiet epusdt && curl -fsS http://127.0.0.1:8000/index.html -o /dev/null; then
     exit 0
   fi
   sleep 1
@@ -316,7 +316,7 @@ wait_for_service_assets
 docker_bash '[[ -x /opt/epusdt/epusdt ]]'
 docker_bash '[[ -f /opt/epusdt/.env ]]'
 docker_bash 'systemctl is-active --quiet epusdt'
-docker_bash '[[ -f /opt/epusdt/www/index.html ]]'
+docker_bash 'curl -fsS http://127.0.0.1:8000/index.html -o /dev/null'
 docker exec "${CONTAINER_NAME}" bash -euo pipefail -c 'su - tester -c "epctl show-config | grep -q \"^install=false$\""'
 docker exec "${CONTAINER_NAME}" bash -euo pipefail -c 'su - tester -c "EPCTL_NO_COLOR=1 epctl --lang zh show-config | grep -q \"^install=false$\""'
 docker exec "${CONTAINER_NAME}" bash -euo pipefail -c '

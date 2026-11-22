@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/GMWalletApp/epusdt/config"
@@ -178,15 +179,7 @@ func TestInstallAPIDefaults(t *testing.T) {
 
 func TestInstallServerRootRedirectsToInstall(t *testing.T) {
 	dir := t.TempDir()
-	wwwRoot := filepath.Join(dir, "www")
-	if err := os.MkdirAll(wwwRoot, 0o755); err != nil {
-		t.Fatalf("mkdir www root: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(wwwRoot, "index.html"), []byte("install-ui"), 0o644); err != nil {
-		t.Fatalf("write index.html: %v", err)
-	}
-
-	e, _ := newInstallServer(filepath.Join(dir, ".env"), wwwRoot)
+	e, _ := newInstallServer(filepath.Join(dir, ".env"), http.FS(fstest.MapFS{}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -202,16 +195,9 @@ func TestInstallServerRootRedirectsToInstall(t *testing.T) {
 
 func TestInstallServerServesSPAOnInstallRoute(t *testing.T) {
 	dir := t.TempDir()
-	wwwRoot := filepath.Join(dir, "www")
-	if err := os.MkdirAll(wwwRoot, 0o755); err != nil {
-		t.Fatalf("mkdir www root: %v", err)
-	}
 	const wantBody = "install-ui"
-	if err := os.WriteFile(filepath.Join(wwwRoot, "index.html"), []byte(wantBody), 0o644); err != nil {
-		t.Fatalf("write index.html: %v", err)
-	}
-
-	e, _ := newInstallServer(filepath.Join(dir, ".env"), wwwRoot)
+	frontend := fstest.MapFS{"index.html": {Data: []byte(wantBody)}}
+	e, _ := newInstallServer(filepath.Join(dir, ".env"), http.FS(frontend))
 
 	req := httptest.NewRequest(http.MethodGet, "/install", nil)
 	rec := httptest.NewRecorder()

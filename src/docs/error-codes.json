@@ -190,5 +190,9 @@
   "10046": {
     "http_status": 400,
     "message": "failed to build epay return signature"
+  },
+  "10049": {
+    "http_status": 400,
+    "message": "invalid receiving address for this network"
   }
 }

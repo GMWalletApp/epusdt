@@ -35,6 +35,10 @@ func canonicalNodeURL(raw string) string {
 }
 
 func (e NodeEndpoint) identity() NodeEndpoint {
+	e.URL = strings.TrimSpace(e.URL)
+	if p, err := chains.EndpointProtocol(chains.Network{Name: e.Network, Protocol: e.Protocol, URL: e.URL}); err == nil {
+		e.Protocol = p
+	}
 	if e.Protocol == "grpc" || e.Protocol == "solidity-grpc" {
 		if host, ok := strings.CutPrefix(e.URL, "grpcs://"); ok {
 			e.URL = "https://" + host
@@ -51,7 +55,8 @@ func (e NodeEndpoint) identity() NodeEndpoint {
 			e.URL = u.String()
 		}
 	}
-	if chains.IsEVM(e.Network) && e.Protocol == "jsonrpc" {
+	if (chains.IsEVM(e.Network) || e.Network == "solana") && e.Protocol == "jsonrpc" ||
+		(e.Network == "aptos" || e.Network == "tron") && e.Protocol == "rest" {
 		e.Protocol = "http"
 	}
 	return e

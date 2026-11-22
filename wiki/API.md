@@ -181,9 +181,10 @@ function epaySign(array $params, string $secretKey): string
 | `token` | string | 条件必填 | 收款币种，如 `usdt`、`trx`、`usdc`、`sol`。GMPay 可与 `network` 同时省略以创建状态 `4` 占位订单。 |
 | `network` | string | 条件必填 | 收款网络，如 `tron`、`solana`、`ethereum`、`binance`、`polygon`、`plasma`。GMPay 可与 `token` 同时省略以创建状态 `4` 占位订单。 |
 | `amount` | number | 是 | 法币金额，必须大于 `0.01`。 |
-| `notify_url` | string | 是 | 支付成功异步回调地址。 |
+| `notify_url` | string | 条件必填 | 省略时使用该商户 API Key 的默认回调地址；两处至少填写一处。 |
 | `redirect_url` | string | 否 | 支付完成后的同步跳转地址。 |
 | `name` | string | 否 | 商品/订单名称。 |
+| `callback_version` | integer | 否 | GMPay JSON 回调版本，默认 1。创建订单时传 2 并将该参数计入签名，可收到含实际支付网络的签名回调。 |
 | `payment_type` | string | 否 | GMPay 兼容字段，不要求必须传；如果传了非空值，必须参与 GMPay `signature` 计算。普通 GMPay 不传时后台会存为 `Gmpay`；传 `Epay`（大小写不敏感）会统一存为 `Epay` 并使用 EPay 回调格式，且 PID 必须是数字。 |
 | `signature` | string | 是 | 64 位小写十六进制 GMPay HMAC-SHA256 签名。 |
 
@@ -270,7 +271,9 @@ function epaySign(array $params, string $secretKey): string
       "support_link": "https://example.com/support",
       "background_color": "#0f172a",
       "background_image_url": "https://cdn.example.com/background.png",
-      "withdrawal_reminder_enabled": true
+      "withdrawal_reminder_enabled": false,
+      "payment_reminder_title": "",
+      "payment_reminder_body": ""
     },
     "epay": {
       "default_token": "",
@@ -291,24 +294,28 @@ function epaySign(array $params, string $secretKey): string
 }
 ```
 
-`supported_assets` 只包含同时满足以下条件的组合：
+传入收银台订单号 `?trade_id=...` 可查询该订单可选的链上支付组合。新增组合必须有有效的收款地址和汇率，按订单原始金额与币种换算后至少支付 0.01 个代币。已经分配的待支付地址和金额仍可使用。订单达到切换次数上限后，只返回已分配且仍可付款的链上组合。省略参数或查询已结束的订单时返回通用列表。
+
+通用 `supported_assets` 列表只包含同时满足以下条件的组合：
 
 - 链已启用。
 - 该链有可用钱包地址。
 - 该链至少有一个启用中的 token。
 
-### 交易所提现提醒
+### 链上付款提醒
 
-收银台从公共配置读取 `data.site.withdrawal_reminder_enabled`（布尔值，默认 `true`）。等配置返回后，仅在开关开启、订单处于链上待支付状态、已有收款地址且 `actual_amount > 0` 时，于到账金额下显示提醒。关闭时整块隐藏。对接旧版本后端时，已加载的配置缺少该字段可按默认开启处理。
+收银台从公共配置读取 `data.site.withdrawal_reminder_enabled`（布尔值，默认 `false`）。等配置返回后，仅在开关开启、订单处于链上待支付状态、已有收款地址且 `actual_amount > 0` 时，于到账金额下显示提醒。关闭时整块隐藏。对接旧版本后端时，已加载的配置缺少该字段时隐藏提醒。
 
-建议标题为「交易所提现提醒」，正文为「请核对交易所显示的实际到账数量。扣除手续费后，应为 **14.2857 USDT**。」其中金额与币种复用页面上方展示的订单金额（`actual_amount`）与 `token`，保留相同的小数位。提醒可使用浅琥珀色底、深色模式下使用深琥珀色底，并配图标与文字。各语言使用收银台当前语言。
+从 `data.site.payment_reminder_title` 和 `data.site.payment_reminder_body` 读取自定义标题与正文。任一字段缺失、留空或仅含空白时，该字段使用当前收银台语言的默认文案。正文按纯文本展示，支持多行；每个 `{amount}` 都替换为页面展示的实际到账金额和币种，例如 `14.2857 USDT`。
 
-前端对接效果参考（示例订单）：[浅色预览](img/withdrawal-reminder-light.png) · [深色预览](img/withdrawal-reminder-dark.png)。
-
-后台可在品牌设置中添加「显示交易所提现提醒」开关，读取 `GET /admin/api/v1/settings?group=brand`，检查键 `brand.withdrawal_reminder_enabled` 的字符串值 `"true"` 或 `"false"`。缺少设置时默认开启。保存时调用已鉴权的 `PUT /admin/api/v1/settings`：
+后台「系统配置 → 基础配置」沿用 `brand.withdrawal_reminder_enabled` 开关。通过 `GET /admin/api/v1/settings?group=brand` 读取配置，调用已鉴权的 `PUT /admin/api/v1/settings` 保存变动项。
 
 ```json
-{"items":[{"group":"brand","key":"brand.withdrawal_reminder_enabled","type":"bool","value":false}]}
+{"items":[
+  {"group":"brand","key":"brand.withdrawal_reminder_enabled","type":"bool","value":true},
+  {"group":"brand","key":"brand.payment_reminder_title","type":"string","value":"转账须知"},
+  {"group":"brand","key":"brand.payment_reminder_body","type":"string","value":"请确认收款网络，实际到账应为 {amount}"}
+]}
 ```
 
 响应中对应项的 `ok` 为 `true` 表示保存成功。重新打开收银台即可读取新值。
@@ -330,6 +337,8 @@ function epaySign(array $params, string $secretKey): string
 `GET /pay/checkout-counter-resp/{trade_id}`
 
 用于前端收银台读取订单展示数据。该接口只确认订单存在并返回基础数据；当前支付状态请调用 `/pay/check-status/{trade_id}`。
+
+EPay 订单的 `redirect_url` 用于支付成功后的签名回跳。付款人提前离开时可使用 `merchant_home_url` 返回商户首页。该字段仅在商户提供有效的 HTTP(S) 回跳地址时返回。
 
 ### 成功响应示例
 
@@ -394,6 +403,8 @@ function epaySign(array $params, string $secretKey): string
 ## 查询支付状态
 
 `GET /pay/check-status/{trade_id}`
+
+收银台可添加 `?checkout=true`。若当前子单已过期且父单已支付，返回父单的 `trade_id`、`status: 2` 以及已配置的 `redirect_url`。EPay 使用父单的签名返回入口。直接打开该子单的收银台时也会显示已支付的父单。省略参数时，状态接口始终返回所查订单自身的状态。
 
 ### 成功响应示例
 
@@ -484,6 +495,8 @@ function epaySign(array $params, string $secretKey): string
 /pay/checkout-counter/{trade_id}
 ```
 
+升级后创建的订单支持重新打开待支付收银台。同一商户使用相同签名字段通过 GET 或 POST 重试时，返回原付款链接，原有效期继续计时。请求字段改变、支付窗口已关闭，或历史订单缺少首次请求记录时，返回 `10002`。
+
 ### 请求参数
 
 | 字段 | 位置 | 类型 | 必填 | 说明 |
@@ -491,7 +504,7 @@ function epaySign(array $params, string $secretKey): string
 | `pid` | query/form | string | 是 | 商户 PID。建议使用数字 PID；EPay 回调会按数字 PID 输出。 |
 | `money` | query/form | number | 是 | 法币金额。 |
 | `out_trade_no` | query/form | string | 是 | 商户订单号。 |
-| `notify_url` | query/form | string | 是 | 异步回调地址。 |
+| `notify_url` | query/form | string | 条件必填 | 省略时使用该商户 API Key 的默认回调地址；两处至少填写一处。 |
 | `return_url` | query/form | string | 否 | 支付完成后的同步跳转地址。 |
 | `name` | query/form | string | 否 | 商品/订单名称。 |
 | `type` | query/form | string | 否 | 仅支持空值、`alipay`，或当前已启用并可收款的 `token.network` selector（如 `usdt.tron`）。推荐使用小写 `alipay`。 |
@@ -536,11 +549,13 @@ EPay 接口解析 `type/token/network/currency` 的规则：
 
 ## 商户异步回调
 
+订单创建时固定回调地址、PID 和签名密钥。轮换、停用或删除商户 API Key 后，该订单的通知、重发及 EPay 成功回跳仍以原密钥签名。商户应保留历史订单对应的验签密钥。升级时，旧订单使用数据库中仍可取得的商户凭据，升级前已覆盖的密钥无法恢复。
+
 订单支付成功后，Epusdt 会向订单的 `notify_url` 发送异步通知。目标服务器处理完成后需返回 HTTP 200，响应体为 `ok` 或 `success`（大小写不敏感）。否则会按队列配置重试：首次失败后最多重试 `order_notice_max_retry` 次，重试间隔按 `callback_retry_base_seconds` 指数退避，最大 5 分钟。
 
 ### GMPay 回调
 
-普通 GMPay 订单使用 POST JSON 回调。
+普通 GMPay 订单使用 POST JSON 回调。选择 `callback_version=2` 时，回调新增参与 HMAC 验签的 `network`。切网后的回调保留父订单交易号和商户订单号，代币、实付金额、收款地址和交易哈希取自实际入账的订单。
 
 ```json
 {
@@ -648,5 +663,6 @@ Epusdt 会按配置的 OkPay shop token 验证 OkPay 签名，成功后将对应
 | `10044` | 400 | 订单跳转地址无效 |
 | `10045` | 400 | 订单对应的商户密钥不可用 |
 | `10046` | 400 | 无法生成 EPay 返回签名 |
+| `10049` | 400 | 收款地址格式与所选网络不符 |
 
 [完整业务错误码](../src/util/constant/errno.go)

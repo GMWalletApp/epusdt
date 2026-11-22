@@ -958,6 +958,647 @@
                 }
             }
         },
+        "/admin/api/v1/chainscanner/admin/blacklist": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "List blocked node hosts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "host": {
+                                        "type": "string"
+                                    },
+                                    "source": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/blacklist/{host}": {
+            "put": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Block a node host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hostname",
+                        "name": "host",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Remove an administrator host block",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hostname",
+                        "name": "host",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/connection": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Get scanner connection and supported operations",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/scanneradmin.ConnectionInfo"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/migration": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Preview legacy node migration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/data.NodeMigration"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Apply migration to the confirmed scanner",
+                "parameters": [
+                    {
+                        "description": "Target returned by the preview",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/data.MigrationTarget"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/data.NodeMigration"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/nodes": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "List scanner nodes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Limit to one network",
+                        "name": "network",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/nodes.Node"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Add a regular node",
+                "parameters": [
+                    {
+                        "description": "Node configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/nodes.NodeOptions"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/nodes.Node"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/nodes/fallback": {
+            "post": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Add a fallback node",
+                "parameters": [
+                    {
+                        "description": "Fallback node configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/nodes.NodeOptions"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/nodes.Node"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/nodes/test": {
+            "post": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Check enabled nodes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Limit to one network",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Also check manual verification nodes",
+                        "name": "include_manual",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/nodes.Node"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/nodes/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Remove a node",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Node ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Update node settings or activation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Node ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Changed fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/nodes.NodePatch"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/nodes.Node"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/nodes/{id}/test": {
+            "post": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Check one enabled node",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Node ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/nodes.Node"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/progress": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Get scanner progress by network",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/engine.ScanProgress"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/admin/progress/stream": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "description": "The progress event contains the same JSON array as GET /admin/progress. EPUSDT reads the configured scanner on connection and every five seconds. A scanner_error event indicates a temporarily unavailable snapshot. The stream stays open for recovery.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Stream scanner progress by network",
+                "responses": {
+                    "200": {
+                        "description": "Server-sent events with progress snapshots or scanner errors",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/heights/{network}": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Get the scanner height",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Network",
+                        "name": "network",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/transactions/{network}/{hash}": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Look up a transaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Network",
+                        "name": "network",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Transaction hash",
+                        "name": "hash",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Allow manual verification nodes",
+                        "name": "manual",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "hash": {
+                                    "type": "string"
+                                },
+                                "network": {
+                                    "type": "string"
+                                },
+                                "result": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/chainscanner/transactions/{network}/{hash}/strict": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Verify a transaction with independent nodes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Network",
+                        "name": "network",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Transaction hash",
+                        "name": "hash",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Allow manual verification nodes",
+                        "name": "manual",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Restrict lookup to fallback nodes",
+                        "name": "fallback_only",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Use 1 for a single round",
+                        "name": "rounds",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Previous voter hashes for a single round",
+                        "name": "X-ChainScanner-Exclude",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "hash": {
+                                    "type": "string"
+                                },
+                                "network": {
+                                    "type": "string"
+                                },
+                                "result": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/admin/api/v1/config": {
             "get": {
                 "description": "Returns supported_assets for on-chain payments, site and epay defaults, and separate okpay and xlayer hosted payment settings. The xlayer allow_tokens list controls the tokens shown for OKX OnchainOS.\nThe authenticated admin variant (/admin/api/v1/config) also includes provider credentials, internal callback settings and the merchant X Layer receiving address.",
@@ -968,6 +1609,14 @@
                     "Payment Config"
                 ],
                 "summary": "Get public payment config",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Public cashier only. Filter on-chain options using the stored order currency and amount.",
+                        "name": "trade_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1621,7 +2270,7 @@
                         "AdminJWT": []
                     }
                 ],
-                "description": "Returns paginated orders with optional filters",
+                "description": "Returns one row per merchant order with the actual settlement details",
                 "produces": [
                     "application/json"
                 ],
@@ -1631,8 +2280,12 @@
                 "summary": "List orders",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Network filter",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Settlement network filter",
                         "name": "network",
                         "in": "query"
                     },
@@ -1655,7 +2308,11 @@
                         "in": "query"
                     },
                     {
-                        "type": "integer",
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "collectionFormat": "multi",
                         "description": "Order status filter",
                         "name": "status",
                         "in": "query"
@@ -1732,8 +2389,12 @@
                 "summary": "Export orders as CSV",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Network filter",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Settlement network filter",
                         "name": "network",
                         "in": "query"
                     },
@@ -1756,7 +2417,11 @@
                         "in": "query"
                     },
                     {
-                        "type": "integer",
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "collectionFormat": "multi",
                         "description": "Order status filter",
                         "name": "status",
                         "in": "query"
@@ -1797,7 +2462,7 @@
                         "AdminJWT": []
                     }
                 ],
-                "description": "Returns paginated orders; each item embeds its child orders in sub_orders",
+                "description": "Returns one row per merchant order with settlement details and all payment attempts in sub_orders",
                 "produces": [
                     "application/json"
                 ],
@@ -1807,8 +2472,12 @@
                 "summary": "List orders with sub-orders",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Network filter",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Settlement network filter",
                         "name": "network",
                         "in": "query"
                     },
@@ -1831,7 +2500,11 @@
                         "in": "query"
                     },
                     {
-                        "type": "integer",
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "collectionFormat": "multi",
                         "description": "Order status filter",
                         "name": "status",
                         "in": "query"
@@ -1898,7 +2571,7 @@
                         "AdminJWT": []
                     }
                 ],
-                "description": "Returns full order detail by trade_id",
+                "description": "Returns settlement details for a merchant order or the individual payment attempt for a child trade ID",
                 "produces": [
                     "application/json"
                 ],
@@ -2127,257 +2800,6 @@
                 }
             }
         },
-        "/admin/api/v1/rpc-nodes": {
-            "get": {
-                "security": [
-                    {
-                        "AdminJWT": []
-                    }
-                ],
-                "description": "Returns RPC nodes, optionally filtered by network",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Admin RPC Nodes"
-                ],
-                "summary": "List RPC nodes",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Network filter",
-                        "name": "network",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/response.ApiResponse"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "array",
-                                            "items": {
-                                                "$ref": "#/definitions/mdb.RpcNode"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/response.ApiResponse"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "security": [
-                    {
-                        "AdminJWT": []
-                    }
-                ],
-                "description": "Create a new RPC node",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Admin RPC Nodes"
-                ],
-                "summary": "Create RPC node",
-                "parameters": [
-                    {
-                        "description": "RPC node payload",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/admin.CreateRpcNodeRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/response.ApiResponse"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/mdb.RpcNode"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/response.ApiResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/admin/api/v1/rpc-nodes/{id}": {
-            "delete": {
-                "security": [
-                    {
-                        "AdminJWT": []
-                    }
-                ],
-                "description": "Soft-delete an RPC node",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Admin RPC Nodes"
-                ],
-                "summary": "Delete RPC node",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "RPC node ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/response.ApiResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/response.ApiResponse"
-                        }
-                    }
-                }
-            },
-            "patch": {
-                "security": [
-                    {
-                        "AdminJWT": []
-                    }
-                ],
-                "description": "Patch RPC node fields",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Admin RPC Nodes"
-                ],
-                "summary": "Update RPC node",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "RPC node ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Fields to update",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/admin.UpdateRpcNodeRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/response.ApiResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/response.ApiResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/admin/api/v1/rpc-nodes/{id}/health-check": {
-            "post": {
-                "security": [
-                    {
-                        "AdminJWT": []
-                    }
-                ],
-                "description": "Perform an on-demand health probe on an RPC node",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Admin RPC Nodes"
-                ],
-                "summary": "Health check RPC node",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "RPC node ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/response.ApiResponse"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/admin.RpcHealthCheckResponse"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/response.ApiResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/admin/api/v1/settings": {
             "get": {
                 "security": [
@@ -2437,7 +2859,7 @@
                         "AdminJWT": []
                     }
                 ],
-                "description": "Batch insert/update settings. Returns per-key status; failed items include error_code for frontend i18n.\nSupported groups: brand, rate, system, epay, okpay, xlayer.\nepay group keys: epay.default_token (e.g. \"usdt\" or \"ton\", ignored when a supported type=token.network selector is supplied, empty allows status=4 placeholders), epay.default_currency (e.g. \"cny\", still applies when a supported type selector is supplied, empty falls back to cny), epay.default_network (e.g. \"tron\" or \"ton\", ignored when a supported type=token.network selector is supplied, empty allows status=4 placeholders).\nokpay group keys: okpay.enabled, okpay.shop_id, okpay.shop_token, okpay.api_url, okpay.callback_url, okpay.return_url, okpay.timeout_seconds, okpay.allow_tokens.\nxlayer group keys: xlayer.enabled, xlayer.api_key, xlayer.api_secret, xlayer.passphrase, xlayer.to_address, xlayer.return_url, xlayer.timeout_seconds, xlayer.allow_tokens. The Onchain OS Payment base URL is fixed to https://web3.okx.com in code; any leftover xlayer.api_url row is ignored.\nrate group keys: rate.mode (fixed|auto, default fixed), rate.cache_ttl_seconds (10-86400, default 300), rate.forced_rate_list (JSON map, e.g. {\"cny\":{\"usdt\":0.14635,\"ton\":0.5}}; base/coin keys are normalized to lowercase; empty is restored to the built-in CNY USDT/USDC default), rate.api_url (optional; non-empty value must be a public http/https URL), rate.adjust_percent, rate.okx_c2c_enabled.\nbrand group keys: brand.checkout_name, brand.logo_url, brand.site_title, brand.success_copy, brand.support_url, brand.background_color, brand.background_image_url, brand.withdrawal_reminder_enabled. Legacy aliases brand.site_name, brand.page_title and brand.pay_success_text are also supported.\nsystem group keys: system.order_expiration_time, system.amount_precision (int, 2-6, default 2), system.log_level (debug|info|warn|error, default error).",
+                "description": "Batch insert/update settings. Returns per-key status; failed items include error_code for frontend i18n.\nSupported groups: brand, rate, system, epay, okpay, xlayer.\nepay group keys: epay.default_token (e.g. \"usdt\" or \"ton\", ignored when a supported type=token.network selector is supplied, empty allows status=4 placeholders), epay.default_currency (e.g. \"cny\", still applies when a supported type selector is supplied, empty falls back to cny), epay.default_network (e.g. \"tron\" or \"ton\", ignored when a supported type=token.network selector is supplied, empty allows status=4 placeholders).\nokpay group keys: okpay.enabled, okpay.shop_id, okpay.shop_token, okpay.api_url, okpay.callback_url, okpay.return_url, okpay.timeout_seconds, okpay.allow_tokens.\nxlayer group keys: xlayer.enabled, xlayer.api_key, xlayer.api_secret, xlayer.passphrase, xlayer.to_address, xlayer.return_url, xlayer.timeout_seconds, xlayer.allow_tokens. The Onchain OS Payment base URL is fixed to https://web3.okx.com in code; any leftover xlayer.api_url row is ignored.\nrate group keys: rate.mode (fixed|auto, default fixed), rate.cache_ttl_seconds (10-86400, default 300), rate.forced_rate_list (JSON map, e.g. {\"cny\":{\"usdt\":0.14635,\"ton\":0.5}}; base/coin keys are normalized to lowercase; empty is restored to the built-in CNY USDT/USDC default), rate.api_url (optional; non-empty value must be a public http/https URL), rate.adjust_percent, rate.okx_c2c_enabled.\nbrand group keys: brand.checkout_name, brand.logo_url, brand.site_title, brand.success_copy, brand.support_url, brand.cashier_script, brand.background_color, brand.background_image_url, brand.withdrawal_reminder_enabled, brand.payment_reminder_title, brand.payment_reminder_body. Legacy aliases brand.site_name, brand.page_title and brand.pay_success_text are also supported.\nsystem group keys: system.order_expiration_time, system.amount_precision (int, 2-6, default 2), system.log_level (debug|info|warn|error, default error).",
                 "consumes": [
                     "application/json"
                 ],
@@ -3094,6 +3516,12 @@
                         "name": "trade_id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "When true, an expired child of a paid parent returns the parent trade_id, paid status and optional redirect_url. Otherwise the requested order status is returned.",
+                        "name": "checkout",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -3126,7 +3554,7 @@
         },
         "/pay/checkout-counter-resp/{trade_id}": {
             "get": {
-                "description": "Return checkout initialization data when the order exists. This endpoint only confirms order existence and returns base order data; call /pay/check-status/{trade_id} for the current order status (1=waiting payment, 2=paid, 3=expired, 4=waiting token/network selection, 5=confirming on-chain payment, 6=manual review required).\nWhen status=4, actual_amount is 0 and token/network/receive_address are empty; this state is produced by GMPay placeholders or EPay submit.php when no token/network request values or defaults resolve to a concrete payment asset. The cashier should guide the payer to choose an on-chain token/network or OkPay and then call /pay/switch-network.\nFor EPay orders with a merchant return_url, the response redirect_url is rewritten to the internal /pay/return/{trade_id} hop; the database still stores the merchant's raw return_url.",
+                "description": "Return checkout initialization data when the order exists. This endpoint only confirms order existence and returns base order data; call /pay/check-status/{trade_id} for the current order status (1=waiting payment, 2=paid, 3=expired, 4=waiting token/network selection, 5=confirming on-chain payment, 6=manual review required).\nA pending parent resumes its selected attempt. An expired child of a paid parent returns the paid parent checkout details and return URL.\nWhen status=4, actual_amount is 0 and token/network/receive_address are empty; this state is produced by GMPay placeholders or EPay submit.php when no token/network request values or defaults resolve to a concrete payment asset. The cashier should guide the payer to choose an on-chain token/network or OkPay and then call /pay/switch-network.\nFor EPay orders with a merchant return_url, the response redirect_url is rewritten to the internal /pay/return/{trade_id} hop; the database still stores the merchant's raw return_url.",
                 "produces": [
                     "application/json"
                 ],
@@ -3348,7 +3776,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Callback URL (GET query)",
+                        "description": "Callback URL (defaults to the merchant API key setting)",
                         "name": "notify_url",
                         "in": "query"
                     },
@@ -3405,10 +3833,9 @@
                     },
                     {
                         "type": "string",
-                        "description": "Callback URL",
+                        "description": "Callback URL (defaults to the merchant API key setting)",
                         "name": "notify_url",
-                        "in": "formData",
-                        "required": true
+                        "in": "formData"
                     },
                     {
                         "type": "string",
@@ -3447,7 +3874,7 @@
                         "description": "Redirect to checkout counter"
                     },
                     "400": {
-                        "description": "Stable errno in status_code: 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel",
+                        "description": "Stable errno in status_code: 10002 order ID conflict, 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel",
                         "schema": {
                             "$ref": "#/definitions/response.ApiResponse"
                         }
@@ -3493,7 +3920,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Callback URL (GET query)",
+                        "description": "Callback URL (defaults to the merchant API key setting)",
                         "name": "notify_url",
                         "in": "query"
                     },
@@ -3550,10 +3977,9 @@
                     },
                     {
                         "type": "string",
-                        "description": "Callback URL",
+                        "description": "Callback URL (defaults to the merchant API key setting)",
                         "name": "notify_url",
-                        "in": "formData",
-                        "required": true
+                        "in": "formData"
                     },
                     {
                         "type": "string",
@@ -3592,7 +4018,7 @@
                         "description": "Redirect to checkout counter"
                     },
                     "400": {
-                        "description": "Stable errno in status_code: 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel",
+                        "description": "Stable errno in status_code: 10002 order ID conflict, 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel",
                         "schema": {
                             "$ref": "#/definitions/response.ApiResponse"
                         }
@@ -3616,6 +4042,14 @@
                     "Payment Config"
                 ],
                 "summary": "Get public payment config",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Public cashier only. Filter on-chain options using the stored order currency and amount.",
+                        "name": "trade_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -3646,7 +4080,7 @@
         },
         "/payments/gmpay/v1/order/create-transaction": {
             "post": {
-                "description": "Create a payment transaction order. Accepts JSON body (application/json) or form-encoded body (application/x-www-form-urlencoded).\nGMPay may omit both token and network to create a status=4 placeholder order; EPay submit.php can also create one when neither request parameters nor database defaults provide token/network. Supplying only one of token/network is invalid.\npayment_type is optional for GMPay. If it is sent, it is a normal signed parameter and must be included when calculating signature.\nGMPay signature uses lowercase hexadecimal HMAC-SHA256 with secret_key as the HMAC key. Legacy MD5 signatures are not accepted.",
+                "description": "Create a payment transaction order. Accepts JSON body (application/json) or form-encoded body (application/x-www-form-urlencoded).\nGMPay may omit both token and network to create a status=4 placeholder order; EPay submit.php can also create one when neither request parameters nor database defaults provide token/network. Supplying only one of token/network is invalid.\nAuthenticated GMPay retries with the same order_id and original normalized inputs return the same trade_id, current order state and original creation deadline. A changed request, a different merchant, an EPay-format order, or an order created before replay support returns status_code 10002.\npayment_type is optional for GMPay. If it is sent, it is a normal signed parameter and must be included when calculating signature.\nGMPay signature uses lowercase hexadecimal HMAC-SHA256 with secret_key as the HMAC key. Legacy MD5 signatures are not accepted.",
                 "consumes": [
                     "application/json",
                     "application/x-www-form-urlencoded"
@@ -3699,7 +4133,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Callback URL",
+                        "description": "Callback URL (defaults to the merchant API key setting)",
                         "name": "notify_url",
                         "in": "formData"
                     },
@@ -3726,6 +4160,16 @@
                         "description": "Optional GMPay compatibility flag; include in signature when sent",
                         "name": "payment_type",
                         "in": "formData"
+                    },
+                    {
+                        "enum": [
+                            1,
+                            2
+                        ],
+                        "type": "integer",
+                        "description": "Signed GMPay JSON callback version. Version 2 includes the payment network.",
+                        "name": "callback_version",
+                        "in": "formData"
                     }
                 ],
                 "responses": {
@@ -3748,7 +4192,7 @@
                         }
                     },
                     "400": {
-                        "description": "Stable errno in status_code: 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel",
+                        "description": "Stable errno in status_code: 10002 order ID conflict, 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel",
                         "schema": {
                             "$ref": "#/definitions/response.ApiResponse"
                         }
@@ -3803,7 +4247,7 @@
             "properties": {
                 "address": {
                     "type": "string",
-                    "example": "TTestTronAddress001"
+                    "example": "TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm"
                 },
                 "network": {
                     "type": "string",
@@ -3829,9 +4273,8 @@
                         "type": "string"
                     },
                     "example": [
-                        "TAddr001",
-                        "TAddr002",
-                        "TAddr003"
+                        "TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm",
+                        "TA9pkx4DFxrEw8JZzUtyDrh2uAat1LDuJL"
                     ]
                 },
                 "network": {
@@ -4044,63 +4487,6 @@
                         "email"
                     ],
                     "example": "telegram"
-                }
-            }
-        },
-        "admin.CreateRpcNodeRequest": {
-            "type": "object",
-            "required": [
-                "network",
-                "url"
-            ],
-            "properties": {
-                "api_key": {
-                    "type": "string",
-                    "example": ""
-                },
-                "enabled": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "network": {
-                    "type": "string",
-                    "example": "tron"
-                },
-                "purpose": {
-                    "description": "用途 general=通用 manual_verify=补单专用 both=通用+补单",
-                    "type": "string",
-                    "enum": [
-                        "general",
-                        "manual_verify",
-                        "both"
-                    ],
-                    "example": "general"
-                },
-                "type": {
-                    "description": "连接类型 http=HTTP请求 ws=WebSocket长连接 lite=TON liteserver配置",
-                    "type": "string",
-                    "enum": [
-                        "http",
-                        "ws",
-                        "lite",
-                        "grpc",
-                        "jsonrpc",
-                        "rest",
-                        "graphql",
-                        "ipc",
-                        "sse",
-                        "solidity-grpc",
-                        "solidity-http"
-                    ],
-                    "example": "http"
-                },
-                "url": {
-                    "type": "string",
-                    "example": "https://api.trongrid.io"
-                },
-                "weight": {
-                    "type": "integer",
-                    "example": 1
                 }
             }
         },
@@ -4437,25 +4823,6 @@
                 }
             }
         },
-        "admin.RpcHealthCheckResponse": {
-            "type": "object",
-            "properties": {
-                "last_latency_ms": {
-                    "type": "integer",
-                    "example": 120
-                },
-                "status": {
-                    "description": "健康状态 unknown=未知 ok=正常 down=异常",
-                    "type": "string",
-                    "enum": [
-                        "unknown",
-                        "ok",
-                        "down"
-                    ],
-                    "example": "ok"
-                }
-            }
-        },
         "admin.RpcStatsChainResponse": {
             "type": "object",
             "properties": {
@@ -4720,42 +5087,12 @@
                 }
             }
         },
-        "admin.UpdateRpcNodeRequest": {
-            "type": "object",
-            "properties": {
-                "api_key": {
-                    "type": "string",
-                    "example": "your-api-key"
-                },
-                "enabled": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "purpose": {
-                    "type": "string",
-                    "enum": [
-                        "general",
-                        "manual_verify",
-                        "both"
-                    ],
-                    "example": "manual_verify"
-                },
-                "url": {
-                    "type": "string",
-                    "example": "https://api.trongrid.io"
-                },
-                "weight": {
-                    "type": "integer",
-                    "example": 1
-                }
-            }
-        },
         "admin.WalletListItem": {
             "type": "object",
             "properties": {
                 "address": {
                     "type": "string",
-                    "example": "TTestTronAddress001"
+                    "example": "TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm"
                 },
                 "created_at": {
                     "type": "string",
@@ -4945,6 +5282,88 @@
                 "password_hash": {
                     "type": "string",
                     "example": "3f79bb7b435b05321651daefd374cdc9f5f72c467ea3f9f3c5f6e6d7e8f9a0b1"
+                }
+            }
+        },
+        "data.MigrationIssue": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "data.MigrationTarget": {
+            "type": "object",
+            "properties": {
+                "store_id": {
+                    "type": "string"
+                },
+                "target": {
+                    "type": "string"
+                }
+            }
+        },
+        "data.NodeMigration": {
+            "type": "object",
+            "properties": {
+                "completed": {
+                    "type": "integer"
+                },
+                "conflicts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/data.MigrationIssue"
+                    }
+                },
+                "external": {
+                    "type": "boolean"
+                },
+                "pending": {
+                    "type": "integer"
+                },
+                "store_id": {
+                    "type": "string"
+                },
+                "target": {
+                    "type": "string"
+                }
+            }
+        },
+        "engine.ScanProgress": {
+            "type": "object",
+            "properties": {
+                "cursor_height": {
+                    "type": "integer"
+                },
+                "lag_ms": {
+                    "type": "integer"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "scan_failure_count": {
+                    "description": "ScanFailureCount counts terminal range failures after provider failover.",
+                    "type": "integer"
+                },
+                "scan_success_count": {
+                    "description": "ScanSuccessCount counts committed scan ranges in the current watch period.",
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "target_height": {
+                    "type": "integer"
                 }
             }
         },
@@ -5329,92 +5748,6 @@
                 }
             }
         },
-        "mdb.RpcNode": {
-            "type": "object",
-            "properties": {
-                "api_key": {
-                    "type": "string",
-                    "example": "your-api-key"
-                },
-                "created_at": {
-                    "type": "string",
-                    "example": "2026-04-16 12:00:00"
-                },
-                "deleted_at": {
-                    "$ref": "#/definitions/gorm.DeletedAt"
-                },
-                "enabled": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "id": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "last_checked_at": {
-                    "type": "string",
-                    "example": "2026-04-16 12:00:00"
-                },
-                "last_latency_ms": {
-                    "type": "integer",
-                    "example": 120
-                },
-                "network": {
-                    "type": "string",
-                    "example": "tron"
-                },
-                "purpose": {
-                    "description": "用途 general=通用 manual_verify=补单专用 both=通用+补单",
-                    "type": "string",
-                    "enum": [
-                        "general",
-                        "manual_verify",
-                        "both"
-                    ],
-                    "example": "general"
-                },
-                "status": {
-                    "description": "健康状态 unknown=未知 ok=正常 down=异常",
-                    "type": "string",
-                    "enum": [
-                        "unknown",
-                        "ok",
-                        "down"
-                    ],
-                    "example": "ok"
-                },
-                "type": {
-                    "description": "连接类型 http=HTTP请求 ws=WebSocket长连接 lite=TON liteserver配置",
-                    "type": "string",
-                    "enum": [
-                        "http",
-                        "ws",
-                        "lite",
-                        "grpc",
-                        "jsonrpc",
-                        "rest",
-                        "graphql",
-                        "ipc",
-                        "sse",
-                        "solidity-grpc",
-                        "solidity-http"
-                    ],
-                    "example": "http"
-                },
-                "updated_at": {
-                    "type": "string",
-                    "example": "2026-04-16 12:00:00"
-                },
-                "url": {
-                    "type": "string",
-                    "example": "https://api.trongrid.io"
-                },
-                "weight": {
-                    "type": "integer",
-                    "example": 1
-                }
-            }
-        },
         "mdb.Setting": {
             "type": "object",
             "properties": {
@@ -5474,7 +5807,7 @@
             "properties": {
                 "address": {
                     "type": "string",
-                    "example": "TTestTronAddress001"
+                    "example": "TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm"
                 },
                 "created_at": {
                     "type": "string",
@@ -5518,17 +5851,141 @@
                 }
             }
         },
+        "nodes.Node": {
+            "type": "object",
+            "properties": {
+                "checked_at_ms": {
+                    "type": "integer"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "height_unit": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "latency_ms": {
+                    "type": "integer"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "origin": {
+                    "type": "string"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "purpose": {
+                    "type": "string"
+                },
+                "read_failure": {
+                    "type": "string"
+                },
+                "read_retry_at_ms": {
+                    "type": "integer"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "scannable": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "weight": {
+                    "type": "integer"
+                }
+            }
+        },
+        "nodes.NodeOptions": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "history_api_key": {
+                    "type": "string"
+                },
+                "history_url": {
+                    "type": "string"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "purpose": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "weight": {
+                    "type": "integer"
+                }
+            }
+        },
+        "nodes.NodePatch": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "history_api_key": {
+                    "type": "string"
+                },
+                "history_url": {
+                    "type": "string"
+                },
+                "purpose": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "weight": {
+                    "type": "integer"
+                }
+            }
+        },
         "request.CreateTransactionRequest": {
             "type": "object",
             "required": [
                 "currency",
-                "notify_url",
                 "signature"
             ],
             "properties": {
                 "amount": {
                     "type": "number",
                     "example": 100
+                },
+                "callback_version": {
+                    "description": "CallbackVersion 2 opts a GMPay merchant into the signed network field.",
+                    "type": "integer",
+                    "enum": [
+                        1,
+                        2
+                    ]
                 },
                 "currency": {
                     "description": "法币 如：cny",
@@ -5630,6 +6087,11 @@
         "response.CheckStatusResponse": {
             "type": "object",
             "properties": {
+                "redirect_url": {
+                    "description": "Populated when an expired attempt resolves to a paid parent with a return URL.",
+                    "type": "string",
+                    "example": "https://example.com/return"
+                },
                 "status": {
                     "description": "订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核",
                     "type": "integer",
@@ -5682,6 +6144,11 @@
                     "description": "是否已选择当前支付方式；status=4 占位订单和刚补全的占位父单为 false",
                     "type": "boolean",
                     "example": false
+                },
+                "merchant_home_url": {
+                    "description": "EPay merchant homepage for leaving checkout before payment succeeds",
+                    "type": "string",
+                    "example": "https://merchant.example/"
                 },
                 "network": {
                     "description": "网络 TRON ETH；status=4 占位订单为空",
@@ -5964,9 +6431,25 @@
                     "type": "string",
                     "example": "Acme Cashier"
                 },
+                "cashier_script": {
+                    "description": "Public support widget installation snippet. Empty disables the widget.",
+                    "type": "string"
+                },
+                "cashier_script_origin": {
+                    "description": "Deployment-authorized HTTPS origin for native widgets. Other origins isolate the snippet.",
+                    "type": "string"
+                },
                 "logo_url": {
                     "type": "string",
                     "example": "https://cdn.example.com/logo.png"
+                },
+                "payment_reminder_body": {
+                    "description": "Optional plain text. {amount} inserts the formatted payment amount and token.",
+                    "type": "string"
+                },
+                "payment_reminder_title": {
+                    "description": "Optional on-chain payment reminder title. Empty uses the checkout language.",
+                    "type": "string"
                 },
                 "support_link": {
                     "type": "string",
@@ -5978,7 +6461,7 @@
                 },
                 "withdrawal_reminder_enabled": {
                     "type": "boolean",
-                    "example": true
+                    "example": false
                 }
             }
         },
@@ -6034,6 +6517,32 @@
                 "to_address": {
                     "type": "string",
                     "example": "0x0000000000000000000000000000000000000000"
+                }
+            }
+        },
+        "scanneradmin.ConnectionInfo": {
+            "type": "object",
+            "properties": {
+                "embedded": {
+                    "type": "boolean"
+                },
+                "migration": {
+                    "type": "boolean"
+                },
+                "node_settings": {
+                    "type": "boolean"
+                },
+                "protocols": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "target": {
+                    "type": "string"
                 }
             }
         }
