@@ -264,7 +264,7 @@ func TestScannerERC20EventRecoversExpiredOrderAfterLockCleanup(t *testing.T) {
 	if err := dao.Mdb.Create(order).Error; err != nil {
 		t.Fatalf("seed expired order: %v", err)
 	}
-	createdAt := time.Now().Add(-2 * time.Minute)
+	createdAt := time.Now().Add(-2 * time.Minute).UTC()
 	if err := dao.Mdb.Model(&mdb.Orders{}).
 		Where("trade_id = ?", tradeID).
 		Update("created_at", createdAt).Error; err != nil {
@@ -323,7 +323,7 @@ func TestScannerERC20EventSkipsExpiredOrderAfterPaymentWindow(t *testing.T) {
 	if err := dao.Mdb.Create(order).Error; err != nil {
 		t.Fatalf("seed expired order: %v", err)
 	}
-	createdAt := time.Now().Add(-2 * config.GetOrderExpirationTimeDuration())
+	createdAt := time.Now().Add(-2 * config.GetOrderExpirationTimeDuration()).UTC()
 	if err := dao.Mdb.Model(&mdb.Orders{}).
 		Where("trade_id = ?", tradeID).
 		Update("created_at", createdAt).Error; err != nil {

@@ -64,14 +64,16 @@ func safeRun(name string, fn func()) {
 }
 
 func processExpiredOrders() {
-	expirationCutoff := time.Now().Add(-config.GetOrderExpirationTimeDuration())
+	// SQLite compares timestamps as text. Order timestamps are stored in UTC,
+	// so the cutoff must use the same location or a new order can look expired.
+	expirationCutoff := time.Now().UTC().Add(-config.GetOrderExpirationTimeDuration())
 	for {
 		var orders []expirableOrder
 		err := withSQLiteBusyRetry(func() error {
 			return dao.Mdb.Model(&mdb.Orders{}).
 				Select("id", "trade_id", "status", "network", "receive_address", "token", "actual_amount", "pay_provider").
 				Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusWaitSelect}).
-				Where("created_at <= ?", expirationCutoff).
+				Where("datetime(substr(created_at, 1, 19)) <= ?", expirationCutoff.UTC().Format("2006-01-02 15:04:05")).
 				Order("id asc").
 				Limit(batchSize).
 				Find(&orders).Error

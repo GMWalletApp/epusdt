@@ -485,12 +485,12 @@ func parseRange(ctx echo.Context) (time.Time, time.Time) {
 		end := now
 		if s := ctx.QueryParam("start_at"); s != "" {
 			if n, err := strconv.ParseInt(s, 10, 64); err == nil {
-				start = time.Unix(n, 0)
+				start = time.Unix(n, 0).In(time.Local)
 			}
 		}
 		if s := ctx.QueryParam("end_at"); s != "" {
 			if n, err := strconv.ParseInt(s, 10, 64); err == nil {
-				end = time.Unix(n, 0)
+				end = time.Unix(n, 0).In(time.Local)
 			}
 		}
 		return start, end

@@ -29,12 +29,15 @@ type AddressDailyStat struct {
 	ActualAmount float64 `json:"actual_amount"`
 }
 
-// SQLite timestamp text can use either a space or T between date and time.
+// Order timestamps are stored as UTC text. Convert buckets to the server's
+// local time so chart labels line up with the local day/hour used by parseRange.
+// The first 19 characters are the SQLite timestamp without its trailing zone;
+// SQLite treats it as UTC and "localtime" applies the process timezone.
 func statsBucketExpr(hourly bool) string {
 	if hourly {
-		return "replace(substr(created_at, 1, 13), 'T', ' ') || ':00'"
+		return "strftime('%Y-%m-%d %H:00', substr(created_at, 1, 19), 'localtime')"
 	}
-	return "substr(created_at, 1, 10)"
+	return "strftime('%Y-%m-%d', substr(created_at, 1, 19), 'localtime')"
 }
 
 // DailyOrderStats returns per-day counts/amounts within [start, end],
@@ -61,6 +64,8 @@ func HourlyOrderStats(start, end time.Time) ([]DailyStat, error) {
 }
 
 func queryOrderStats(start, end time.Time, hourly bool) ([]DailyStat, error) {
+	// Normalize the bounds and stored text to UTC before comparing them.
+	start, end = start.UTC(), end.UTC()
 	var rows []DailyStat
 	bucket := statsBucketExpr(hourly)
 	err := merchantOrders().
@@ -70,8 +75,8 @@ func queryOrderStats(start, end time.Time, hourly bool) ([]DailyStat, error) {
             SUM(CASE WHEN status = ? THEN amount ELSE 0 END) AS total_amount,
             SUM(CASE WHEN status = ? THEN actual_amount ELSE 0 END) AS actual_amount`, bucket),
 			mdb.StatusPaySuccess, mdb.StatusPaySuccess, mdb.StatusPaySuccess).
-		Where("created_at >= ?", start).
-		Where("created_at <= ?", end).
+		Where(orderCreatedAtUTCExpr+" >= ?", orderTimeUTC(start)).
+		Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(end)).
 		Group(bucket).
 		Order("day ASC").
 		Scan(&rows).Error
@@ -143,6 +148,7 @@ func HourlyAssetByAddress(start, end time.Time) ([]AddressDailyStat, error) {
 }
 
 func queryAssetByAddress(start, end time.Time, hourly bool) ([]AddressDailyStat, error) {
+	start, end = start.UTC(), end.UTC()
 	var rows []AddressDailyStat
 	bucket := statsBucketExpr(hourly)
 	err := merchantOrders().
@@ -150,8 +156,8 @@ func queryAssetByAddress(start, end time.Time, hourly bool) ([]AddressDailyStat,
             receive_address AS address,
             SUM(actual_amount) AS actual_amount`, bucket)).
 		Where("status = ?", mdb.StatusPaySuccess).
-		Where("created_at >= ?", start).
-		Where("created_at <= ?", end).
+		Where(orderCreatedAtUTCExpr+" >= ?", orderTimeUTC(start)).
+		Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(end)).
 		Group(bucket).
 		Group("receive_address").
 		Order("day ASC, address ASC").
@@ -224,6 +230,7 @@ func SumPaidActualAmount() (float64, error) {
 // PaidStatsInRange returns (order_count, success_count, actual_sum) for
 // a given time range. Caller chooses the range (today / last 7 days).
 func PaidStatsInRange(start, end time.Time) (int64, int64, float64, error) {
+	start, end = start.UTC(), end.UTC()
 	type row struct {
 		OrderCount   int64
 		SuccessCount int64
@@ -235,8 +242,8 @@ func PaidStatsInRange(start, end time.Time) (int64, int64, float64, error) {
             SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS success_count,
             SUM(CASE WHEN status = ? THEN actual_amount ELSE 0 END) AS actual_sum`,
 			mdb.StatusPaySuccess, mdb.StatusPaySuccess).
-		Where("created_at >= ?", start).
-		Where("created_at <= ?", end).
+		Where(orderCreatedAtUTCExpr+" >= ?", orderTimeUTC(start)).
+		Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(end)).
 		Scan(&r).Error
 	return r.OrderCount, r.SuccessCount, r.ActualSum, err
 }
@@ -244,10 +251,11 @@ func PaidStatsInRange(start, end time.Time) (int64, int64, float64, error) {
 // ActiveAddressCountInRange returns the number of distinct wallet addresses
 // that appear in at least one order within [start, end].
 func ActiveAddressCountInRange(start, end time.Time) (int64, error) {
+	start, end = start.UTC(), end.UTC()
 	var count int64
 	err := merchantOrders().
-		Where("created_at >= ?", start).
-		Where("created_at <= ?", end).
+		Where(orderCreatedAtUTCExpr+" >= ?", orderTimeUTC(start)).
+		Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(end)).
 		Distinct("receive_address").
 		Count(&count).Error
 	return count, err
@@ -257,6 +265,7 @@ func ActiveAddressCountInRange(start, end time.Time) (int64, error) {
 // created_at and updated_at for orders that reached StatusPaySuccess
 // in the given range. Zero-safe when no rows match.
 func AveragePaymentDurationSeconds(start, end time.Time) (float64, error) {
+	start, end = start.UTC(), end.UTC()
 	type row struct {
 		Avg float64
 	}
@@ -269,8 +278,8 @@ func AveragePaymentDurationSeconds(start, end time.Time) (float64, error) {
 	err := merchantOrders().
 		Select("created_at, updated_at").
 		Where("status = ?", mdb.StatusPaySuccess).
-		Where("created_at >= ?", start).
-		Where("created_at <= ?", end).
+		Where(orderCreatedAtUTCExpr+" >= ?", orderTimeUTC(start)).
+		Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(end)).
 		Scan(&pairs).Error
 	if err != nil {
 		return 0, err
@@ -288,11 +297,12 @@ func AveragePaymentDurationSeconds(start, end time.Time) (float64, error) {
 
 // CountExpiredInRange returns the number of StatusExpired orders in range.
 func CountExpiredInRange(start, end time.Time) (int64, error) {
+	start, end = start.UTC(), end.UTC()
 	var n int64
 	err := merchantOrders().
 		Where("status = ?", mdb.StatusExpired).
-		Where("created_at >= ?", start).
-		Where("created_at <= ?", end).
+		Where(orderCreatedAtUTCExpr+" >= ?", orderTimeUTC(start)).
+		Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(end)).
 		Count(&n).Error
 	return n, err
 }

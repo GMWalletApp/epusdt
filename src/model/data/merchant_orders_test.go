@@ -110,3 +110,112 @@ func TestMerchantReportingAfterNetworkSwitch(t *testing.T) {
 		t.Fatalf("unrelated link: %+v, %v", projected, err)
 	}
 }
+
+func TestOrderRangeQueriesHandleLegacyTimestampText(t *testing.T) {
+	defer testutil.SetupTestDatabases(t)()
+
+	order := &mdb.Orders{
+		TradeId:        "legacy-time-format",
+		OrderId:        "legacy-time-format",
+		Amount:         10,
+		Currency:       "CNY",
+		ActualAmount:   2.34,
+		ReceiveAddress: "TTestLegacyTime",
+		Token:          "USDT",
+		Network:        mdb.NetworkTron,
+		Status:         mdb.StatusPaySuccess,
+	}
+	if err := dao.Mdb.Create(order).Error; err != nil {
+		t.Fatalf("create order: %v", err)
+	}
+	// Older rows use Go's space-separated time text; newer rows use RFC3339.
+	if err := dao.Mdb.Exec("UPDATE orders SET created_at = ? WHERE trade_id = ?",
+		"2026-11-22 17:09:21.000000000 +0000 UTC", order.TradeId).Error; err != nil {
+		t.Fatalf("set legacy timestamp: %v", err)
+	}
+	zone := time.FixedZone("CST", 8*60*60)
+	start := time.Date(2026, 11, 23, 0, 0, 0, 0, zone)
+	end := time.Date(2026, 11, 23, 2, 0, 0, 0, zone)
+
+	if rows, total, err := ListOrders(OrderListFilter{StartAt: &start, EndAt: &end}); err != nil || total != 1 || len(rows) != 1 {
+		t.Fatalf("list legacy row: rows=%v total=%d err=%v", rows, total, err)
+	}
+	if total, success, sum, err := PaidStatsInRange(start, end); err != nil || total != 1 || success != 1 || sum != 2.34 {
+		t.Fatalf("legacy paid stats total=%d success=%d sum=%v err=%v", total, success, sum, err)
+	}
+	if rows, err := queryOrderStats(start, end, false); err != nil || len(rows) != 1 || rows[0].OrderCount != 1 || rows[0].ActualAmount != 2.34 {
+		t.Fatalf("legacy order stats rows=%v err=%v", rows, err)
+	}
+}
+
+func TestOrderRangeQueriesUseUTCStorage(t *testing.T) {
+	defer testutil.SetupTestDatabases(t)()
+
+	// Stored order timestamps are UTC. These bounds are local (+08) times
+	// that correspond to the previous UTC calendar day.
+	created := time.Date(2026, 11, 22, 17, 9, 21, 0, time.UTC)
+	zone := time.FixedZone("CST", 8*60*60)
+	start := time.Date(2026, 11, 23, 0, 0, 0, 0, zone)
+	end := time.Date(2026, 11, 23, 2, 0, 0, 0, zone)
+
+	makeOrder := func(tradeID string, status int, actual float64, address string) {
+		t.Helper()
+		order := &mdb.Orders{
+			TradeId:        tradeID,
+			OrderId:        tradeID,
+			Amount:         10,
+			Currency:       "CNY",
+			ActualAmount:   actual,
+			ReceiveAddress: address,
+			Token:          "USDT",
+			Network:        mdb.NetworkTron,
+			Status:         status,
+		}
+		if err := dao.Mdb.Create(order).Error; err != nil {
+			t.Fatalf("create %s: %v", tradeID, err)
+		}
+		if err := dao.Mdb.Model(order).Updates(map[string]any{
+			"created_at": created,
+			"updated_at": created.Add(90 * time.Second),
+		}).Error; err != nil {
+			t.Fatalf("set %s times: %v", tradeID, err)
+		}
+	}
+	makeOrder("range-success", mdb.StatusPaySuccess, 1.23, "TTestRangeSuccess")
+	makeOrder("range-expired", mdb.StatusExpired, 0, "TTestRangeExpired")
+
+	f := OrderListFilter{StartAt: &start, EndAt: &end}
+	rows, total, err := ListOrders(f)
+	if err != nil || total != 2 || len(rows) != 2 {
+		t.Fatalf("list filter rows=%v total=%d err=%v, want 2", rows, total, err)
+	}
+	exported, err := OrdersForExport(f)
+	if err != nil || len(exported) != 2 {
+		t.Fatalf("export rows=%v err=%v, want 2", exported, err)
+	}
+
+	total, success, sum, err := PaidStatsInRange(start, end)
+	if err != nil || total != 2 || success != 1 || sum != 1.23 {
+		t.Fatalf("paid stats total=%d success=%d sum=%v err=%v, want 2/1/1.23", total, success, sum, err)
+	}
+	if n, err := CountExpiredInRange(start, end); err != nil || n != 1 {
+		t.Fatalf("expired=%d err=%v, want 1", n, err)
+	}
+	if n, err := ActiveAddressCountInRange(start, end); err != nil || n != 2 {
+		t.Fatalf("active=%d err=%v, want 2", n, err)
+	}
+	if secs, err := AveragePaymentDurationSeconds(start, end); err != nil || secs != 90 {
+		t.Fatalf("average=%f err=%v, want 90", secs, err)
+	}
+
+	for _, hourly := range []bool{false, true} {
+		stats, err := queryOrderStats(start, end, hourly)
+		if err != nil || len(stats) != 1 || stats[0].OrderCount != 2 || stats[0].SuccessCount != 1 || stats[0].ActualAmount != 1.23 {
+			t.Fatalf("order stats hourly=%v rows=%v err=%v, want count=2 success=1 actual=1.23", hourly, stats, err)
+		}
+		assets, err := queryAssetByAddress(start, end, hourly)
+		if err != nil || len(assets) != 1 || assets[0].ActualAmount != 1.23 {
+			t.Fatalf("asset stats hourly=%v rows=%v err=%v, want one row with 1.23", hourly, assets, err)
+		}
+	}
+}

@@ -302,13 +302,13 @@ func parseOrderFilter(ctx echo.Context) data.OrderListFilter {
 	}
 	if s := ctx.QueryParam("start_at"); s != "" {
 		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
-			t := time.Unix(n, 0)
+			t := time.Unix(n, 0).In(time.Local)
 			f.StartAt = &t
 		}
 	}
 	if s := ctx.QueryParam("end_at"); s != "" {
 		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
-			t := time.Unix(n, 0)
+			t := time.Unix(n, 0).In(time.Local)
 			f.EndAt = &t
 		}
 	}

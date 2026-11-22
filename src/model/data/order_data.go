@@ -121,8 +121,24 @@ func GetOrderInfoByTradeId(tradeId string) (*mdb.Orders, error) {
 	return order, err
 }
 
+// orderCreatedAtUTCExpr normalizes both timestamp text formats used by
+// SQLite (space separated and RFC3339) before comparing order times.
+const orderCreatedAtUTCExpr = "datetime(substr(created_at, 1, 19))"
+
+// orderTimeUTC formats a bound consistently with orderCreatedAtUTCExpr.
+// Passing time.Time directly to SQLite can produce Go's " +0000 UTC" text,
+// which SQLite's datetime() does not parse.
+func orderTimeUTC(t time.Time) string {
+	return t.UTC().Format("2006-01-02 15:04:05")
+}
+
 // CreateOrderWithTransaction creates an order in the active database transaction.
 func CreateOrderWithTransaction(tx *gorm.DB, order *mdb.Orders) error {
+	// A zero carbon.Time is a nil *Carbon, whose IsZero reports false.
+	// Check IsNil as well, otherwise GORM fills the column with local time.
+	if order.CreatedAt.IsNil() || order.CreatedAt.IsZero() {
+		order.CreatedAt = *carbon.NewTime(carbon.Now(carbon.UTC))
+	}
 	return tx.Model(order).Create(order).Error
 }
 
@@ -237,10 +253,12 @@ func SaveCallBackOrdersResp(order *mdb.Orders) error {
 
 // UpdateOrderIsExpirationById expires an order only if it is still pending and already timed out.
 func UpdateOrderIsExpirationById(id uint64, expirationCutoff time.Time) (bool, error) {
+	// created_at is stored in UTC; normalize its text and the cutoff before
+	// comparing so mixed SQLite timestamp formats cannot expire fresh orders.
 	result := dao.Mdb.Model(mdb.Orders{}).
 		Where("id = ?", id).
 		Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusWaitSelect}).
-		Where("created_at <= ?", expirationCutoff).
+		Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(expirationCutoff)).
 		Update("status", mdb.StatusExpired)
 	return result.RowsAffected > 0, result.Error
 }
@@ -396,7 +414,7 @@ func CompleteWaitSelectOrderWithTransaction(tx *gorm.DB, tradeID string, network
 			"receive_address": receiveAddress,
 			"actual_amount":   actualAmount,
 			"is_selected":     false,
-			"created_at":      time.Now(),
+			"created_at":      time.Now().UTC(),
 		})
 	return result.RowsAffected > 0, result.Error
 }
@@ -416,7 +434,7 @@ func CompleteWaitSelectOkPayOrderWithTransaction(tx *gorm.DB, tradeID string, to
 			"actual_amount":   actualAmount,
 			"is_selected":     false,
 			"pay_provider":    mdb.PaymentProviderOkPay,
-			"created_at":      time.Now(),
+			"created_at":      time.Now().UTC(),
 		})
 	return result.RowsAffected > 0, result.Error
 }
@@ -438,7 +456,7 @@ func CompleteWaitSelectXLayerOrderWithTransaction(tx *gorm.DB, tradeID string, t
 			"actual_amount":   actualAmount,
 			"is_selected":     false,
 			"pay_provider":    mdb.PaymentProviderXLayer,
-			"created_at":      time.Now(),
+			"created_at":      time.Now().UTC(),
 		})
 	return result.RowsAffected > 0, result.Error
 }
@@ -479,6 +497,7 @@ func refreshOrderExpirationWithTransaction(tx *gorm.DB, tradeID string, updates 
 		return false, err
 	}
 	now := time.Now()
+	utcNow := now.UTC()
 	expiration := config.GetOrderExpirationTimeDuration()
 	if order.ID == 0 ||
 		(order.Status != mdb.StatusWaitPay && order.Status != mdb.StatusWaitSelect) ||
@@ -499,11 +518,11 @@ func refreshOrderExpirationWithTransaction(tx *gorm.DB, tradeID string, updates 
 		}
 	}
 
-	updates["created_at"] = now
+	updates["created_at"] = utcNow
 	result := tx.Model(&mdb.Orders{}).
 		Where("trade_id = ?", tradeID).
 		Where("status = ?", order.Status).
-		Where("created_at > ?", now.Add(-expiration)).
+		Where(orderCreatedAtUTCExpr+" > ?", orderTimeUTC(utcNow.Add(-expiration))).
 		Updates(updates)
 	return result.RowsAffected > 0, result.Error
 }
@@ -628,7 +647,7 @@ func GetOnChainOrderByWalletAddressAndAmountAndTokenBeforeTime(network string, a
 		Where("network = ?", network).
 		Where("token = ?", token).
 		Where("actual_amount = ?", amount).
-		Where("created_at <= ?", before).
+		Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(before)).
 		Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusExpired, mdb.StatusConfirming}).
 		Where("(pay_provider = ? OR pay_provider = '')", mdb.PaymentProviderOnChain)
 	query = applyOrderReceiveAddressFilter(query, network, address)

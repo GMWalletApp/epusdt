@@ -38,7 +38,9 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 		}
 	}
 	order := mdb.Orders{TradeId: "scanner-payment", OrderId: "merchant-order", Network: net, Token: "FOO", Amount: 1, ActualAmount: 1, ReceiveAddress: wallet, Status: mdb.StatusWaitPay}
-	if err := dao.Mdb.Create(&order).Error; err != nil {
+	// Production orders store created_at in UTC; the scanner matches the
+	// payment against that UTC timestamp.
+	if err := data.CreateOrderWithTransaction(dao.Mdb, &order); err != nil {
 		t.Fatal(err)
 	}
 	store, err := scanner.Open(":memory:")

@@ -73,10 +73,10 @@ func buildOrderListQuery(f OrderListFilter) *gorm.DB {
 			kw, kw, kw, kw, kw, kw, kw, kw)
 	}
 	if f.StartAt != nil {
-		tx = tx.Where("created_at >= ?", *f.StartAt)
+		tx = tx.Where(orderCreatedAtUTCExpr+" >= ?", orderTimeUTC(*f.StartAt))
 	}
 	if f.EndAt != nil {
-		tx = tx.Where("created_at <= ?", *f.EndAt)
+		tx = tx.Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(*f.EndAt))
 	}
 	return tx
 }

@@ -41,7 +41,7 @@ func TestExpiredOrderCleanupPreservesNewReservation(t *testing.T) {
 	old := create("audit-old")
 	// The lock expires before the asynchronous order-expiration worker runs.
 	if err := dao.Mdb.Model(&mdb.Orders{}).Where("trade_id = ?", old.TradeId).
-		UpdateColumn("created_at", time.Now().Add(-11*time.Minute)).Error; err != nil {
+		UpdateColumn("created_at", time.Now().Add(-11*time.Minute).UTC()).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := dao.RuntimeDB.Model(&mdb.TransactionLock{}).Where("trade_id = ?", old.TradeId).

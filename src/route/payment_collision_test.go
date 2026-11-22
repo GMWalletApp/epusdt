@@ -20,7 +20,7 @@ func TestAdminCloseOrderPreservesReassignedReservation(t *testing.T) {
 	if err := dao.Mdb.Create(old).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := dao.Mdb.Model(old).UpdateColumn("created_at", time.Now().Add(-11*time.Minute)).Error; err != nil {
+	if err := dao.Mdb.Model(old).UpdateColumn("created_at", time.Now().Add(-11*time.Minute).UTC()).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := data.LockTransaction(old.Network, old.ReceiveAddress, old.Token, old.TradeId, old.ActualAmount, -time.Minute); err != nil {

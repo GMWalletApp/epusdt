@@ -1363,7 +1363,8 @@ func TestAdminDashboardRpcStatsSSE(t *testing.T) {
 func TestAdminDashboard_RangeStatsIncludeHistoricalOrders(t *testing.T) {
 	e, token := setupAdminTestEnv(t)
 	yesterday := time.Now().AddDate(0, 0, -1)
-	createdAt := time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 10, 0, 0, 0, time.Local)
+	createdAtLocal := time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 10, 0, 0, 0, time.Local)
+	createdAt := createdAtLocal.UTC()
 	updatedAt := createdAt.Add(5 * time.Minute)
 
 	order := &mdb.Orders{
@@ -1419,7 +1420,7 @@ func TestAdminDashboard_RangeStatsIncludeHistoricalOrders(t *testing.T) {
 	} {
 		resp := assertOK(t, doGetAdmin(e, path, token))
 		rows, _ := resp["data"].([]interface{})
-		day := createdAt.Format("2006-01-02")
+		day := createdAtLocal.Format("2006-01-02")
 		found := false
 		for _, row := range rows {
 			item, _ := row.(map[string]interface{})
@@ -1444,7 +1445,7 @@ func TestAdminDashboard_RangeStatsIncludeHistoricalOrders(t *testing.T) {
 
 	addressResp := assertOK(t, doGetAdmin(e, "/admin/api/v1/dashboard/asset-trend?range=7d&group_by=address", token))
 	addressRows, _ := addressResp["data"].([]interface{})
-	day := createdAt.Format("2006-01-02")
+	day := createdAtLocal.Format("2006-01-02")
 	foundAddress := false
 	for _, row := range addressRows {
 		item, _ := row.(map[string]interface{})
@@ -1464,7 +1465,8 @@ func TestAdminDashboard_RangeStatsIncludeHistoricalOrders(t *testing.T) {
 func TestAdminDashboard_TodayTrendUsesHourlyBuckets(t *testing.T) {
 	e, token := setupAdminTestEnv(t)
 	now := time.Now()
-	createdAt := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, time.Local)
+	createdAtLocal := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, time.Local)
+	createdAt := createdAtLocal.UTC()
 	updatedAt := createdAt.Add(2 * time.Minute)
 
 	order := &mdb.Orders{
@@ -1494,7 +1496,7 @@ func TestAdminDashboard_TodayTrendUsesHourlyBuckets(t *testing.T) {
 	} {
 		resp := assertOK(t, doGetAdmin(e, path, token))
 		rows, _ := resp["data"].([]interface{})
-		hour := createdAt.Format("2006-01-02 15:00")
+		hour := createdAtLocal.Format("2006-01-02 15:00")
 		found := false
 		for _, row := range rows {
 			item, _ := row.(map[string]interface{})

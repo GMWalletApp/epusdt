@@ -36,6 +36,45 @@ func TestCleanupExpiredTransactionLocksRetriesSQLiteBusy(t *testing.T) {
 	}
 }
 
+func TestProcessExpiredOrdersDoesNotExpireFreshUTCOrder(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	// Merchant orders store created_at in UTC. Run the worker with a non-UTC
+	// local zone to reproduce the text-comparison bug that expired fresh orders.
+	originalLocal := time.Local
+	time.Local = time.FixedZone("CST", 8*60*60)
+	defer func() { time.Local = originalLocal }()
+
+	order := &mdb.Orders{
+		TradeId:        "trade_fresh_utc",
+		OrderId:        "order_fresh_utc",
+		Amount:         1,
+		Currency:       "CNY",
+		ActualAmount:   1.01,
+		ReceiveAddress: "wallet_fresh_utc",
+		Token:          "USDT",
+		Network:        "tron",
+		Status:         mdb.StatusWaitPay,
+	}
+	if err := dao.Mdb.Create(order).Error; err != nil {
+		t.Fatalf("create fresh order: %v", err)
+	}
+	if err := dao.Mdb.Model(order).UpdateColumn("created_at", time.Now().UTC()).Error; err != nil {
+		t.Fatalf("set UTC created_at: %v", err)
+	}
+
+	processExpiredOrders()
+
+	fresh, err := data.GetOrderInfoByTradeId(order.TradeId)
+	if err != nil {
+		t.Fatalf("reload fresh order: %v", err)
+	}
+	if fresh.Status != mdb.StatusWaitPay {
+		t.Fatalf("fresh order status = %d, want %d", fresh.Status, mdb.StatusWaitPay)
+	}
+}
+
 func TestProcessExpiredOrdersExpiresWaitingOrdersAndReleasesLocks(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
@@ -55,7 +94,7 @@ func TestProcessExpiredOrdersExpiresWaitingOrdersAndReleasesLocks(t *testing.T) 
 	if err := dao.Mdb.Create(order).Error; err != nil {
 		t.Fatalf("create expired order: %v", err)
 	}
-	if err := dao.Mdb.Model(order).UpdateColumn("created_at", time.Now().Add(-20*time.Minute)).Error; err != nil {
+	if err := dao.Mdb.Model(order).UpdateColumn("created_at", time.Now().Add(-20*time.Minute).UTC()).Error; err != nil {
 		t.Fatalf("age expired order: %v", err)
 	}
 	if err := data.LockTransaction("tron", order.ReceiveAddress, order.Token, order.TradeId, order.ActualAmount, time.Hour); err != nil {
@@ -92,7 +131,7 @@ func TestProcessExpiredOrdersExpiresWaitingOrdersAndReleasesLocks(t *testing.T) 
 	if err := dao.Mdb.Create(placeholder).Error; err != nil {
 		t.Fatalf("create placeholder order: %v", err)
 	}
-	if err := dao.Mdb.Model(placeholder).UpdateColumn("created_at", time.Now().Add(-20*time.Minute)).Error; err != nil {
+	if err := dao.Mdb.Model(placeholder).UpdateColumn("created_at", time.Now().Add(-20*time.Minute).UTC()).Error; err != nil {
 		t.Fatalf("age placeholder order: %v", err)
 	}
 
@@ -157,7 +196,7 @@ func TestProcessExpiredOrdersKeepsPaidOrdersPaid(t *testing.T) {
 	if err := dao.Mdb.Create(order).Error; err != nil {
 		t.Fatalf("create paid order: %v", err)
 	}
-	if err := dao.Mdb.Model(order).UpdateColumn("created_at", time.Now().Add(-20*time.Minute)).Error; err != nil {
+	if err := dao.Mdb.Model(order).UpdateColumn("created_at", time.Now().Add(-20*time.Minute).UTC()).Error; err != nil {
 		t.Fatalf("age paid order: %v", err)
 	}
 

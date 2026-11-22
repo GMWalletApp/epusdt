@@ -87,7 +87,7 @@ func TestSwitchNetworkExtendsParentAndItsReservation(t *testing.T) {
 	now := time.Now()
 	oldExpiry := now.Add(time.Minute)
 	if err := dao.Mdb.Model(&mdb.Orders{}).Where("trade_id = ?", parent.TradeId).
-		UpdateColumn("created_at", now.Add(-9*time.Minute)).Error; err != nil {
+		UpdateColumn("created_at", now.Add(-9*time.Minute).UTC()).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := dao.RuntimeDB.Model(&mdb.TransactionLock{}).Where("trade_id = ?", parent.TradeId).
@@ -159,7 +159,7 @@ func TestSwitchNetworkReusingChildRenewsParentReservation(t *testing.T) {
 	}
 	for _, id := range []string{parent.TradeId, child.TradeId} {
 		if err := dao.Mdb.Model(&mdb.Orders{}).Where("trade_id = ?", id).
-			UpdateColumn("created_at", time.Now().Add(-9*time.Minute)).Error; err != nil {
+			UpdateColumn("created_at", time.Now().Add(-9*time.Minute).UTC()).Error; err != nil {
 			t.Fatal(err)
 		}
 		if err := dao.RuntimeDB.Model(&mdb.TransactionLock{}).Where("trade_id = ?", id).

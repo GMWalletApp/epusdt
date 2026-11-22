@@ -25,7 +25,7 @@ func seedRenewalOrder(t *testing.T) *mdb.Orders {
 	if err := dao.Mdb.Create(order).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := dao.Mdb.Model(order).UpdateColumn("created_at", time.Now().Add(-9*time.Minute)).Error; err != nil {
+	if err := dao.Mdb.Model(order).UpdateColumn("created_at", time.Now().Add(-9*time.Minute).UTC()).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := LockTransaction(order.Network, order.ReceiveAddress, order.Token, order.TradeId, order.ActualAmount, time.Minute); err != nil {
@@ -120,7 +120,7 @@ func TestRefreshOrderExpirationFailsClosed(t *testing.T) {
 			case "closed":
 				err = dao.Mdb.Model(order).UpdateColumn("status", mdb.StatusExpired).Error
 			case "timed-out":
-				err = dao.Mdb.Model(order).UpdateColumn("created_at", time.Now().Add(-11*time.Minute)).Error
+				err = dao.Mdb.Model(order).UpdateColumn("created_at", time.Now().Add(-11*time.Minute).UTC()).Error
 			}
 			if err != nil {
 				t.Fatal(err)
