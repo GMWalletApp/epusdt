@@ -26,6 +26,7 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 	const net = "ethereum"
 	incoming := "0x" + strings.Repeat("1a", 32)
 	outgoing := "0x" + strings.Repeat("2b", 32)
+	blockHash := "0x" + strings.Repeat("cd", 32)
 	const wallet = "0x1111111111111111111111111111111111111111"
 	const contract = "0x2222222222222222222222222222222222222222"
 	if err := dao.Mdb.Model(&mdb.Chain{}).Where("network = ?", net).Update("min_confirmations", 2).Error; err != nil {
@@ -97,7 +98,7 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 		case "eth_blockNumber":
 			result = "0x12"
 		case "eth_getBlockByNumber":
-			result = map[string]any{"number": "0x11", "hash": "block", "parentHash": "parent", "timestamp": fmt.Sprintf("0x%x", time.Now().Unix()+1), "transactions": []any{map[string]any{"hash": outgoing, "from": wallet, "to": contract}, map[string]any{"hash": incoming, "from": contract, "to": wallet}}}
+			result = map[string]any{"number": "0x11", "hash": blockHash, "parentHash": "parent", "timestamp": fmt.Sprintf("0x%x", time.Now().Unix()+1), "transactions": []any{map[string]any{"hash": outgoing, "from": wallet, "to": contract}, map[string]any{"hash": incoming, "from": contract, "to": wallet}}}
 		case "eth_getLogs":
 			var logs []any
 			for i, id := range []string{outgoing, incoming} {
@@ -105,7 +106,7 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 				if i == 1 {
 					recipient = wallet
 				}
-				logs = append(logs, map[string]any{"blockHash": "block", "transactionHash": id, "address": contract, "topics": []string{"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", "0x" + strings.Repeat("0", 64), "0x" + strings.Repeat("0", 24) + recipient[2:]}, "data": "0x" + amounts[i]})
+				logs = append(logs, map[string]any{"blockHash": blockHash, "transactionHash": id, "address": contract, "topics": []string{"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", "0x" + strings.Repeat("0", 64), "0x" + strings.Repeat("0", 24) + recipient[2:]}, "data": "0x" + amounts[i]})
 			}
 			result = logs
 		default:
@@ -194,13 +195,13 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 				result = "0x12"
 			case "eth_getTransactionByHash":
 				counts[i].Add(1)
-				result = map[string]any{"hash": incoming, "from": contract, "to": wallet, "input": "0x", "blockHash": "block", "blockNumber": "0x11"}
+				result = map[string]any{"hash": incoming, "from": contract, "to": wallet, "input": "0x", "blockHash": blockHash, "blockNumber": "0x11"}
 			case "eth_getTransactionReceipt":
 				amount := amounts[1]
 				if mode.Load() == 0 || mode.Load() == 1 && i == 1 {
 					amount = amounts[0]
 				}
-				result = map[string]any{"transactionHash": incoming, "blockHash": "block", "blockNumber": "0x11", "status": "0x1", "logs": []any{map[string]any{"address": contract, "transactionHash": incoming, "blockHash": "block", "data": "0x" + amount, "topics": []string{"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", "0x" + strings.Repeat("0", 64), "0x" + strings.Repeat("0", 24) + wallet[2:]}}}}
+				result = map[string]any{"transactionHash": incoming, "blockHash": blockHash, "blockNumber": "0x11", "status": "0x1", "logs": []any{map[string]any{"address": contract, "transactionHash": incoming, "blockHash": blockHash, "data": "0x" + amount, "topics": []string{"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", "0x" + strings.Repeat("0", 64), "0x" + strings.Repeat("0", 24) + wallet[2:]}}}}
 			default:
 				t.Errorf("unexpected RPC %s", req.Method)
 			}

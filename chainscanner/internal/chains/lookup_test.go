@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/tidwall/gjson"
 )
 
 func TestCanonicalTransactionPreservesExactContents(t *testing.T) {
@@ -17,6 +19,56 @@ func TestCanonicalTransactionPreservesExactContents(t *testing.T) {
 		t.Fatal(string(a), string(b), string(c))
 	}
 }
+func TestEVMEvidenceIgnoresProviderOptionalFields(t *testing.T) {
+	txA := gjson.Parse(`{
+		"hash":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","blockHash":"0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","blockNumber":"0x10",
+		"from":"0x1111111111111111111111111111111111111111",
+		"to":"0x2222222222222222222222222222222222222222",
+		"input":"0x","value":"0x1","blockTimestamp":"0x1234",
+		"gas":"0x5208","gasPrice":"0x1","type":"0x2"
+	}`)
+	txB := gjson.Parse(`{
+		"hash":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","blockHash":"0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","blockNumber":"0x10",
+		"from":"0x1111111111111111111111111111111111111111",
+		"to":"0x2222222222222222222222222222222222222222",
+		"input":"0x","value":"0x1"
+	}`)
+	receiptA := gjson.Parse(`{
+		"transactionHash":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","blockHash":"0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","blockNumber":"0x10","status":"0x1",
+		"effectiveGasPrice":"0x1","logsBloom":"0x0",
+		"logs":[{"address":"0x3333333333333333333333333333333333333333","topics":["0x01"],"data":"0x02","transactionHash":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","blockHash":"0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","logIndex":"0x0","removed":false}]
+	}`)
+	receiptB := gjson.Parse(`{
+		"transactionHash":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","blockHash":"0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","blockNumber":"0x10","status":"0x1",
+		"logs":[{"address":"0x3333333333333333333333333333333333333333","topics":["0x01"],"data":"0x02","transactionHash":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","blockHash":"0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","removed":false}]
+	}`)
+	a, err := canonicalEVMEvidence(txA, receiptA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := canonicalEVMEvidence(txB, receiptB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(a) != string(b) {
+		t.Fatalf("optional provider fields changed evidence:\n%s\n%s", a, b)
+	}
+	if strings.Contains(string(a), "blockTimestamp") || strings.Contains(string(a), "effectiveGasPrice") || strings.Contains(string(a), "logIndex") {
+		t.Fatalf("optional field leaked into evidence: %s", a)
+	}
+	bad := gjson.Parse(`{"transactionHash":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","blockHash":"0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","blockNumber":"0x10","status":"0x0","logs":[]}`)
+	c, err := canonicalEVMEvidence(txB, bad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(a) == string(c) {
+		t.Fatal("receipt status mismatch was ignored")
+	}
+	if _, err := canonicalEVMEvidence(txB, gjson.Parse(`{"transactionHash":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","blockHash":"0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","blockNumber":"0x10","logs":[]}`)); err == nil {
+		t.Fatal("missing receipt status was accepted")
+	}
+}
+
 func TestHashLookupRejectsWrongTransactionOrReceipt(t *testing.T) {
 	hash := "0x" + strings.Repeat("ab", 32)
 	for _, failure := range []string{"", "wrong transaction", "wrong block", "wrong receipt", "wrong chain"} {
@@ -42,7 +94,7 @@ func TestHashLookupRejectsWrongTransactionOrReceipt(t *testing.T) {
 					if failure == "wrong transaction" {
 						h = "0x0"
 					}
-					value = map[string]any{"hash": h, "from": "0x1", "input": "0x", "blockHash": hash, "blockNumber": "0x1"}
+					value = map[string]any{"hash": h, "from": hash, "to": hash, "input": "0x", "value": "0x0", "blockHash": hash, "blockNumber": "0x1"}
 				case "eth_getTransactionReceipt":
 					h, b := hash, hash
 					if failure == "wrong receipt" {
@@ -51,7 +103,7 @@ func TestHashLookupRejectsWrongTransactionOrReceipt(t *testing.T) {
 					if failure == "wrong block" {
 						b = "0xff"
 					}
-					value = map[string]any{"transactionHash": h, "blockHash": b, "blockNumber": "0x1", "logs": []any{}}
+					value = map[string]any{"transactionHash": h, "blockHash": b, "blockNumber": "0x1", "status": "0x1", "logs": []any{}}
 				default:
 					t.Errorf("unexpected %s", req.Method)
 				}

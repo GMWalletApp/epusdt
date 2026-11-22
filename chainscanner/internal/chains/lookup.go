@@ -216,7 +216,7 @@ func (s *jsonSource) lookupEVM(ctx context.Context, hash string) (json.RawMessag
 	} else if !strings.EqualFold(receipt.Get("transactionHash").String(), hash) || tx.Get("blockHash").String() != receipt.Get("blockHash").String() || tx.Get("blockNumber").String() != receipt.Get("blockNumber").String() || !receipt.Get("logs").IsArray() {
 		return nil, errTxData
 	}
-	return canonicalTransaction(object(map[string]any{"transaction": json.RawMessage(tx.Raw), "receipt": json.RawMessage(receipt.Raw)}))
+	return canonicalEVMEvidence(tx, receipt)
 }
 
 func lookupTON(ctx context.Context, n Network, hash string) (json.RawMessage, error) {
