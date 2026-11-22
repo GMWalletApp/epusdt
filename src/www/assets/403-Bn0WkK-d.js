@@ -1,1 +1,0 @@
-import{t as e}from"./forbidden-vGiX4pOr.js";var t=e;export{t as component};
