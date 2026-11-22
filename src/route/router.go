@@ -291,6 +291,11 @@ func registerAdminRoutes(e *echo.Echo, connection config.ScannerConnection) {
 	// Authenticated
 	authed := adminV1.Group("", middleware.CheckAdminJWT())
 	registerScannerAdmin(authed, connection)
+	authed.GET("/system/version/current", admin.Ctrl.GetCurrentSystemVersion)
+	authed.GET("/system/version/check", admin.Ctrl.CheckSystemUpdate)
+	authed.GET("/system/update/capability", admin.Ctrl.GetUpdateCapability)
+	authed.GET("/system/update/status", admin.Ctrl.GetUpdateStatus)
+	authed.POST("/system/update/start", admin.Ctrl.StartSystemUpdate)
 	authed.POST("/auth/logout", admin.Ctrl.Logout)
 	authed.GET("/auth/me", admin.Ctrl.Me)
 	authed.POST("/auth/password", admin.Ctrl.ChangePassword)

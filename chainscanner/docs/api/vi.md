@@ -34,6 +34,7 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Dịch vụ | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
 | Dịch vụ | [`GET /v1/transactions/{network}/{hash}/strict`](#transactions) | `200` |
 | Quản trị viên | [`GET /v1/admin/progress`](#scan-progress) | `200` |
+| Quản trị viên | [`GET /v1/admin/scan-retry-rate`](#scan-retry-rate) | `200`, `400` |
 | Quản trị viên | [`GET /v1/admin/nodes`](#list) | `200` |
 | Quản trị viên | [`POST /v1/admin/nodes`](#add) | `201` |
 | Quản trị viên | [`POST /v1/admin/nodes/fallback`](#fallback) | `201` |
@@ -397,6 +398,22 @@ admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protoco
 Trả về một dòng cho mỗi mạng đã cấu hình mà không gọi RPC. `target_height` đã tính độ sâu xác nhận, còn `cursor_height` là độ cao đã quét liên tục. `lag_ms` là thời gian chờ tối thiểu đã quan sát của một độ cao đủ điều kiện nhưng chưa quét xong. Dữ liệu quan sát được làm mới khi khởi động lại hoặc bắt đầu đợt theo dõi mới. Trạng thái là `warning` khi vượt 300.000 ms, ngược lại là `ok`. Độ trễ là null với `idle`, `warming` và `stale`.
 
 `scan_success_count` và `scan_failure_count` đếm số dải khối quét thành công và thất bại trong đợt theo dõi liên tục hiện tại. Mỗi dải có một kết quả sau khi thử các nút thay thế. Lần quét bù sau đó được tính riêng. Truy vấn chiều cao, kiểm tra nút, thời gian chờ và tác vụ bị hủy không tạo mẫu. Hai bộ đếm trở về 0 khi kết thúc đăng ký cuối cùng hoặc khởi động lại máy quét. Các phiên bản cũ không có hai trường này.
+
+<a id="scan-retry-rate"></a>
+
+### `GET /v1/admin/scan-retry-rate`
+
+Dùng token quản trị viên. Bỏ qua `network` để xem mọi mạng đã cấu hình, hoặc truyền tên một mạng. Tên rỗng, mạng chưa cấu hình hoặc tham số lặp lại trả về **400**.
+
+`total_attempts` đếm số lượt bắt đầu đọc dải khối sau khi kiểm tra độ cao của nút. `retry_attempts` đếm lượt đọc lại và lượt quét bù dải đã đánh dấu lỗi, kể cả khi đổi nhà cung cấp. Một lượt chỉ tính một lần dù bao gồm nhiều độ cao hoặc nhiều lệnh RPC. Thăm dò độ cao, tra cứu giao dịch và gửi lại thông báo đều được loại trừ. Bộ đếm được giữ trong bộ nhớ qua các phiên theo dõi và đặt lại khi khởi động lại dịch vụ. `retry_rate` bằng `retry_attempts / total_attempts` (0–1), hoặc `null` khi chưa có lượt đọc.
+
+```sh
+admin "$BASE/v1/admin/scan-retry-rate?network=base"
+```
+
+```json
+[{"network":"base","total_attempts":100,"retry_attempts":4,"retry_rate":0.04}]
+```
 
 <a id="test-one"></a>
 

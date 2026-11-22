@@ -106,6 +106,18 @@ func registerScannerAdmin(group *echo.Group, connection config.ScannerConnection
 		// @Router /admin/api/v1/chainscanner/admin/progress [get]
 		{"GET", "/admin/progress"},
 
+		// @Summary Get block scan retry rates by network
+		// @Description Counts provider range reads since scanner startup, including failover and gap retries. retry_rate is retry_attempts divided by total_attempts, or null before the first read.
+		// @Tags ChainScanner
+		// @Security AdminJWT
+		// @Produce json
+		// @Param network query string false "Limit to one configured network"
+		// @Success 200 {array} scanneradmin.ScanRetryStats
+		// @Failure 400 {string} string "Invalid network filter"
+		// @Failure 404 {string} string "Scanner version does not expose retry rates"
+		// @Router /admin/api/v1/chainscanner/admin/scan-retry-rate [get]
+		{"GET", "/admin/scan-retry-rate"},
+
 		// @Summary List scanner nodes
 		// @Tags ChainScanner
 		// @Security AdminJWT

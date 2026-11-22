@@ -473,6 +473,10 @@ order_notice_max_retry={{.OrderNoticeMaxRetry}}
 
 api_rate_url=
 
+# GitHub repository used by the authenticated admin version checker.
+# Keep this server-side value in owner/name form; browsers cannot override it.
+update_repository=GMWalletApp/epusdt
+
 # Set to true to re-run the install wizard on next startup.
 install={{.InstallValue}}
 

@@ -7,9 +7,33 @@
     "http_status": 401,
     "message": "signature verification failed"
   },
+  "404": {
+    "http_status": 404,
+    "message": "no stable release available"
+  },
+  "409": {
+    "http_status": 409,
+    "message": "update already in progress"
+  },
+  "422": {
+    "http_status": 422,
+    "message": "one-click update is not supported"
+  },
+  "429": {
+    "http_status": 429,
+    "message": "GitHub API rate limit exceeded"
+  },
   "500": {
     "http_status": 500,
     "message": "server error"
+  },
+  "502": {
+    "http_status": 502,
+    "message": "failed to check GitHub releases"
+  },
+  "504": {
+    "http_status": 504,
+    "message": "GitHub release check timed out"
   },
   "10001": {
     "http_status": 400,

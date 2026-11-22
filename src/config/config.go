@@ -21,12 +21,14 @@ var (
 	LogSavePath        string
 	StaticPath         string
 	StaticFilePath     string
+	UpdateRepository   string
 	TgBotToken         string
 	TgProxy            string
 	TgManage           int64
 	BuildVersion       = "0.0.0-dev"
 	BuildCommit        = "none"
 	BuildDate          = "unknown"
+	BuildType          = "source"
 	configRootPath     string
 	explicitConfigPath string
 )
@@ -52,6 +54,7 @@ func Init() {
 	LogLevel = normalizeLogLevel(viper.GetString("log_level"))
 	StaticPath = normalizeStaticURLPath(viper.GetString("static_path"))
 	StaticFilePath = filepath.Join(configRootPath, strings.TrimPrefix(StaticPath, "/"))
+	UpdateRepository = normalizeUpdateRepository(viper.GetString("update_repository"))
 	if err = ensureConfiguredStaticFiles(); err != nil {
 		panic(err)
 	}
@@ -175,6 +178,31 @@ func normalizeStaticURLPath(path string) string {
 		path = "/" + path
 	}
 	return path
+}
+
+// normalizeUpdateRepository keeps the release source server-side and limits
+// it to the owner/name form accepted by the GitHub API. The browser never
+// supplies this value, which prevents turning the check endpoint into a URL
+// proxy.
+func normalizeUpdateRepository(repository string) string {
+	repository = strings.TrimSpace(repository)
+	if repository == "" {
+		return "GMWalletApp/epusdt"
+	}
+	parts := strings.Split(repository, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" || strings.ContainsAny(repository, "\\?#:") {
+		return "GMWalletApp/epusdt"
+	}
+	return repository
+}
+
+// GetUpdateRepository returns the configured GitHub owner/name. Init must have
+// run before serving requests; the fallback keeps tests and CLI commands safe.
+func GetUpdateRepository() string {
+	if UpdateRepository != "" {
+		return UpdateRepository
+	}
+	return normalizeUpdateRepository(viper.GetString("update_repository"))
 }
 
 func resolvePathFromBase(basePath string, path string, fallback string) string {

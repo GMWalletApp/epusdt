@@ -48,6 +48,7 @@ type NodeOptions struct {
 }
 
 type NodeRegistry struct {
+	scanAttempts map[string]*scanAttempts // fixed at startup, one counter per configured network
 	blacklist    hostBlacklist
 	lookup       transactionLookup
 	db           *sql.DB
@@ -68,6 +69,7 @@ func NewNodeRegistry(ctx context.Context, s *engine.Store, networks []chains.Net
 		return nil, err
 	}
 	r := &NodeRegistry{store: s, db: engine.Database(s), builtins: map[NodeEndpoint]NodeEndpoint{}, configured: map[NodeEndpoint]chains.Network{}, slots: make(chan struct{}, 8)}
+	r.scanAttempts = make(map[string]*scanAttempts, len(networks))
 	enabled := map[string]chains.Network{}
 	for _, n := range networks {
 		if !chains.Supported(n.Name) {
@@ -77,6 +79,7 @@ func NewNodeRegistry(ctx context.Context, s *engine.Store, networks []chains.Net
 			return nil, errors.New("duplicate network")
 		}
 		enabled[n.Name] = n
+		r.scanAttempts[n.Name] = new(scanAttempts)
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

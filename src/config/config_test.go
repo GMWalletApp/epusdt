@@ -471,3 +471,15 @@ func TestGetRateForCoinCallsRateAPIOnceForUsdtCnyFailure(t *testing.T) {
 		t.Fatalf("rate api call count = %d, want 1", callCount)
 	}
 }
+
+func TestNormalizeUpdateRepositoryKeepsServerSideRepository(t *testing.T) {
+	if got := normalizeUpdateRepository(""); got != "GMWalletApp/epusdt" {
+		t.Fatalf("empty repository = %q", got)
+	}
+	if got := normalizeUpdateRepository("https://attacker.test"); got != "GMWalletApp/epusdt" {
+		t.Fatalf("invalid repository = %q", got)
+	}
+	if got := normalizeUpdateRepository("GMWalletApp/epusdt"); got != "GMWalletApp/epusdt" {
+		t.Fatalf("valid repository = %q", got)
+	}
+}
