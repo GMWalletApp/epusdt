@@ -2,9 +2,12 @@ package constant
 
 import "errors"
 
+// Errno is the v1 wire contract. Keep assigned numbers and meanings stable.
+// Add new business codes at the end; never repurpose retired numbers.
 var Errno = map[int]string{
 	400:   "system error",
 	401:   "signature verification failed",
+	500:   "server error",
 	10001: "wallet address already exists",
 	10002: "order already exists",
 	10003: "no available wallet address",
@@ -55,6 +58,7 @@ var Errno = map[int]string{
 var (
 	SystemErr                  = Err(400)
 	SignatureErr               = Err(401)
+	InternalServerErr          = Err(500)
 	WalletAddressAlreadyExists = Err(10001)
 	OrderAlreadyExists         = Err(10002)
 	NotAvailableWalletAddress  = Err(10003)
@@ -111,12 +115,13 @@ func (re *RspError) Error() string {
 	return re.Msg
 }
 
-func Err(code int) (err error) {
-	err = &RspError{
-		Code: code,
-		Msg:  Errno[code],
+func Err(code int) error {
+	message, ok := Errno[code]
+	if !ok {
+		code = 500
+		message = Errno[code]
 	}
-	return err
+	return &RspError{Code: code, Msg: message}
 }
 
 func (re *RspError) Render() (code int, msg string) {
@@ -125,18 +130,14 @@ func (re *RspError) Render() (code int, msg string) {
 
 func ResolveErrno(err error) (code int, msg string) {
 	var rspErr *RspError
-	if errors.As(err, &rspErr) {
+	if errors.As(err, &rspErr) && rspErr != nil {
 		return rspErr.Render()
 	}
 	return SystemErr.(*RspError).Render()
 }
 
-// HttpStatus maps a RspError code to the HTTP status the handler
-// should use on the wire. Small codes (< 1000) are treated as real
-// HTTP status codes (e.g. 400 system error, 401 signature failure) so
-// clients see the right status. Business codes (>= 1000) are all
-// client-side problems that map to HTTP 400; the specific code still
-// lives in the body's `status_code` field for the frontend to branch on.
+// HttpStatus preserves v1 transport semantics. Domain codes use HTTP 400;
+// clients distinguish them using the stable status_code in the JSON body.
 func (re *RspError) HttpStatus() int {
 	if re == nil {
 		return 500
