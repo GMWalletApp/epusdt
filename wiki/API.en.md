@@ -365,6 +365,8 @@ Send a GET query or a POST form to `/payments/epay/v1/order/create-transaction/s
 /pay/checkout-counter/{trade_id}
 ```
 
+For orders created with this version, repeating the same signed fields as the same merchant reopens the original pending cashier. Both GET and POST are supported. A retry preserves the payment deadline. A changed request, a closed payment window, or an order created before request fingerprints were stored returns `10002`.
+
 | Field | Location | Type | Required | Description |
 | --- | --- | --- | --- | --- |
 | `pid` | query/form | string | Yes | Merchant PID. Use a numeric PID for callbacks. |

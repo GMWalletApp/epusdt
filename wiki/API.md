@@ -478,6 +478,8 @@ function epaySign(array $params, string $secretKey): string
 /pay/checkout-counter/{trade_id}
 ```
 
+升级后创建的订单支持重新打开待支付收银台。同一商户使用相同签名字段通过 GET 或 POST 重试时，返回原付款链接，原有效期继续计时。请求字段改变、支付窗口已关闭，或历史订单缺少首次请求记录时，返回 `10002`。
+
 ### 请求参数
 
 | 字段 | 位置 | 类型 | 必填 | 说明 |

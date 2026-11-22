@@ -2,6 +2,7 @@ package route
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
@@ -170,6 +171,20 @@ func RegisterRouteWithScanner(e *echo.Echo, connection config.ScannerConnection)
 		notifyURL := getString(params, "notify_url")
 		outTradeNo := getString(params, "out_trade_no")
 		returnURL := getString(params, "return_url")
+		// Bind the original signed fields, before mutable site defaults are applied.
+		// JSON sorts map keys, so GET and POST produce the same fingerprint.
+		signedFields, err := json.Marshal(params)
+		if err != nil {
+			return comm.Ctrl.FailJson(ctx, constant.ParamsMarshalErr)
+		}
+		submitHash := fmt.Sprintf("%x", sha256.Sum256(signedFields))
+		existing, err := service.ReopenEPayCashier(outTradeNo, apiKeyRow.ID, submitHash)
+		if err != nil {
+			return comm.Ctrl.FailJson(ctx, err)
+		}
+		if existing != "" {
+			return ctx.Redirect(http.StatusFound, "/pay/checkout-counter/"+existing)
+		}
 		selectorToken, selectorNetwork, selectorMatched, err := resolveEPayTypeSelector(epayType)
 		if err != nil {
 			return comm.Ctrl.FailJson(ctx, constant.SystemErr)
@@ -218,6 +233,7 @@ func RegisterRouteWithScanner(e *echo.Echo, connection config.ScannerConnection)
 
 		ctx.Set("request_body", body)
 		ctx.Set(comm.EPayTypeContextKey, epayType)
+		ctx.Set(comm.EPayRequestHashContextKey, submitHash)
 		ctx.Set(middleware.ApiKeyIDKey, apiKeyRow.ID)
 		ctx.Set(middleware.ApiKeyRowKey, apiKeyRow)
 

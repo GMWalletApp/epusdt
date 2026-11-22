@@ -133,10 +133,32 @@ func gmpayCreateRequestHash(order *mdb.Orders, requestedAmount float64) string {
 
 func replayCreateTransaction(existing, requested *mdb.Orders) (*response.CreateTransactionResponse, error) {
 	if requested.CreateRequestHash == "" || existing.CreateRequestHash != requested.CreateRequestHash ||
-		existing.ApiKeyID != requested.ApiKeyID || existing.PaymentType != mdb.PaymentTypeGmpay || existing.ParentTradeId != "" {
+		existing.ApiKeyID != requested.ApiKeyID || existing.PaymentType != requested.PaymentType || existing.ParentTradeId != "" {
 		return nil, constant.OrderAlreadyExists
 	}
+	if requested.PaymentType == mdb.PaymentTypeEpay {
+		if existing.Status != mdb.StatusWaitSelect && existing.Status != mdb.StatusWaitPay {
+			return nil, constant.OrderAlreadyExists
+		}
+		if existing.CreatedAt.AddMinutes(config.GetOrderExpirationTime()).TimestampMilli() <= carbon.Now().TimestampMilli() {
+			return nil, constant.OrderAlreadyExists
+		}
+	}
 	return buildCreateTransactionResponse(existing), nil
+}
+
+// ReopenEPayCashier resolves a signed retry before applying today's checkout defaults.
+func ReopenEPayCashier(orderID string, apiKeyID uint64, submitHash string) (string, error) {
+	existing, err := data.GetOrderInfoByOrderId(orderID)
+	if err != nil || existing.ID == 0 {
+		return "", err
+	}
+	req := &mdb.Orders{PaymentType: mdb.PaymentTypeEpay, ApiKeyID: apiKeyID, CreateRequestHash: submitHash}
+	replay, err := replayCreateTransaction(existing, req)
+	if err != nil {
+		return "", err
+	}
+	return replay.TradeId, nil
 }
 
 // Capture the deadline at the same instant as creation. The cashier may later
@@ -203,6 +225,9 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 		ApiKeyID:    apiKeyID(apiKey),
 	}
 	order.CreateRequestHash = gmpayCreateRequestHash(order, req.Amount)
+	if paymentType == mdb.PaymentTypeEpay && apiKeyID(apiKey) != 0 {
+		order.CreateRequestHash = req.EPaySubmitHash
+	}
 	exist, err := data.GetOrderInfoByOrderId(req.OrderId)
 	if err != nil {
 		return nil, err

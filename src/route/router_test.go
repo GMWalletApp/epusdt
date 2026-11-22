@@ -3203,3 +3203,65 @@ func TestSwitchNetwork_OkPayIntegration(t *testing.T) {
 	}
 	t.Logf("OkPay payment_url=%s", paymentURL)
 }
+
+func TestSignedEPaySubmitReopensOnlyOriginalPendingCashier(t *testing.T) {
+	e := setupTestEnv(t)
+	const path = "/payments/epay/v1/order/create-transaction/submit.php"
+	values := signEpayValues(url.Values{
+		"pid": {"1"}, "type": {"alipay"}, "money": {"1.00"}, "out_trade_no": {"epay-reopen"},
+		"notify_url": {"https://93.184.216.34/notify"}, "return_url": {"https://93.184.216.34/return"},
+	})
+	first := doFormPost(e, path, values)
+	location := first.Header().Get("Location")
+	if first.Code != http.StatusFound || !strings.HasPrefix(location, "/pay/checkout-counter/") {
+		t.Fatalf("initial submit: %d %s", first.Code, first.Body.String())
+	}
+	original, err := data.GetOrderInfoByOrderId("epay-reopen")
+	if err != nil || original.CreateRequestHash == "" {
+		t.Fatal("missing signed request identity", err)
+	}
+	get := func(input url.Values) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		e.ServeHTTP(w, httptest.NewRequest("GET", path+"?"+input.Encode(), nil))
+		return w
+	}
+	conflict := func(w *httptest.ResponseRecorder) {
+		t.Helper()
+		if w.Header().Get("Location") != "" || !strings.Contains(w.Body.String(), `"status_code":10002`) {
+			t.Fatalf("expected duplicate, got %d %s", w.Code, w.Body.String())
+		}
+	}
+	for _, status := range []int{mdb.StatusWaitSelect, mdb.StatusWaitPay} {
+		if err := dao.Mdb.Model(original).Update("status", status).Error; err != nil {
+			t.Fatal(err)
+		}
+		r := get(values)
+		if r.Code != 302 || r.Header().Get("Location") != location {
+			t.Fatalf("repeat submit: %d %s", r.Code, r.Body.String())
+		}
+	}
+	after, err := data.GetOrderInfoByOrderId("epay-reopen")
+	if err != nil || after.CreatedAt.TimestampMilli() != original.CreatedAt.TimestampMilli() || after.CreateResponseExpiresAt != original.CreateResponseExpiresAt {
+		t.Fatal("retry changed original payment window", err)
+	}
+	for k, v := range map[string]string{"money": "2.00", "return_url": "https://93.184.216.34/changed", "type": "usdt.tron"} {
+		changed := maps.Clone(values)
+		changed.Set(k, v)
+		conflict(get(signEpayValues(changed)))
+	}
+	invalid := maps.Clone(values)
+	invalid.Set("sign", "bad")
+	if r := get(invalid); r.Code == 302 {
+		t.Fatal("invalid signature reopened the cashier")
+	}
+	for _, status := range []int{mdb.StatusPaySuccess, mdb.StatusExpired, mdb.StatusConfirming, mdb.StatusManualReview} {
+		if err := dao.Mdb.Model(original).Update("status", status).Error; err != nil {
+			t.Fatal(err)
+		}
+		conflict(get(values))
+	}
+	if err := dao.Mdb.Model(original).Updates(map[string]any{"status": mdb.StatusWaitPay, "created_at": "2000-01-01 00:00:00"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	conflict(get(values))
+}

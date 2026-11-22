@@ -14,7 +14,10 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-const EPayTypeContextKey = "epay_type"
+const (
+	EPayTypeContextKey        = "epay_type"
+	EPayRequestHashContextKey = "epay_request_hash"
+)
 
 // apiKeyFromContext returns the api_keys row stamped by CheckApiSign.
 // Returns nil when the middleware didn't run (should not happen on authed routes).
@@ -144,6 +147,7 @@ func (c *BaseCommController) CreateTransactionAndRedirect(ctx echo.Context) (err
 	if raw, ok := ctx.Get(EPayTypeContextKey).(string); ok {
 		req.EpayType = strings.TrimSpace(raw)
 	}
+	req.EPaySubmitHash, _ = ctx.Get(EPayRequestHashContextKey).(string)
 	if err = c.ValidateStruct(ctx, req); err != nil {
 		log.Sugar.Errorf("validate request error: %v", err)
 		return c.FailJson(ctx, err)

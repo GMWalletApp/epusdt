@@ -17,8 +17,9 @@ type CreateTransactionRequest struct {
 	// "Epay" (case-insensitive) switches callback format to legacy EPay;
 	// empty or any other value is stored as "Gmpay" and uses GMPay JSON.
 	// It is optional for GMPay, but must be included in the signature when sent.
-	PaymentType string `json:"payment_type" form:"payment_type" example:"Epay"`
-	EpayType    string `json:"-" form:"-"`
+	PaymentType    string `json:"payment_type" form:"payment_type" example:"Epay"`
+	EpayType       string `json:"-" form:"-"`
+	EPaySubmitHash string `json:"-" form:"-"`
 }
 
 func (r CreateTransactionRequest) Translates() map[string]string {
