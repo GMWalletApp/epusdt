@@ -2,10 +2,13 @@ package service
 
 import (
 	cryptorand "crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	mathrand "math/rand/v2"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -96,6 +99,10 @@ func validateCreateTransactionTokenNetwork(token, network string) error {
 }
 
 func buildCreateTransactionResponse(order *mdb.Orders) *response.CreateTransactionResponse {
+	expirationTime := order.CreateResponseExpiresAt
+	if expirationTime == 0 {
+		expirationTime = order.CreatedAt.AddMinutes(config.GetOrderExpirationTime()).Timestamp()
+	}
 	return &response.CreateTransactionResponse{
 		TradeId:        order.TradeId,
 		OrderId:        order.OrderId,
@@ -105,9 +112,51 @@ func buildCreateTransactionResponse(order *mdb.Orders) *response.CreateTransacti
 		ReceiveAddress: order.ReceiveAddress,
 		Token:          order.Token,
 		Status:         order.Status,
-		ExpirationTime: carbon.Now().AddMinutes(config.GetOrderExpirationTime()).Timestamp(),
+		ExpirationTime: expirationTime,
 		PaymentUrl:     fmt.Sprintf("%s/pay/checkout-counter/%s", config.GetAppUri(), order.TradeId),
 	}
+}
+
+// Hash the original merchant inputs before checkout can change the payment target.
+// Keep the field order stable so stored hashes remain comparable after upgrades.
+func gmpayCreateRequestHash(order *mdb.Orders, requestedAmount float64) string {
+	if order.PaymentType != mdb.PaymentTypeGmpay || order.ApiKeyID == 0 {
+		return ""
+	}
+	fields := []string{
+		order.OrderId, order.Currency, strconv.FormatFloat(requestedAmount, 'g', -1, 64),
+		order.Token, order.Network, order.NotifyUrl, order.RedirectUrl, order.Name,
+	}
+	payload, _ := json.Marshal(fields) // An array of strings always encodes.
+	return fmt.Sprintf("%x", sha256.Sum256(payload))
+}
+
+func replayCreateTransaction(existing, requested *mdb.Orders) (*response.CreateTransactionResponse, error) {
+	if requested.CreateRequestHash == "" || existing.CreateRequestHash != requested.CreateRequestHash ||
+		existing.ApiKeyID != requested.ApiKeyID || existing.PaymentType != mdb.PaymentTypeGmpay || existing.ParentTradeId != "" {
+		return nil, constant.OrderAlreadyExists
+	}
+	return buildCreateTransactionResponse(existing), nil
+}
+
+// Capture the deadline at the same instant as creation. The cashier may later
+// renew its own payment window by updating created_at.
+func insertMerchantOrder(tx *gorm.DB, order *mdb.Orders) error {
+	if order.CreateRequestHash != "" {
+		now := carbon.Now()
+		order.CreatedAt = *carbon.NewTime(now)
+		order.CreateResponseExpiresAt = now.AddMinutes(config.GetOrderExpirationTime()).Timestamp()
+	}
+	return data.CreateOrderWithTransaction(tx, order)
+}
+
+// A concurrent insert on another gateway may have claimed the unique merchant order ID.
+func replayAfterCreateError(requested *mdb.Orders, createErr error) (*response.CreateTransactionResponse, error) {
+	existing, err := data.GetOrderInfoByOrderId(requested.OrderId)
+	if err != nil || existing.ID == 0 {
+		return nil, createErr
+	}
+	return replayCreateTransaction(existing, requested)
 }
 
 // CreateTransaction creates a new payment order.
@@ -119,6 +168,7 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 		return nil, err
 	}
 	notifyURL := strings.TrimSpace(req.NotifyUrl)
+	redirectURL, name := req.RedirectUrl, req.Name
 	if err := security.ValidatePublicHTTPURL(notifyURL); err != nil {
 		return nil, constant.NotifyURLErr
 	}
@@ -129,6 +179,8 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 	epayType := ""
 	if paymentType == mdb.PaymentTypeEpay {
 		epayType = strings.TrimSpace(req.EpayType)
+	} else {
+		redirectURL, name = strings.TrimSpace(redirectURL), strings.TrimSpace(name)
 	}
 
 	gCreateTransactionLock.Lock()
@@ -136,12 +188,27 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 
 	amountPrecision := data.GetAmountPrecision()
 	payAmount := math.MustParsePrecFloat64(req.Amount, amountPrecision)
+	order := &mdb.Orders{
+		OrderId:     req.OrderId,
+		Amount:      payAmount,
+		Currency:    currency,
+		Token:       token,
+		Network:     network,
+		NotifyUrl:   notifyURL,
+		RedirectUrl: redirectURL,
+		Name:        name,
+		EpayType:    epayType,
+		PaymentType: paymentType,
+		PayProvider: mdb.PaymentProviderOnChain,
+		ApiKeyID:    apiKeyID(apiKey),
+	}
+	order.CreateRequestHash = gmpayCreateRequestHash(order, req.Amount)
 	exist, err := data.GetOrderInfoByOrderId(req.OrderId)
 	if err != nil {
 		return nil, err
 	}
 	if exist.ID > 0 {
-		return nil, constant.OrderAlreadyExists
+		return replayCreateTransaction(exist, order)
 	}
 
 	decimalPayAmount := decimal.NewFromFloat(payAmount)
@@ -150,23 +217,10 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 	}
 
 	if token == "" && network == "" {
-		tradeID := GenerateCode()
-		order := &mdb.Orders{
-			TradeId:     tradeID,
-			OrderId:     req.OrderId,
-			Amount:      payAmount,
-			Currency:    currency,
-			Status:      mdb.StatusWaitSelect,
-			NotifyUrl:   notifyURL,
-			RedirectUrl: req.RedirectUrl,
-			Name:        req.Name,
-			EpayType:    epayType,
-			PaymentType: paymentType,
-			PayProvider: mdb.PaymentProviderOnChain,
-			ApiKeyID:    apiKeyID(apiKey),
-		}
-		if err = data.CreateOrderWithTransaction(dao.Mdb, order); err != nil {
-			return nil, err
+		order.TradeId = GenerateCode()
+		order.Status = mdb.StatusWaitSelect
+		if err = insertMerchantOrder(dao.Mdb, order); err != nil {
+			return replayAfterCreateError(order, err)
 		}
 		return buildCreateTransactionResponse(order), nil
 	}
@@ -211,28 +265,14 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 	}
 
 	tx := dao.Mdb.Begin()
-	order := &mdb.Orders{
-		TradeId:        tradeID,
-		OrderId:        req.OrderId,
-		Amount:         payAmount,
-		Currency:       currency,
-		ActualAmount:   availableAmount,
-		ReceiveAddress: availableAddress,
-		Token:          token,
-		Network:        network,
-		Status:         mdb.StatusWaitPay,
-		NotifyUrl:      notifyURL,
-		RedirectUrl:    req.RedirectUrl,
-		Name:           req.Name,
-		EpayType:       epayType,
-		PaymentType:    paymentType,
-		PayProvider:    mdb.PaymentProviderOnChain,
-		ApiKeyID:       apiKeyID(apiKey),
-	}
-	if err = data.CreateOrderWithTransaction(tx, order); err != nil {
+	order.TradeId = tradeID
+	order.ActualAmount = availableAmount
+	order.ReceiveAddress = availableAddress
+	order.Status = mdb.StatusWaitPay
+	if err = insertMerchantOrder(tx, order); err != nil {
 		tx.Rollback()
 		_ = data.UnLockTransactionByTradeId(tradeID)
-		return nil, err
+		return replayAfterCreateError(order, err)
 	}
 	if err = tx.Commit().Error; err != nil {
 		tx.Rollback()

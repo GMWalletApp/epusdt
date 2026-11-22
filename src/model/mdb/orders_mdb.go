@@ -45,10 +45,13 @@ const (
 )
 
 type Orders struct {
-	TradeId               string `gorm:"column:trade_id;uniqueIndex:orders_trade_id_uindex" json:"trade_id" example:"3nQ9pL2xV7sK1mR8cT4yB_aZ"`
-	OrderId               string `gorm:"column:order_id;uniqueIndex:orders_order_id_uindex" json:"order_id" example:"ORD20260416001"`
-	ParentTradeId         string `gorm:"column:parent_trade_id;index:idx_orders_parent_trade_id;default:''" json:"parent_trade_id"`
-	ReviewTransactionHash string `gorm:"size:128" json:"review_transaction_hash,omitempty"`
+	TradeId string `gorm:"column:trade_id;uniqueIndex:orders_trade_id_uindex" json:"trade_id" example:"3nQ9pL2xV7sK1mR8cT4yB_aZ"`
+	OrderId string `gorm:"column:order_id;uniqueIndex:orders_order_id_uindex" json:"order_id" example:"ORD20260416001"`
+	// Legacy orders have no creation hash and keep the duplicate-order behavior.
+	CreateRequestHash       string `gorm:"size:64;<-:create" json:"-"`
+	CreateResponseExpiresAt int64  `gorm:"<-:create" json:"-"`
+	ParentTradeId           string `gorm:"column:parent_trade_id;index:idx_orders_parent_trade_id;default:''" json:"parent_trade_id"`
+	ReviewTransactionHash   string `gorm:"size:128" json:"review_transaction_hash,omitempty"`
 	// Existing orders retain their historical transaction IDs. New settlements
 	// also acquire a unique key inside the payment transaction across instances.
 	SettlementKey      *string `gorm:"size:64;uniqueIndex:idx_order_settlement_key" json:"-"`

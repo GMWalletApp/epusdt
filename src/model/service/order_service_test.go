@@ -22,7 +22,9 @@ import (
 	"github.com/GMWalletApp/epusdt/util/constant"
 	"github.com/GMWalletApp/epusdt/util/http_client"
 	"github.com/go-resty/resty/v2"
+	"github.com/spf13/viper"
 	"github.com/xssnick/tonutils-go/address"
+	"gorm.io/gorm"
 )
 
 func newCreateTransactionRequest(orderID string, amount float64) *request.CreateTransactionRequest {
@@ -1730,5 +1732,197 @@ func queueTestTonCredit(t *testing.T, tr *TonObservedTransfer) {
 	e := scanner.Activity{Network: "ton", TxID: tr.TxHashHex, TimeMS: tr.BlockTimeMs, Addresses: []string{addr}}
 	if err := observeCredit(e, addr, tr.Token, tr.RawAmount, tr.BlockID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCreateTransactionIdempotentReplayReturnsOriginalOrder(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	apiKey := &mdb.ApiKey{}
+	apiKey.ID = 41
+	req := newCreateTransactionRequest("idempotent-placeholder", 12.34)
+	req.Token = ""
+	req.Network = ""
+	req.RedirectUrl = "https://example.com/return"
+	req.Name = "Same order"
+
+	first, err := CreateTransaction(req, apiKey)
+	if err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	viper.Set("order_expiration_time", 60)
+	second, err := CreateTransaction(req, apiKey)
+	if err != nil {
+		t.Fatalf("idempotent replay: %v", err)
+	}
+	if second.TradeId != first.TradeId || second.OrderId != first.OrderId {
+		t.Fatalf("replay returned a different order: first=%+v second=%+v", first, second)
+	}
+	if second.ExpirationTime != first.ExpirationTime {
+		t.Fatalf("replay extended expiration: first=%d second=%d", first.ExpirationTime, second.ExpirationTime)
+	}
+	var count int64
+	if err := dao.Mdb.Model(&mdb.Orders{}).Where("order_id = ?", req.OrderId).Count(&count).Error; err != nil {
+		t.Fatalf("count orders: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("order count = %d, want 1", count)
+	}
+}
+
+func TestCreateTransactionIdempotentReplayRejectsChangedRequest(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	apiKey := &mdb.ApiKey{}
+	apiKey.ID = 42
+	req := newCreateTransactionRequest("idempotent-conflict", 12.34)
+	req.Token = ""
+	req.Network = ""
+	if _, err := CreateTransaction(req, apiKey); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+
+	changed := *req
+	changed.Amount = 12.35
+	if _, err := CreateTransaction(&changed, apiKey); err != constant.OrderAlreadyExists {
+		t.Fatalf("changed amount error = %v, want %v", err, constant.OrderAlreadyExists)
+	}
+	changed = *req
+	changed.NotifyUrl = "https://93.184.216.35/other-callback"
+	if _, err := CreateTransaction(&changed, apiKey); err != constant.OrderAlreadyExists {
+		t.Fatalf("changed callback error = %v, want %v", err, constant.OrderAlreadyExists)
+	}
+}
+
+func TestCreateTransactionIdempotentReplayRejectsOtherMerchant(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	owner := &mdb.ApiKey{}
+	owner.ID = 43
+	other := &mdb.ApiKey{}
+	other.ID = 44
+	req := newCreateTransactionRequest("idempotent-owner", 12.34)
+	req.Token = ""
+	req.Network = ""
+	if _, err := CreateTransaction(req, owner); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	if _, err := CreateTransaction(req, other); err != constant.OrderAlreadyExists {
+		t.Fatalf("other merchant error = %v, want %v", err, constant.OrderAlreadyExists)
+	}
+}
+
+func TestCreateTransactionConcurrentReplayCreatesOneOrder(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	apiKey := &mdb.ApiKey{}
+	apiKey.ID = 45
+	const workers = 8
+	responses := make(chan string, workers)
+	errors := make(chan error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := newCreateTransactionRequest("idempotent-concurrent", 12.34)
+			req.Token = ""
+			req.Network = ""
+			resp, err := CreateTransaction(req, apiKey)
+			if err != nil {
+				errors <- err
+				return
+			}
+			responses <- resp.TradeId
+		}()
+	}
+	wg.Wait()
+	close(errors)
+	close(responses)
+	for err := range errors {
+		t.Fatalf("concurrent create: %v", err)
+	}
+	var tradeID string
+	for got := range responses {
+		if tradeID == "" {
+			tradeID = got
+		}
+		if got != tradeID {
+			t.Fatalf("concurrent replay returned trade_id %q, want %q", got, tradeID)
+		}
+	}
+	var count int64
+	if err := dao.Mdb.Model(&mdb.Orders{}).Where("order_id = ?", "idempotent-concurrent").Count(&count).Error; err != nil {
+		t.Fatalf("count orders: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("order count = %d, want 1", count)
+	}
+}
+
+func TestGMPayReplayPreservesConflictForLegacyRowsAndEPay(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+	owner := &mdb.ApiKey{BaseModel: mdb.BaseModel{ID: 1}}
+	request := newCreateTransactionRequest("legacy", 12.34)
+	request.Token, request.Network = "", ""
+	legacy := &mdb.Orders{TradeId: "old-trade", OrderId: request.OrderId, ApiKeyID: owner.ID,
+		Amount: request.Amount, Currency: request.Currency, NotifyUrl: request.NotifyUrl, PaymentType: mdb.PaymentTypeGmpay}
+	if err := dao.Mdb.Create(legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateTransaction(request, owner); err != constant.OrderAlreadyExists {
+		t.Fatalf("legacy retry: got %v", err)
+	}
+	request.OrderId, request.PaymentType = "epay-compat", mdb.PaymentTypeEpay
+	if _, err := CreateTransaction(request, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateTransaction(request, owner); err != constant.OrderAlreadyExists {
+		t.Fatalf("EPay retry: got %v", err)
+	}
+}
+
+func TestGMPayReplayAfterConcurrentOrderInsertReleasesOnlyLosingReservation(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+	owner := &mdb.ApiKey{BaseModel: mdb.BaseModel{ID: 1}}
+	if _, err := data.AddWalletAddress("TTestTronAddress001"); err != nil {
+		t.Fatal(err)
+	}
+	request := newCreateTransactionRequest("competing-checkouts", 12.34)
+	// Let the same merchant's first create win after this caller has already
+	// read an empty result, forcing the database uniqueness conflict.
+	var winner *mdb.Orders
+	if err := dao.Mdb.Callback().Query().After("gorm:query").Register("test:other_gateway", func(tx *gorm.DB) {
+		order, ok := tx.Statement.Dest.(*mdb.Orders)
+		if !ok || order.ID != 0 || winner != nil {
+			return
+		}
+		winner = &mdb.Orders{TradeId: "winning-trade", OrderId: request.OrderId, ApiKeyID: owner.ID,
+			Amount: 12.34, Currency: "CNY", Token: "USDT", Network: "tron",
+			PayProvider: mdb.PaymentProviderOnChain, PaymentType: mdb.PaymentTypeGmpay, NotifyUrl: request.NotifyUrl,
+			ReceiveAddress: "TTestTronAddress001", ActualAmount: 12.34, Status: mdb.StatusWaitPay}
+		winner.CreateRequestHash = gmpayCreateRequestHash(winner, request.Amount)
+		if err := data.LockTransaction(winner.Network, winner.ReceiveAddress, winner.Token, winner.TradeId, winner.ActualAmount, time.Hour); err != nil {
+			t.Fatal(err)
+		}
+		if err := insertMerchantOrder(dao.Mdb, winner); err != nil {
+			t.Fatal(err)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	replay, err := CreateTransaction(request, owner)
+	if err != nil || winner == nil || replay.TradeId != winner.TradeId || replay.ReceiveAddress != winner.ReceiveAddress || replay.ActualAmount != winner.ActualAmount {
+		t.Fatalf("competing create returned %+v, %v", replay, err)
+	}
+	var locks []mdb.TransactionLock
+	if err := dao.RuntimeDB.Find(&locks).Error; err != nil || len(locks) != 1 || locks[0].TradeId != winner.TradeId {
+		t.Fatalf("reservations after concurrent insert: %+v, %v", locks, err)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -708,6 +709,69 @@ func TestSwitchNetworkCompletesGmpayPlaceholderInPlace(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("active sub-order count = %d, want 0", count)
+	}
+}
+
+// Retrying the merchant's signed request after the cashier changes a placeholder
+// must preserve the original order and deadline while reporting its current state.
+func TestGMPaySignedReplayAfterCheckoutSelection(t *testing.T) {
+	e := setupTestEnv(t)
+	useRspErrorHTTPStatuses(e)
+	const path = "/payments/gmpay/v1/order/create-transaction"
+	payload := map[string]interface{}{"order_id": "retry-selection", "amount": 1.234, "currency": "cny", "notify_url": "https://93.184.216.34/notify"}
+	body := signBody(payload)
+	rec := doPost(e, path, body)
+	if rec.Code != http.StatusOK {
+		t.Fatal(rec.Body.String())
+	}
+	first := parseResp(t, rec)["data"].(map[string]interface{})
+	tradeID := first["trade_id"].(string)
+	switchResult := doPost(e, "/pay/switch-network", map[string]interface{}{"trade_id": tradeID, "token": "USDT", "network": "tron"})
+	if switchResult.Code != http.StatusOK {
+		t.Fatal(switchResult.Body.String())
+	}
+	before, err := data.GetOrderInfoByTradeId(tradeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viper.Set("order_expiration_time", 45)
+	form := signGmpayFormValues(url.Values{
+		"order_id": {"retry-selection"}, "amount": {"1.234"}, "currency": {"CNY"}, "notify_url": {"https://93.184.216.34/notify"},
+	})
+	retry := doFormPost(e, path, form)
+	if retry.Code != http.StatusOK {
+		t.Fatal(retry.Body.String())
+	}
+	got := parseResp(t, retry)["data"].(map[string]interface{})
+	if got["trade_id"] != tradeID || got["receive_address"] != before.ReceiveAddress || got["expiration_time"] != first["expiration_time"] || int(got["status"].(float64)) != mdb.StatusWaitPay {
+		t.Fatalf("retry: %+v", got)
+	}
+	after, err := data.GetOrderInfoByTradeId(tradeID)
+	if err != nil || after.UpdatedAt.TimestampNano() != before.UpdatedAt.TimestampNano() {
+		t.Fatalf("retry changed order: %v", err)
+	}
+	invalid := maps.Clone(body)
+	invalid["signature"] = "invalid"
+	if result := doPost(e, path, invalid); result.Code != http.StatusUnauthorized {
+		t.Fatalf("unsigned retry: %d", result.Code)
+	}
+	for _, test := range []struct {
+		name   string
+		mutate func(map[string]interface{})
+		errno  int
+	}{
+		{"other merchant", func(m map[string]interface{}) { m["pid"] = "1"; signBody(m) }, 10002},
+		{"different amount at same precision", func(m map[string]interface{}) { m["amount"] = 1.233; signBody(m) }, 10002},
+		{"checkout target submitted as original target", func(m map[string]interface{}) { m["token"] = "USDT"; m["network"] = "tron"; signBody(m) }, 10002},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			params := maps.Clone(body)
+			test.mutate(params)
+			result := doPost(e, path, params)
+			if got := parseResp(t, result); result.Code == http.StatusOK || int(got["status_code"].(float64)) != test.errno || got["data"] != nil {
+				t.Fatalf("got %d %+v", result.Code, got)
+			}
+		})
 	}
 }
 

@@ -3383,7 +3383,7 @@
         },
         "/payments/gmpay/v1/order/create-transaction": {
             "post": {
-                "description": "Create a payment transaction order. Accepts JSON body (application/json) or form-encoded body (application/x-www-form-urlencoded).\nGMPay may omit both token and network to create a status=4 placeholder order; EPay submit.php can also create one when neither request parameters nor database defaults provide token/network. Supplying only one of token/network is invalid.\npayment_type is optional for GMPay. If it is sent, it is a normal signed parameter and must be included when calculating signature.\nGMPay signature uses lowercase hexadecimal HMAC-SHA256 with secret_key as the HMAC key. Legacy MD5 signatures are not accepted.",
+                "description": "Create a payment transaction order. Accepts JSON body (application/json) or form-encoded body (application/x-www-form-urlencoded).\nGMPay may omit both token and network to create a status=4 placeholder order; EPay submit.php can also create one when neither request parameters nor database defaults provide token/network. Supplying only one of token/network is invalid.\nAuthenticated GMPay retries with the same order_id and original normalized inputs return the same trade_id, current order state and original creation deadline. A changed request, a different merchant, an EPay-format order, or an order created before replay support returns status_code 10002.\npayment_type is optional for GMPay. If it is sent, it is a normal signed parameter and must be included when calculating signature.\nGMPay signature uses lowercase hexadecimal HMAC-SHA256 with secret_key as the HMAC key. Legacy MD5 signatures are not accepted.",
                 "consumes": [
                     "application/json",
                     "application/x-www-form-urlencoded"
@@ -3485,7 +3485,7 @@
                         }
                     },
                     "400": {
-                        "description": "Stable errno in status_code: 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel",
+                        "description": "Stable errno in status_code: 10002 order ID conflict, 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel",
                         "schema": {
                             "$ref": "#/definitions/response.ApiResponse"
                         }
