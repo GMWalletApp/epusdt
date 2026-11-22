@@ -3,8 +3,6 @@ GM Wallet Community License 2.2
 This license is derived from the GNU Affero General Public License,
 version 3 (AGPLv3), and adds conditions on its scope and use, including
 commercial licensing, public source, attribution and contributions.
-本许可源自 GNU Affero General Public License 第 3 版（AGPLv3），
-并增加了关于适用范围、商业授权、源码公开、署名和贡献的条款。
 
 Original Project URL: https://github.com/GMWalletApp/epusdt
 License steward: Good Morning Technology, LLC <info@gmwallet.app>
@@ -217,7 +215,7 @@ the ordinary user-facing equivalent, such as CLI help or API documentation.
 For text-only output, print the full URL. Preserve existing attributions,
 and identify the modifier separately so the credit cannot imply endorsement.
 
-Frontend design and development by Good Moring 公司.
+Frontend design and development by Good Morning Technology, LLC.
 
 The credit and original-project link are distinct from the link to the
 modifier's exact Corresponding Source required by section 13.
@@ -679,10 +677,6 @@ If your organization's policy prohibits software under licenses similar
 to AGPLv3, or you need an alternative to AGPLv3-style source-sharing
 obligations, contact info@gmwallet.app for commercial terms.
 This is a custom source-available license.
-
-如果您的组织政策禁止使用采用类似 AGPLv3 许可的软件，或您需要替代
-AGPLv3 式源码共享义务的授权方案，请联系 info@gmwallet.app 洽询商业条款。
-本协议是定制的源码可见许可。
 
 19. GM Wallet's rights in downstream modifications and project submissions.
 
