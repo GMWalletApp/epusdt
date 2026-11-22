@@ -44,6 +44,7 @@ func MdbTableInit() {
 			{"Chain", &mdb.Chain{}},
 			{"ChainToken", &mdb.ChainToken{}},
 			{"RpcNode", &mdb.RpcNode{}},
+			{"ScannerNodeMigration", &mdb.ScannerNodeMigration{}},
 			{"ProviderOrder", &mdb.ProviderOrder{}},
 		}
 		for _, m := range migrations {
@@ -55,7 +56,6 @@ func MdbTableInit() {
 
 		seedChains()
 		backfillRpcNodePurpose()
-		seedRpcNodes()
 		seedChainTokens()
 		seedDefaultSettings()
 		seedTelegramChannelFromSettings()
@@ -140,59 +140,6 @@ func seedChainTokens() {
 	if err := Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&defaults).Error; err != nil {
 		color.Red.Printf("[store_db] seed chain_tokens err=%s\n", err)
 	}
-}
-
-// seedRpcNodes inserts default RPC endpoints for each chain. Checks per
-// (network, url) so re-runs are idempotent and admin edits persist.
-func seedRpcNodes() {
-	defaults := defaultRpcNodes()
-	for _, d := range defaults {
-		var count int64
-		if err := Mdb.Model(&mdb.RpcNode{}).
-			Where("network = ? AND url = ?", d.Network, d.Url).
-			Count(&count).Error; err != nil {
-			color.Red.Printf("[store_db] seed rpc_nodes check err=%s\n", err)
-			continue
-		}
-		if count > 0 {
-			continue
-		}
-		if err := Mdb.Create(&d).Error; err != nil {
-			color.Red.Printf("[store_db] seed rpc_nodes err=%s\n", err)
-		}
-	}
-}
-
-func defaultRpcNodes() []mdb.RpcNode {
-	defaults := []mdb.RpcNode{
-		{Network: mdb.NetworkSui, Url: "https://fullnode.mainnet.sui.io:443", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkBase, Url: "wss://base-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkOptimism, Url: "wss://optimism-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkBase, Url: "https://mainnet.base.org", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkOptimism, Url: "https://mainnet.optimism.io", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkAvalanche, Url: "wss://avalanche-c-chain-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkAvalanche, Url: "https://api.avax.network/ext/bc/C/rpc", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkArc, Url: "wss://rpc.mainnet.arc.io", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkArc, Url: "https://rpc.mainnet.arc.io", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkMonad, Url: "wss://rpc.monad.xyz", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkMonad, Url: "https://rpc.monad.xyz", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkHyperEVM, Url: "https://rpc.hyperliquid.xyz/evm", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkArbitrum, Url: "wss://arbitrum-one-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkArbitrum, Url: "https://arb1.arbitrum.io/rpc", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkTron, Url: "https://api.trongrid.io", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkEthereum, Url: "wss://ethereum.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkSolana, Url: "https://api.mainnet-beta.solana.com", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkBsc, Url: "wss://bsc-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkBsc, Url: "https://bsc-rpc.publicnode.com", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkPolygon, Url: "wss://polygon-bor-rpc.publicnode.com", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkPlasma, Url: "wss://rpc.plasma.to", Type: mdb.RpcNodeTypeWs, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkTon, Url: "https://ton-blockchain.github.io/global.config.json", Type: mdb.RpcNodeTypeLite, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkAptos, Url: "https://aptos-rest.publicnode.com/", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeGeneral, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkEthereum, Url: "https://rpc.epusdt.com/ethereum", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeManualVerify, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkBsc, Url: "https://rpc.epusdt.com/binance", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeManualVerify, Status: mdb.RpcNodeStatusUnknown},
-		{Network: mdb.NetworkPolygon, Url: "https://rpc.epusdt.com/polygon", Type: mdb.RpcNodeTypeHttp, Weight: 1, Enabled: true, Purpose: mdb.RpcNodePurposeManualVerify, Status: mdb.RpcNodeStatusUnknown},
-	}
-	return defaults
 }
 
 func backfillRpcNodePurpose() {

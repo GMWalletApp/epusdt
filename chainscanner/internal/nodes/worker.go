@@ -171,6 +171,13 @@ func (p *SourcePool) pickRole(last int64, busy map[string]bool, excluded func(*e
 	if selected < 0 {
 		return nil, waiting
 	}
-	*cursor = (selected + 1) % len(p.nodes)
+	n := p.nodes[selected]
+	n.picks++
+	if n.picks >= max(1, n.weight) {
+		n.picks = 0
+		*cursor = (selected + 1) % len(p.nodes)
+	} else {
+		*cursor = selected
+	}
 	return p.nodes[selected], waiting
 }

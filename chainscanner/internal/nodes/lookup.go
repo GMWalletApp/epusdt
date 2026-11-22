@@ -2,11 +2,13 @@ package nodes
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"maps"
 	"math/rand/v2"
+	"slices"
 	"sync"
 	"time"
 
@@ -19,6 +21,7 @@ var errCapacity = errors.New("insufficient available transaction nodes")
 var errAgreement = errors.New("transaction lookup failed")
 
 type lookupCandidate struct {
+	weight     int
 	healthy    bool
 	fallback   bool
 	peerID     string
@@ -77,7 +80,7 @@ func (l *transactionLookup) record(id nodeVersion, err error) {
 	l.penalties[id] = p
 }
 
-func (r *NodeRegistry) lookupCandidates(ctx context.Context, network string, strict bool) ([]lookupCandidate, error) {
+func (r *NodeRegistry) lookupCandidates(ctx context.Context, network string, strict bool, manual ...bool) ([]lookupCandidate, error) {
 	rows, err := r.List(ctx, network)
 	if err != nil {
 		return nil, err
@@ -85,7 +88,7 @@ func (r *NodeRegistry) lookupCandidates(ctx context.Context, network string, str
 	now := time.Now()
 	var candidates []lookupCandidate
 	for _, n := range rows {
-		if n.Origin == "fallback" && !strict {
+		if !n.Enabled || n.Purpose == "manual_verify" && !(strict && len(manual) > 0 && manual[0]) || n.Role == "fallback" && !strict {
 			continue
 		}
 		if n.ReadRetryAt > now.UnixMilli() || (!n.Scannable && n.Protocol != "toncenter-v3") {
@@ -105,13 +108,14 @@ func (r *NodeRegistry) lookupCandidates(ctx context.Context, network string, str
 			key = "ton|" + host
 		}
 		candidates = append(candidates, lookupCandidate{
-			healthy: recent && n.Status == "ok", fallback: n.Origin == "fallback",
+			healthy: recent && n.Status == "ok", fallback: n.Role == "fallback", weight: n.Weight,
 			cfg: cfg, version: n.version(), public: isDiscoveryOrigin(n.Origin),
 			key: key, peerID: peerID, primaryURL: n.URL,
 		})
 	}
 	rand.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
 
+	slices.SortStableFunc(candidates, func(a, b lookupCandidate) int { return cmp.Compare(b.weight, a.weight) })
 	return candidates, nil
 }
 

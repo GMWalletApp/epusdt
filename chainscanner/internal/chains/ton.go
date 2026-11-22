@@ -62,6 +62,15 @@ func connectTONPeer(ctx context.Context, pool *liteclient.ConnectionPool, u *url
 	return nil
 }
 
+// ConnectTONPeer authenticates a direct LiteServer and verifies its mainnet genesis.
+func ConnectTONPeer(ctx context.Context, pool *liteclient.ConnectionPool, raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "adnl" {
+		return errors.New("invalid direct TON peer")
+	}
+	return connectTONPeer(ctx, pool, u)
+}
+
 func newTON(ctx context.Context, n Network) (Source, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()

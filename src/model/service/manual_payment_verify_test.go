@@ -15,8 +15,12 @@ import (
 	"testing"
 	"time"
 
+	scanner "github.com/GMWalletApp/ChainScanner"
+	"github.com/GMWalletApp/epusdt/config"
+	"github.com/GMWalletApp/epusdt/internal/scanneradmin"
 	"github.com/GMWalletApp/epusdt/internal/testutil"
 	"github.com/GMWalletApp/epusdt/model/dao"
+	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	addressutil "github.com/GMWalletApp/epusdt/util/address"
 	"github.com/dromara/carbon/v2"
@@ -781,6 +785,40 @@ func TestManualVerifyTronPaymentHTTPFlow(t *testing.T) {
 		Purpose: mdb.RpcNodePurposeManualVerify,
 	}).Error; err != nil {
 		t.Fatalf("create tron rpc node: %v", err)
+	}
+	// Move the only usable route into an embedded registry, then exercise both
+	// manual verification and strict disagreement using the migrated provider.
+	store, err := scanner.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	reg, err := scanner.NewNodeRegistry(t.Context(), store, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaults, err := reg.List(t.Context(), "tron")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range defaults {
+		if err := reg.Delete(t.Context(), n.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	conn := config.ScannerConnection{Embedded: true, AdminToken: strings.Repeat("a", 32), ConsumerToken: strings.Repeat("c", 32)}
+	handler, err := reg.Handler(map[string]string{"epusdt": conn.ConsumerToken}, conn.AdminToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scannerServer := httptest.NewServer(handler)
+	defer scannerServer.Close()
+	conn.URL = scannerServer.URL
+	if report, err := data.MigrateScannerNodes(t.Context(), conn, true, nil); err != nil || report.Completed != 1 {
+		t.Fatal("migration failed", report, err)
+	}
+	scanneradmin.CandidateInventory = func(ctx context.Context, _ config.ScannerConnection, network, use string) (scanner.RouteInventory, error) {
+		return scanneradmin.Inventory(ctx, conn, network, use)
 	}
 	upsertTestChainToken(t, mdb.ChainToken{
 		Network:         mdb.NetworkTron,

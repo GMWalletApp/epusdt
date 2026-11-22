@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/GMWalletApp/epusdt/config"
+	"github.com/GMWalletApp/epusdt/internal/scanneradmin"
+	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/labstack/echo/v4"
 )
 
@@ -15,10 +17,37 @@ import (
 // presents its EPUSDT admin JWT and never needs a ChainScanner credential.
 func registerScannerAdmin(group *echo.Group, connection config.ScannerConnection) {
 	scanner := group.Group("/chainscanner")
+	scanner.GET("/admin/connection", func(c echo.Context) error {
+		info, err := scanneradmin.Connection(c.Request().Context(), connection)
+		if err != nil {
+			return echo.NewHTTPError(502, err.Error())
+		}
+		c.Response().Header().Set("Cache-Control", "no-store")
+		return c.JSON(200, info)
+	})
+	scanner.GET("/admin/migration", func(c echo.Context) error {
+		report, err := data.MigrateScannerNodes(c.Request().Context(), connection, false, nil)
+		if err != nil {
+			return echo.NewHTTPError(502, err.Error())
+		}
+		c.Response().Header().Set("Cache-Control", "no-store")
+		return c.JSON(200, report)
+	})
+	scanner.POST("/admin/migration", func(c echo.Context) error {
+		var confirm data.MigrationTarget
+		if c.Bind(&confirm) != nil || confirm.StoreID == "" || confirm.Target == "" {
+			return echo.NewHTTPError(400, "confirm the current ChainScanner target")
+		}
+		report, err := data.MigrateScannerNodes(c.Request().Context(), connection, true, &confirm)
+		if err != nil {
+			return echo.NewHTTPError(409, err.Error())
+		}
+		return c.JSON(200, report)
+	})
 	for _, r := range []struct{ method, path string }{
 		{"GET", "/admin/blacklist"}, {"PUT", "/admin/blacklist/:host"}, {"DELETE", "/admin/blacklist/:host"},
 		{"GET", "/admin/progress"},
-		{"GET", "/admin/nodes"}, {"POST", "/admin/nodes"}, {"POST", "/admin/nodes/fallback"}, {"DELETE", "/admin/nodes/:id"},
+		{"GET", "/admin/nodes"}, {"POST", "/admin/nodes"}, {"POST", "/admin/nodes/fallback"}, {"PATCH", "/admin/nodes/:id"}, {"DELETE", "/admin/nodes/:id"},
 		{"POST", "/admin/nodes/:id/test"}, {"POST", "/admin/nodes/test"},
 		{"GET", "/heights/:network"}, {"GET", "/transactions/:network/:hash"}, {"GET", "/transactions/:network/:hash/strict"},
 	} {
@@ -62,7 +91,13 @@ func scannerForward(template string, connection config.ScannerConnection) echo.H
 		if strings.HasSuffix(template, "/strict") {
 			req.Header.Set("X-ChainScanner-Exclude", in.Header.Get("X-ChainScanner-Exclude"))
 		}
-		res, err := scannerHTTP.Do(req)
+		client := scannerHTTP
+		if template == "/admin/nodes/test" {
+			// A large inventory can exceed the per-request timeout. Cancellation
+			// follows the administrator connection, and every probe has its own limit.
+			client = &http.Client{CheckRedirect: scannerHTTP.CheckRedirect}
+		}
+		res, err := client.Do(req)
 		if err != nil {
 			return echo.NewHTTPError(502, "ChainScanner unavailable")
 		}

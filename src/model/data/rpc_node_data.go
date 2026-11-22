@@ -70,14 +70,7 @@ func ListGeneralRpcCandidates(network, nodeType string) ([]mdb.RpcNode, error) {
 	return listGeneralProtocols(network, []string{strings.ToLower(strings.TrimSpace(nodeType))})
 }
 func listGeneralProtocols(network string, protocols []string) ([]mdb.RpcNode, error) {
-	var rows []mdb.RpcNode
-	err := dao.Mdb.Model(&mdb.RpcNode{}).
-		Where("network = ?", strings.ToLower(strings.TrimSpace(network))).
-		Where("type IN ?", protocols).
-		Where("enabled = ?", true).
-		Where("(purpose IN ? OR purpose = '' OR purpose IS NULL)", []string{mdb.RpcNodePurposeGeneral, mdb.RpcNodePurposeBoth}).
-		Where("(status IN ? OR status = '' OR status IS NULL)", []string{mdb.RpcNodeStatusOk, mdb.RpcNodeStatusUnknown}).
-		Find(&rows).Error
+	rows, err := scannerCandidates(network, protocols, "general")
 	if err != nil {
 		return nil, err
 	}
@@ -182,13 +175,7 @@ func DeleteRpcNodeByID(id uint64) error {
 // run yet. Explicitly down rows are not selected. Manual verification nodes
 // are excluded so paid/manual-only RPCs are never used by scanners/listeners.
 func SelectRpcNode(network, nodeType string) (*mdb.RpcNode, error) {
-	var rows []mdb.RpcNode
-	err := dao.Mdb.Model(&mdb.RpcNode{}).
-		Where("network = ?", strings.ToLower(network)).
-		Where("type = ?", strings.ToLower(nodeType)).
-		Where("enabled = ?", true).
-		Where("(purpose IN ? OR purpose = '' OR purpose IS NULL)", []string{mdb.RpcNodePurposeGeneral, mdb.RpcNodePurposeBoth}).
-		Find(&rows).Error
+	rows, err := ListGeneralRpcCandidates(network, nodeType)
 	if err != nil {
 		return nil, err
 	}
@@ -220,13 +207,7 @@ func SelectRpcNode(network, nodeType string) (*mdb.RpcNode, error) {
 // manual_verify nodes are used only as a fallback.
 func ListManualPaymentRpcCandidates(network, nodeType string, alternates ...string) ([]mdb.RpcNode, error) {
 	types := append([]string{strings.ToLower(strings.TrimSpace(nodeType))}, alternates...)
-	var rows []mdb.RpcNode
-	err := dao.Mdb.Model(&mdb.RpcNode{}).
-		Where("network = ?", strings.ToLower(strings.TrimSpace(network))).
-		Where("type IN ?", types).
-		Where("enabled = ?", true).
-		Where("(status IN ? OR status = '' OR status IS NULL)", []string{mdb.RpcNodeStatusOk, mdb.RpcNodeStatusUnknown}).
-		Find(&rows).Error
+	rows, err := scannerCandidates(network, types, "manual")
 	if err != nil {
 		return nil, err
 	}

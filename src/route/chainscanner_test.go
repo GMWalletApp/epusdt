@@ -3,6 +3,9 @@ package route
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/GMWalletApp/epusdt/model/dao"
+	"github.com/GMWalletApp/epusdt/model/data"
+	"github.com/GMWalletApp/epusdt/model/mdb"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -121,8 +124,27 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	defer second.Close()
 	call("POST", "/admin/nodes/fallback", fmt.Sprintf(`{"network":"solana","protocol":"http","url":%q}`, second.URL), 201)
 	var node scanner.Node
-	if err := json.Unmarshal([]byte(call("POST", "/admin/nodes", fmt.Sprintf(`{"network":"solana","protocol":"http","url":%q}`, rpc.URL), 201)), &node); err != nil {
+	legacy := mdb.RpcNode{Network: "solana", Type: "http", Url: rpc.URL, Enabled: true, Purpose: "general", Weight: 2}
+	if err := dao.Mdb.Create(&legacy).Error; err != nil {
 		t.Fatal(err)
+	}
+	var migration data.NodeMigration
+	if err := json.Unmarshal([]byte(call("GET", "/admin/migration", "", 200)), &migration); err != nil || migration.Pending != 1 || !migration.External {
+		t.Fatal("migration preview", err, migration)
+	}
+	payload, _ := json.Marshal(migration.MigrationTarget)
+	call("POST", "/admin/migration", string(payload), 200)
+	imported, err := reg.List(t.Context(), "solana")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range imported {
+		if n.URL == rpc.URL {
+			node = n
+		}
+	}
+	if node.ID == 0 {
+		t.Fatal("missing migrated voter")
 	}
 	checked := call("POST", fmt.Sprintf("/admin/nodes/%d/test", node.ID), "", 200)
 	var result scanner.Node
@@ -146,6 +168,12 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 			t.Fatal("missing transaction result", b)
 		}
 	}
+	call("PATCH", fmt.Sprintf("/admin/nodes/%d", node.ID), `{"enabled":false}`, 200)
+	call("GET", "/transactions/solana/"+signature+"/strict", "", 503)
+	call("PATCH", fmt.Sprintf("/admin/nodes/%d", node.ID), `{"enabled":true,"purpose":"manual_verify"}`, 200)
+	call("GET", "/transactions/solana/"+signature+"/strict", "", 503)
+	call("GET", "/transactions/solana/"+signature+"/strict?manual=true", "", 200)
+	call("PATCH", fmt.Sprintf("/admin/nodes/%d", node.ID), `{"purpose":"general"}`, 200)
 	call("GET", "/transactions/solana/invalid", "", 400)
 	call("GET", "/transactions/solana/invalid/strict", "", 400)
 	call("GET", "/heights/solana", "", 200)

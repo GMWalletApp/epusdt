@@ -80,6 +80,7 @@ func setupTestEnv(t *testing.T) *echo.Echo {
 		&mdb.Chain{},
 		&mdb.ChainToken{},
 		&mdb.RpcNode{},
+		&mdb.ScannerNodeMigration{},
 		&mdb.ProviderOrder{},
 	)
 

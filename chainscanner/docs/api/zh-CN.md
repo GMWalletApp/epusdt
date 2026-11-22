@@ -450,3 +450,7 @@ admin -X DELETE "$BASE/v1/admin/blacklist/exact:rpc.example.org"
 遇到 **400** 先修正参数；**401** 时检查 Bearer 令牌及角色。**409** 的含义随接口而异，见各接口说明。**503** 表示订阅、队列、游标或节点存储暂时无法完成操作，可退避重试。空队列返回 **204**。
 
 [使用指南](../../README.zh-CN.md) · [ConsumerHandler](https://github.com/GMWalletApp/ChainScanner/blob/main/internal/feed/handler.go) · [NodeRegistry.Handler](https://github.com/GMWalletApp/ChainScanner/blob/main/internal/nodes/http.go)
+
+### 节点管理能力
+
+通过 `GET /v1/admin/capabilities` 查询支持的协议及节点配置和迁移能力。`PATCH /v1/admin/nodes/{id}` 支持修改 `enabled`、`role`、`purpose`、`weight`、`url`、`api_key`、`history_url` 和 `history_api_key`。省略的字段保留原值。角色分为普通节点（regular）和兜底节点（fallback）。停用的节点保留原配置，重启和重新发现后仍然停用。普通节点可以设置为补单专用（manual_verify）。人工严格验单使用 `manual=true`。批量健康检查跳过停用节点，传入 `include_manual=true` 可包含补单专用节点。

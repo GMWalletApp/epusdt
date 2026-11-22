@@ -240,7 +240,7 @@ func TestAdminProtectedRoute_NoToken(t *testing.T) {
 		"/admin/api/v1/dashboard/rpc-stats",
 		"/admin/api/v1/settings",
 		"/admin/api/v1/settings/rate/status",
-		"/admin/api/v1/rpc-nodes",
+		"/admin/api/v1/chainscanner/admin/nodes",
 		"/admin/api/v1/notification-channels",
 	}
 	for _, path := range protectedRoutes {
@@ -512,123 +512,10 @@ func TestAdminChainTokens_CRUD(t *testing.T) {
 
 // ─── RPC Nodes ────────────────────────────────────────────────────────────────
 
-// TestAdminRpcNodes_CRUD verifies CRUD operations for RPC nodes.
-func TestAdminRpcNodes_CRUD(t *testing.T) {
+func TestRetiredNodeRoutes(t *testing.T) {
 	e, token := setupAdminTestEnv(t)
-
-	// List — empty initially.
-	rec := doGetAdmin(e, "/admin/api/v1/rpc-nodes", token)
-	t.Logf("ListRpcNodes: %s", rec.Body.String())
-	assertOK(t, rec)
-
-	// Create.
-	rec = doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]interface{}{
-		"network": "ethereum",
-		"url":     "https://eth-mainnet.example.com",
-		"type":    "http",
-	}, token)
-	t.Logf("CreateRpcNode: %s", rec.Body.String())
-	resp := assertOK(t, rec)
-	dataObj, _ := resp["data"].(map[string]interface{})
-	nodeID := dataObj["id"]
-	if nodeID == nil {
-		t.Fatal("CreateRpcNode missing id")
-	}
-	if got, _ := dataObj["purpose"].(string); got != mdb.RpcNodePurposeGeneral {
-		t.Fatalf("created purpose = %q, want %q", got, mdb.RpcNodePurposeGeneral)
-	}
-	nodeIDStr := fmt.Sprintf("%.0f", nodeID.(float64))
-
-	// Update.
-	rec = doPatchAdmin(e, "/admin/api/v1/rpc-nodes/"+nodeIDStr, map[string]interface{}{
-		"url":     "https://eth-mainnet2.example.com",
-		"purpose": mdb.RpcNodePurposeManualVerify,
-	}, token)
-	t.Logf("UpdateRpcNode: %s", rec.Body.String())
-	assertOK(t, rec)
-	updatedNode, err := data.GetRpcNodeByID(uint64(nodeID.(float64)))
-	if err != nil {
-		t.Fatalf("reload rpc node: %v", err)
-	}
-	if updatedNode.Purpose != mdb.RpcNodePurposeManualVerify {
-		t.Fatalf("updated purpose = %q, want %q", updatedNode.Purpose, mdb.RpcNodePurposeManualVerify)
-	}
-
-	// Health check — network likely unreachable in test, but route must not 404/500.
-	rec = doPostAdmin(e, "/admin/api/v1/rpc-nodes/"+nodeIDStr+"/health-check", nil, token)
-	t.Logf("HealthCheckRpcNode: status=%d body=%s", rec.Code, rec.Body.String())
-	if rec.Code == http.StatusNotFound {
-		t.Fatalf("health-check route returned 404")
-	}
-
-	// Delete.
-	rec = doDeleteAdmin(e, "/admin/api/v1/rpc-nodes/"+nodeIDStr, token)
-	t.Logf("DeleteRpcNode: %s", rec.Body.String())
-	assertOK(t, rec)
-}
-
-func TestAdminRpcNodes_RejectsURLTypeMismatch(t *testing.T) {
-	e, token := setupAdminTestEnv(t)
-
-	rec := doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]interface{}{
-		"network": "ethereum",
-		"url":     "wss://eth-mainnet.example.com",
-		"type":    mdb.RpcNodeTypeHttp,
-	}, token)
-	t.Logf("CreateRpcNode(http with wss): status=%d body=%s", rec.Code, rec.Body.String())
-	if rec.Code == http.StatusOK {
-		t.Fatalf("expected create mismatch to fail, got 200: %s", rec.Body.String())
-	}
-	assertErrorCode(t, rec, 10022)
-
-	rec = doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]interface{}{
-		"network": "ethereum",
-		"url":     "https://eth-mainnet.example.com",
-		"type":    mdb.RpcNodeTypeWs,
-	}, token)
-	t.Logf("CreateRpcNode(ws with https): status=%d body=%s", rec.Code, rec.Body.String())
-	if rec.Code == http.StatusOK {
-		t.Fatalf("expected create mismatch to fail, got 200: %s", rec.Body.String())
-	}
-	assertErrorCode(t, rec, 10023)
-
-	rec = doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]interface{}{
-		"network": "ethereum",
-		"url":     "https://eth-mainnet.example.com",
-		"type":    mdb.RpcNodeTypeHttp,
-		"purpose": "invalid-purpose",
-	}, token)
-	t.Logf("CreateRpcNode(invalid purpose): status=%d body=%s", rec.Code, rec.Body.String())
-	if rec.Code == http.StatusOK {
-		t.Fatalf("expected invalid purpose to fail, got 200: %s", rec.Body.String())
-	}
-	assertErrorCode(t, rec, 10020)
-
-	rec = doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]interface{}{
-		"network": "ethereum",
-		"url":     "https://eth-mainnet.example.com",
-		"type":    mdb.RpcNodeTypeHttp,
-	}, token)
-	resp := assertOK(t, rec)
-	dataObj, _ := resp["data"].(map[string]interface{})
-	nodeID := uint64(dataObj["id"].(float64))
-	nodeIDStr := fmt.Sprintf("%d", nodeID)
-
-	rec = doPatchAdmin(e, "/admin/api/v1/rpc-nodes/"+nodeIDStr, map[string]interface{}{
-		"url": "wss://eth-mainnet.example.com",
-	}, token)
-	t.Logf("UpdateRpcNode(http with wss): status=%d body=%s", rec.Code, rec.Body.String())
-	if rec.Code == http.StatusOK {
-		t.Fatalf("expected update mismatch to fail, got 200: %s", rec.Body.String())
-	}
-	assertErrorCode(t, rec, 10022)
-
-	node, err := data.GetRpcNodeByID(nodeID)
-	if err != nil {
-		t.Fatalf("reload rpc node: %v", err)
-	}
-	if node.Url != "https://eth-mainnet.example.com" {
-		t.Fatalf("node url changed after rejected update: %q", node.Url)
+	if r := doGetAdmin(e, "/admin/api/v1/rpc-nodes", token); r.Code == 200 {
+		t.Fatal("legacy node API is still registered")
 	}
 }
 
@@ -2573,34 +2460,5 @@ func TestAdminOrders_ListWithSubExcludesSubOrdersFromTopLevel(t *testing.T) {
 	// Sub-order must appear under the parent's sub_orders.
 	if !subOrderIds[subTradeId] {
 		t.Fatalf("sub-order trade_id=%s not found in any sub_orders array", subTradeId)
-	}
-}
-
-func TestAdminRpcNodeProtocolSelection(t *testing.T) {
-	e, token := setupAdminTestEnv(t)
-	for _, node := range []map[string]any{
-		{"network": "tron", "type": "solidity-grpc", "url": "grpcs://node.example:443"},
-		{"network": "base", "type": "graphql", "url": "https://node.example/graphql"},
-		{"network": "aptos", "type": "grpc", "url": "grpcs://node.example:443"},
-		{"network": "ethereum", "type": "sse", "url": "https://node.example/eth/v1/events"},
-	} {
-		assertOK(t, doPostAdmin(e, "/admin/api/v1/rpc-nodes", node, token))
-	}
-	invalid := map[string]any{"network": "sui", "type": "jsonrpc", "url": "https://node.example/"}
-	if r := doPostAdmin(e, "/admin/api/v1/rpc-nodes", invalid, token); r.Code == http.StatusOK {
-		t.Fatal("accepted retired Sui JSON-RPC")
-	}
-}
-
-func TestRpcNodeMustNameConcreteNetwork(t *testing.T) {
-	e, token := setupAdminTestEnv(t)
-	for _, name := range []string{"", "evm", "unsupported"} {
-		r := doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]any{"network": name, "type": "http", "url": "https://node.example"}, token)
-		if r.Code == http.StatusOK {
-			t.Fatalf("accepted network %q", name)
-		}
-	}
-	for _, name := range []string{"base", "ethereum", "binance"} {
-		assertOK(t, doPostAdmin(e, "/admin/api/v1/rpc-nodes", map[string]any{"network": name, "type": "http", "url": "https://" + name + ".example"}, token))
 	}
 }

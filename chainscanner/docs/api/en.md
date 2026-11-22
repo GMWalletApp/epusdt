@@ -450,3 +450,7 @@ List returns a sorted JSON array of `{host, source}`. PUT and DELETE are idempot
 Correct invalid requests before retrying **400**. For **401**, verify the bearer token and its role. Inspect the endpoint-specific meaning of **409** above. A **503** indicates that the subscription, queue, cursor or node store could not serve the operation. Retry transient failures with backoff. An empty queue returns **204**.
 
 [Guide](../../README.md) · [ConsumerHandler](https://github.com/GMWalletApp/ChainScanner/blob/main/internal/feed/handler.go) · [NodeRegistry.Handler](https://github.com/GMWalletApp/ChainScanner/blob/main/internal/nodes/http.go)
+
+### Node management capabilities
+
+`GET /v1/admin/capabilities` lists the available protocols and reports support for node settings and migration. Use `PATCH /v1/admin/nodes/{id}` with any of `enabled`, `role`, `purpose`, `weight`, `url`, `api_key`, `history_url` and `history_api_key`. Omitted settings retain their values. The role is either `regular` or `fallback`. Disabling a node preserves its settings across restarts and discovery. Set `purpose` to `manual_verify` to reserve a regular node for manual verification. An explicit manual strict lookup accepts `manual=true`. Batch health checks skip disabled nodes and accept `include_manual=true` to include manual-only nodes.

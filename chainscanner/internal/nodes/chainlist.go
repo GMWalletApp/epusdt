@@ -203,7 +203,7 @@ func (r *NodeRegistry) refreshCandidates(ctx context.Context, origin, network st
 func discoveryInventory(ctx context.Context, db interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }, originName string) (map[NodeEndpoint]bool, map[NodeEndpoint]NodeEndpoint, error) {
-	rows, err := db.QueryContext(ctx, "SELECT network,protocol,url,origin,removed FROM rpc_nodes ORDER BY id")
+	rows, err := db.QueryContext(ctx, "SELECT network,protocol,url,origin,(removed OR managed OR NOT enabled) FROM rpc_nodes ORDER BY id")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -266,7 +266,7 @@ func (r *NodeRegistry) applyCatalog(ctx context.Context, origin, network string,
 	}
 	// Retire only this directory's rows in the refreshed network. Operator deletions remain
 	// tombstones, so a future catalog cannot resurrect an explicitly removed URL.
-	rows, err := tx.QueryContext(ctx, "SELECT id,network,protocol,url FROM rpc_nodes WHERE origin=? AND removed=0 AND (?='' OR network=?)", origin, network, network)
+	rows, err := tx.QueryContext(ctx, "SELECT id,network,protocol,url FROM rpc_nodes WHERE origin=? AND removed=0 AND enabled=1 AND managed=0 AND (?='' OR network=?)", origin, network, network)
 	if err != nil {
 		return 0, err
 	}

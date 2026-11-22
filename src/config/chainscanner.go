@@ -20,6 +20,7 @@ func scannerOption(key string) string {
 // workers and the authenticated admin proxy.
 type ScannerConnection struct {
 	URL, ConsumerToken, AdminToken, Transport string
+	Embedded                                  bool
 }
 
 func ExternalScanner() ScannerConnection {

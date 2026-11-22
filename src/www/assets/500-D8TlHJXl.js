@@ -1,0 +1,1 @@
+import{t as e}from"./general-error-DFd255Y8.js";var t=e;export{t as component};

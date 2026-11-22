@@ -43,6 +43,12 @@ func Start() (config.ScannerConnection, func()) {
 	if connection.URL == "" {
 		connection, closeEmbedded, err = startLocalScanner(ctx)
 	}
+	data.UseScannerNodes(connection)
+	if err == nil && connection.Embedded {
+		if _, migrationErr := data.MigrateScannerNodes(ctx, connection, true, nil); migrationErr != nil {
+			log.Sugar.Errorf("[ChainScanner] node migration: %v", migrationErr)
+		}
+	}
 	if err == nil {
 		err = startPaymentFeed(ctx, &workers, connection)
 	}

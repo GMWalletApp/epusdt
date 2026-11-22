@@ -1,6 +1,7 @@
 package nodes
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -72,7 +73,7 @@ func (r *NodeRegistry) lookupHandler(configured map[string]chains.Network, stric
 			if strict {
 				w.Header().Set("X-ChainScanner-Strict-Rounds", strconv.Itoa(attempt))
 			}
-			candidates, err := r.lookupCandidates(ctx, n, strict)
+			candidates, err := r.lookupCandidates(ctx, n, strict, params.Get("manual") == "true")
 			if err != nil {
 				lastStatus = http.StatusServiceUnavailable
 				continue
@@ -103,7 +104,7 @@ func (r *NodeRegistry) lookupHandler(configured map[string]chains.Network, stric
 			}
 			v, err := r.lookup.round(ctx, group, hash, read)
 			lastStatus = http.StatusBadGateway
-			if err == nil && r.groupAllowed(group) {
+			if err == nil && r.groupAllowed(ctx, group) {
 				w.Header().Set("Content-Type", "application/json")
 				json.NewEncoder(w).Encode(struct {
 					Network string          `json:"network"`
@@ -161,9 +162,13 @@ func pairHeader(group []lookupLease) string {
 func voterToken(key string) string { h := sha256.Sum256([]byte(key)); return hex.EncodeToString(h[:]) }
 
 // A rule can change while a provider is reading the transaction.
-func (r *NodeRegistry) groupAllowed(group []lookupLease) bool {
+func (r *NodeRegistry) groupAllowed(ctx context.Context, group []lookupLease) bool {
 	blocked := r.blacklist.hosts()
 	for _, node := range group {
+		current, err := r.get(ctx, node.version.id)
+		if err != nil || !current.Enabled || current.version() != node.version {
+			return false
+		}
 		if blocked.matches(node.primaryURL) || blocked.matches(node.cfg.URL) {
 			return false
 		}

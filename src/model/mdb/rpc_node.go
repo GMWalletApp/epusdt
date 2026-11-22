@@ -42,3 +42,10 @@ type RpcNode struct {
 func (r *RpcNode) TableName() string {
 	return "rpc_nodes"
 }
+
+// ScannerNodeMigration records completed imports per scanner database. Changing
+// or deleting an imported node is an operator decision that survives restarts.
+type ScannerNodeMigration struct {
+	StoreID  string `gorm:"primaryKey;size:64"`
+	LegacyID uint64 `gorm:"primaryKey;autoIncrement:false"`
+}

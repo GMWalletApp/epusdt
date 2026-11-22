@@ -307,13 +307,6 @@ func registerAdminRoutes(e *echo.Echo, connection config.ScannerConnection) {
 	authed.POST("/chain-tokens/:id/status", admin.Ctrl.ChangeChainTokenStatus)
 	authed.DELETE("/chain-tokens/:id", admin.Ctrl.DeleteChainToken)
 
-	// RPC nodes
-	authed.GET("/rpc-nodes", admin.Ctrl.ListRpcNodes)
-	authed.POST("/rpc-nodes", admin.Ctrl.CreateRpcNode)
-	authed.PATCH("/rpc-nodes/:id", admin.Ctrl.UpdateRpcNode)
-	authed.DELETE("/rpc-nodes/:id", admin.Ctrl.DeleteRpcNode)
-	authed.POST("/rpc-nodes/:id/health-check", admin.Ctrl.HealthCheckRpcNode)
-
 	// Wallet (address) management
 	authed.GET("/wallets", admin.Ctrl.AdminListWallets)
 	authed.POST("/wallets", admin.Ctrl.AdminAddWallet)
