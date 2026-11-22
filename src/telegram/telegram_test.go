@@ -26,9 +26,23 @@ func withTelegramEnv(token, proxy string, manage int64, fn func()) {
 	fn()
 }
 
-func TestLoadCommandBotConfig_DoesNotUseEnvFallbackWhenNoChannel(t *testing.T) {
+func addIndependentPushChannel(t *testing.T) {
+	t.Helper()
+	if err := dao.Mdb.Create(&mdb.NotificationChannel{
+		Name: "Push only", Type: mdb.NotificationTypeTelegram, Enabled: true,
+		Config: `{"bot_token":"push-token","chat_id":111}`,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := data.ReloadSettings(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadCommandBotConfig_IgnoresEnvAndNotificationChannel(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
+	addIndependentPushChannel(t)
 
 	// Env config is present but settings table is empty —
 	// the bot must NOT fall back to config.TgBotToken.
@@ -46,9 +60,10 @@ func TestLoadCommandBotConfig_DoesNotUseEnvFallbackWhenNoChannel(t *testing.T) {
 	})
 }
 
-func TestLoadCommandBotConfig_PrefersEnabledTelegramChannel(t *testing.T) {
+func TestLoadCommandBotConfig_UsesSettingsWithIndependentPushChannel(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
+	addIndependentPushChannel(t)
 
 	// Seed settings table with telegram credentials.
 	dao.Mdb.Create(&mdb.Setting{Group: "system", Key: "system.telegram_bot_token", Value: "db-token", Type: "string"})
@@ -75,7 +90,7 @@ func TestLoadCommandBotConfig_PrefersEnabledTelegramChannel(t *testing.T) {
 	})
 }
 
-func TestLoadCommandBotConfig_ReturnsNilWhenNoChannelAndNoEnv(t *testing.T) {
+func TestLoadCommandBotConfig_ReturnsNilWithoutCredentials(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
@@ -96,7 +111,7 @@ func TestLoadCommandBotConfig_ReturnsNilWhenNoChannelAndNoEnv(t *testing.T) {
 	})
 }
 
-func TestLoadCommandBotConfig_SkipsEmptyConfigChannel(t *testing.T) {
+func TestLoadCommandBotConfig_SkipsMissingToken(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
@@ -116,7 +131,7 @@ func TestLoadCommandBotConfig_SkipsEmptyConfigChannel(t *testing.T) {
 	}
 }
 
-func TestLoadCommandBotConfig_SkipsInvalidAndUsesNextValid(t *testing.T) {
+func TestLoadCommandBotConfig_RejectsInvalidChatID(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 

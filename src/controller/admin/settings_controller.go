@@ -148,6 +148,7 @@ func (c *BaseAdminController) UpsertSettings(ctx echo.Context) error {
 		code, msg := constant.ResolveErrno(err)
 		return result{Key: key, OK: false, ErrorCode: code, Error: msg}
 	}
+	reloadCommandBot, syncTelegramChannel := false, false
 	for _, item := range req.Items {
 		key := strings.TrimSpace(item.Key)
 		if key == "" {
@@ -201,6 +202,8 @@ func (c *BaseAdminController) UpsertSettings(ctx echo.Context) error {
 			item.Group = mdb.SettingGroupSystem
 			item.Type = mdb.SettingTypeString
 		}
+		telegramChanged := strings.HasPrefix(key, "system.telegram_") &&
+			strings.TrimSpace(data.GetSettingString(key, "")) != strings.TrimSpace(value)
 		if err := data.SetSetting(item.Group, key, value, item.Type); err != nil {
 			out = append(out, errorResult(key, err))
 			continue
@@ -211,28 +214,26 @@ func (c *BaseAdminController) UpsertSettings(ctx echo.Context) error {
 				continue
 			}
 		}
+		if telegramChanged {
+			switch key {
+			case "system.telegram_bot_token", "system.telegram_chat_id":
+				reloadCommandBot = true
+				syncTelegramChannel = true
+			case "system.telegram_payment_notice_enabled", "system.telegram_abnormal_notice_enabled":
+				syncTelegramChannel = true
+			}
+		}
 		out = append(out, result{Key: key, OK: true})
 	}
 	if err := data.EnsureDefaultForcedRateList(); err != nil {
 		out = append(out, errorResult(mdb.SettingKeyRateForcedRateList, err))
 	}
 
-	// When telegram credentials are updated via settings, reload the
-	// command bot so operators don't need to restart the process, and
-	// sync the notification_channels row so the notify dispatcher picks
-	// up the new values immediately.
-	telegramKeys := map[string]bool{
-		"system.telegram_bot_token":               true,
-		"system.telegram_chat_id":                 true,
-		"system.telegram_payment_notice_enabled":  true,
-		"system.telegram_abnormal_notice_enabled": true,
+	if syncTelegramChannel {
+		dao.SyncTelegramChannelFromSettings()
 	}
-	for _, item := range req.Items {
-		if telegramKeys[strings.TrimSpace(item.Key)] {
-			telegram.ReloadBotAsync("settings upsert")
-			go dao.SyncTelegramChannelFromSettings()
-			break
-		}
+	if reloadCommandBot {
+		telegram.ReloadBotAsync("command bot settings changed")
 	}
 
 	return c.SucJson(ctx, out)
