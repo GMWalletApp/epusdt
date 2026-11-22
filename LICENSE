@@ -1,4 +1,11 @@
-GM Wallet Community License 2.0
+GM Wallet Community License 2.1
+
+This license is derived from the GNU Affero General Public License,
+version 3 (AGPLv3), and adds conditions on its scope and use, including
+commercial licensing, public source, attribution and contributions.
+本许可源自 GNU Affero General Public License 第 3 版（AGPLv3），
+并增加了关于适用范围、商业授权、源码公开、署名和贡献的条款。
+
 Original Project URL: https://github.com/GMWalletApp/epusdt
 License steward: Good Morning Technology, LLC <info@gmwallet.app>
 
@@ -10,7 +17,7 @@ in source releases and forks; retain the Original Project URL.
 
 0. Definitions.
 
-  "This License" refers to the GM Wallet Community License, version 2.0.
+  "This License" refers to the GM Wallet Community License, version 2.1.
 
   "Copyright" also means copyright-like laws that apply to other kinds of
 works, such as semiconductor masks.
@@ -158,7 +165,7 @@ keep intact all notices stating that this License and any
 non-permissive terms added in accord with section 7 apply to the code;
 keep intact all notices of the absence of any warranty; and give all
 recipients a copy of this License and its accompanying Contributor Terms
-2.0 along with the Program.
+2.1 along with the Program.
 
   You may charge any price or no price for each copy that you convey,
 and you may offer support or warranty protection for a fee.
@@ -645,10 +652,14 @@ a request alone grants no exception. Existing grants to other recipients
 and third-party rights remain effective. GM Wallet can license only those
 rights it owns or is authorized to grant.
 
-If your organization's policy prohibits AGPLv3-licensed software, or you
-need an alternative to AGPLv3-style source-sharing obligations, contact
-info@gmwallet.app for commercial terms. This document is a custom
-source-available license.
+If your organization's policy prohibits software under licenses similar
+to AGPLv3, or you need an alternative to AGPLv3-style source-sharing
+obligations, contact info@gmwallet.app for commercial terms.
+This is a custom source-available license.
+
+如果您的组织政策禁止使用采用类似 AGPLv3 许可的软件，或您需要替代
+AGPLv3 式源码共享义务的授权方案，请联系 info@gmwallet.app 洽询商业条款。
+本协议是定制的源码可见许可。
 
 19. GM Wallet's rights in downstream modifications and project submissions.
 
@@ -667,10 +678,10 @@ own permissions. It does not transfer ownership of an unsubmitted fork.
 Anyone intentionally submitting contributions to an official GMWalletApp
 repository, including commits, patches, pull requests, issues, comments,
 reviews, documentation and attachments, agrees to the Contributor Terms
-set out in the accompanying CONTRIBUTING.md (version 2.0). By submitting,
+set out in the accompanying CONTRIBUTING.md (version 2.1). By submitting,
 you agree that GM Wallet may use and commercialize your contribution.
 Under those terms, you assign the copyright you control in the original
 material you contribute to GM Wallet and grant the fallback rights
-specified there. Provide the signed confirmation described there when
-submitting. Third-party rights are preserved. Mere facts and ideas may
+specified there. Submission itself constitutes acceptance of those terms.
+Third-party rights are preserved. Mere facts and ideas may
 be used as feedback; no exclusive copyright in them is claimed.
