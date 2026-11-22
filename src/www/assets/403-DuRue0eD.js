@@ -1,1 +1,0 @@
-import{t as e}from"./forbidden-CaTkA_ou.js";var t=e;export{t as component};
