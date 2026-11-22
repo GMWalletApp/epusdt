@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	scanner "github.com/GMWalletApp/ChainScanner"
 	"io"
@@ -212,6 +213,90 @@ func TestCreateTransactionAssignsIncrementedAmountsAndLocks(t *testing.T) {
 	}
 	if tradeID2 != resp2.TradeId {
 		t.Fatalf("second runtime lock = %s, want %s", tradeID2, resp2.TradeId)
+	}
+}
+
+func TestCreateTransactionWatchesShuffledWalletBeforeLock(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	orig := shuffleWalletAddresses
+	t.Cleanup(func() { shuffleWalletAddresses = orig })
+	shuffleWalletAddresses = func(wallets []mdb.WalletAddress) {
+		for i, wallet := range wallets {
+			if wallet.Address == "wallet_shuffle_2" {
+				wallets[0], wallets[i] = wallets[i], wallets[0]
+				return
+			}
+		}
+	}
+
+	if _, err := data.AddWalletAddress("wallet_shuffle_1"); err != nil {
+		t.Fatalf("add wallet 1: %v", err)
+	}
+	if _, err := data.AddWalletAddress("wallet_shuffle_2"); err != nil {
+		t.Fatalf("add wallet 2: %v", err)
+	}
+
+	previousWatch := EnsurePaymentWatch
+	t.Cleanup(func() { EnsurePaymentWatch = previousWatch })
+	watchUnavailable := errors.New("subscription unavailable")
+	var watchErr error = watchUnavailable
+	var watchCalls int
+	EnsurePaymentWatch = func(network, address string) error {
+		watchCalls++
+		if network != mdb.NetworkTron || address != "wallet_shuffle_2" {
+			t.Fatalf("subscription = %s/%s, want tron/wallet_shuffle_2", network, address)
+		}
+		owner, err := data.GetTradeIdByWalletAddressAndAmountAndToken(network, address, "USDT", 1)
+		if err != nil || owner != "" {
+			t.Fatalf("reservation before subscription: owner=%q err=%v", owner, err)
+		}
+		return watchErr
+	}
+
+	req := newCreateTransactionRequest("order_shuffle_1", 1)
+	if resp, err := CreateTransaction(req, nil); resp != nil || !errors.Is(err, watchUnavailable) {
+		t.Fatalf("failed subscription: response=%v err=%v", resp, err)
+	}
+	watchErr = nil
+	resp, err := CreateTransaction(req, nil)
+	if err != nil {
+		t.Fatalf("create transaction: %v", err)
+	}
+	if resp.ReceiveAddress != "wallet_shuffle_2" {
+		t.Fatalf("receive address = %s, want wallet_shuffle_2 after shuffle", resp.ReceiveAddress)
+	}
+	owner, err := data.GetTradeIdByWalletAddressAndAmountAndToken(mdb.NetworkTron, resp.ReceiveAddress, resp.Token, resp.ActualAmount)
+	if watchCalls != 2 || err != nil || owner != resp.TradeId {
+		t.Fatalf("after retry: subscriptions=%d lock owner=%q want %q err=%v", watchCalls, owner, resp.TradeId, err)
+	}
+}
+
+func TestCreateTransactionRandomWalletAssignmentUsesMoreThanFirstAddress(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	if _, err := data.AddWalletAddress("wallet_rand_1"); err != nil {
+		t.Fatalf("add wallet 1: %v", err)
+	}
+	if _, err := data.AddWalletAddress("wallet_rand_2"); err != nil {
+		t.Fatalf("add wallet 2: %v", err)
+	}
+	if _, err := data.AddWalletAddress("wallet_rand_3"); err != nil {
+		t.Fatalf("add wallet 3: %v", err)
+	}
+
+	seen := map[string]int{}
+	for i := 1; i <= 24; i++ {
+		resp, err := CreateTransaction(newCreateTransactionRequest(fmt.Sprintf("order_rand_%d", i), float64(i)), nil)
+		if err != nil {
+			t.Fatalf("create transaction %d: %v", i, err)
+		}
+		seen[resp.ReceiveAddress]++
+	}
+	if len(seen) < 2 {
+		t.Fatalf("assigned addresses = %v, want more than one wallet", seen)
 	}
 }
 
