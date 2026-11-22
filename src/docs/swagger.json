@@ -1584,6 +1584,14 @@
                     "Payment Config"
                 ],
                 "summary": "Get public payment config",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Public cashier only. Filter on-chain options using the stored order currency and amount.",
+                        "name": "trade_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -3969,6 +3977,14 @@
                     "Payment Config"
                 ],
                 "summary": "Get public payment config",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Public cashier only. Filter on-chain options using the stored order currency and amount.",
+                        "name": "trade_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",

@@ -272,14 +272,9 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 		return nil, err
 	}
 
-	rate := config.GetRateForCoin(strings.ToLower(token), strings.ToLower(currency))
-	if rate <= 0 {
-		return nil, constant.RateAmountErr
-	}
-
-	decimalTokenAmount := decimalPayAmount.Mul(decimal.NewFromFloat(rate))
-	if decimalTokenAmount.Cmp(decimal.NewFromFloat(UsdtMinimumPaymentAmount)) == -1 {
-		return nil, constant.PayAmountErr
+	decimalTokenAmount, err := OnChainTokenAmount(payAmount, currency, token)
+	if err != nil {
+		return nil, err
 	}
 
 	walletAddress, err := data.GetAvailableWalletAddressByNetwork(network)
@@ -703,14 +698,9 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 	}
 
 	// 6. Calculate amount for the new network
-	rate := config.GetRateForCoin(strings.ToLower(token), strings.ToLower(parent.Currency))
-	if rate <= 0 {
-		return nil, constant.RateAmountErr
-	}
-	decimalPayAmount := decimal.NewFromFloat(parent.Amount)
-	decimalTokenAmount := decimalPayAmount.Mul(decimal.NewFromFloat(rate))
-	if decimalTokenAmount.Cmp(decimal.NewFromFloat(UsdtMinimumPaymentAmount)) == -1 {
-		return nil, constant.PayAmountErr
+	decimalTokenAmount, err := OnChainTokenAmount(parent.Amount, parent.Currency, token)
+	if err != nil {
+		return nil, err
 	}
 
 	// 7. Find and lock wallet
@@ -781,14 +771,9 @@ func completeWaitSelectOrder(parent *mdb.Orders, token string, network string) (
 		return nil, err
 	}
 
-	rate := config.GetRateForCoin(strings.ToLower(token), strings.ToLower(parent.Currency))
-	if rate <= 0 {
-		return nil, constant.RateAmountErr
-	}
-	decimalPayAmount := decimal.NewFromFloat(parent.Amount)
-	decimalTokenAmount := decimalPayAmount.Mul(decimal.NewFromFloat(rate))
-	if decimalTokenAmount.Cmp(decimal.NewFromFloat(UsdtMinimumPaymentAmount)) == -1 {
-		return nil, constant.PayAmountErr
+	decimalTokenAmount, err := OnChainTokenAmount(parent.Amount, parent.Currency, token)
+	if err != nil {
+		return nil, err
 	}
 
 	walletAddress, err := data.GetAvailableWalletAddressByNetwork(network)

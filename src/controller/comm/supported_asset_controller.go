@@ -1,10 +1,12 @@
 package comm
 
 import (
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
+	scanner "github.com/GMWalletApp/ChainScanner"
 	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/middleware"
 	"github.com/GMWalletApp/epusdt/model/data"
@@ -15,7 +17,25 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func buildSupportedAssets() ([]response.NetworkTokenSupport, error) {
+func buildSupportedAssets(order *mdb.Orders) ([]response.NetworkTokenSupport, error) {
+	var reserved []mdb.Orders
+	canCreate := true
+	if order != nil && order.Status == mdb.StatusWaitPay {
+		root := order
+		if order.ParentTradeId != "" {
+			var err error
+			root, err = service.GetOrderInfoByTradeId(order.ParentTradeId)
+			if err != nil {
+				return nil, err
+			}
+		}
+		children, err := data.GetAllSubOrders(root.TradeId)
+		if err != nil {
+			return nil, err
+		}
+		canCreate = len(children) < service.MaxSubOrders
+		reserved = append(children, *root)
+	}
 	chains, err := data.ListEnabledChains()
 	if err != nil {
 		return nil, err
@@ -27,11 +47,21 @@ func buildSupportedAssets() ([]response.NetworkTokenSupport, error) {
 
 	networkHasWallet := make(map[string]struct{})
 	for _, w := range wallets {
-		networkHasWallet[strings.ToLower(w.Network)] = struct{}{}
+		network := strings.ToLower(w.Network)
+		if order != nil {
+			if _, err := scanner.Canonical(network, w.Address); err != nil {
+				continue
+			}
+		}
+		networkHasWallet[network] = struct{}{}
 	}
 
+	payable := make(map[string]bool)
 	supports := make([]response.NetworkTokenSupport, 0, len(chains))
 	for _, ch := range chains {
+		if !canCreate {
+			break
+		}
 		network := strings.ToLower(ch.Network)
 		if _, ok := networkHasWallet[network]; !ok {
 			continue
@@ -52,6 +82,15 @@ func buildSupportedAssets() ([]response.NetworkTokenSupport, error) {
 			if sym == "" {
 				continue
 			}
+			if order != nil {
+				if _, seen := payable[sym]; !seen {
+					_, quoteErr := service.OnChainTokenAmount(order.Amount, order.Currency, sym)
+					payable[sym] = quoteErr == nil
+				}
+				if !payable[sym] {
+					continue
+				}
+			}
 			symbols = append(symbols, sym)
 		}
 		if len(symbols) == 0 {
@@ -69,6 +108,22 @@ func buildSupportedAssets() ([]response.NetworkTokenSupport, error) {
 		})
 	}
 
+	// Switching can reuse an existing reservation even if the chain or wallet
+	// has since been disabled or the rate is temporarily unavailable.
+	for _, row := range reserved {
+		if row.Status != mdb.StatusWaitPay || row.ReceiveAddress == "" || row.ActualAmount <= 0 ||
+			(row.PayProvider != "" && row.PayProvider != mdb.PaymentProviderOnChain) || row.Network == "" || row.Token == "" {
+			continue
+		}
+		network, token := strings.ToLower(row.Network), strings.ToUpper(row.Token)
+		i := slices.IndexFunc(supports, func(s response.NetworkTokenSupport) bool { return s.Network == network })
+		if i < 0 {
+			supports = append(supports, response.NetworkTokenSupport{Network: network, DisplayName: network, Tokens: []string{token}})
+		} else if !slices.Contains(supports[i].Tokens, token) {
+			supports[i].Tokens = append(supports[i].Tokens, token)
+			sort.Strings(supports[i].Tokens)
+		}
+	}
 	return supports, nil
 }
 
@@ -77,6 +132,7 @@ func buildSupportedAssets() ([]response.NetworkTokenSupport, error) {
 // @Summary      Get public payment config
 // @Description  Returns supported_assets for on-chain payments, site and epay defaults, and separate okpay and xlayer hosted payment settings. The xlayer allow_tokens list controls the tokens shown for OKX OnchainOS.
 // @Description  The authenticated admin variant (/admin/api/v1/config) also includes provider credentials, internal callback settings and the merchant X Layer receiving address.
+// @Param        trade_id query string false "Public cashier only. Filter on-chain options using the stored order currency and amount."
 // @Tags         Payment Config
 // @Produce      json
 // @Success      200 {object} response.ApiResponse{data=response.PublicConfigResponse}
@@ -84,7 +140,18 @@ func buildSupportedAssets() ([]response.NetworkTokenSupport, error) {
 // @Router       /payments/gmpay/v1/config [get]
 // @Router       /admin/api/v1/config [get]
 func (c *BaseCommController) GetPublicConfig(ctx echo.Context) error {
-	supports, err := buildSupportedAssets()
+	var order *mdb.Orders
+	if tradeID := strings.TrimSpace(ctx.QueryParam("trade_id")); tradeID != "" && ctx.Get(middleware.AdminUserIDKey) == nil {
+		existing, err := service.GetOrderInfoByTradeId(tradeID)
+		if err != nil {
+			return c.FailJson(ctx, err)
+		}
+		if existing.Status == mdb.StatusWaitPay || existing.Status == mdb.StatusWaitSelect {
+			order = existing
+		}
+		ctx.Response().Header().Set("Cache-Control", "no-store")
+	}
+	supports, err := buildSupportedAssets(order)
 	if err != nil {
 		return c.FailJson(ctx, err)
 	}

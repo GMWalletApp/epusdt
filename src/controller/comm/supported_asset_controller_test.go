@@ -29,7 +29,7 @@ func TestBuildSupportedAssetsIncludesConfiguredAptosTokens(t *testing.T) {
 		}
 	}
 
-	supports, err := buildSupportedAssets()
+	supports, err := buildSupportedAssets(nil)
 	if err != nil {
 		t.Fatalf("buildSupportedAssets: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestHostedXLayerExcludedFromChainPaymentOptions(t *testing.T) {
 	if err := data.SetSetting(mdb.SettingGroupXLayer, mdb.SettingKeyXLayerEnabled, "true", mdb.SettingTypeBool); err != nil {
 		t.Fatal(err)
 	}
-	supports, err := buildSupportedAssets()
+	supports, err := buildSupportedAssets(nil)
 	if err != nil {
 		t.Fatal(err)
 	}

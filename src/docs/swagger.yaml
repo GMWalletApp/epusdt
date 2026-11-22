@@ -2656,6 +2656,12 @@ paths:
       description: |-
         Returns supported_assets for on-chain payments, site and epay defaults, and separate okpay and xlayer hosted payment settings. The xlayer allow_tokens list controls the tokens shown for OKX OnchainOS.
         The authenticated admin variant (/admin/api/v1/config) also includes provider credentials, internal callback settings and the merchant X Layer receiving address.
+      parameters:
+      - description: Public cashier only. Filter on-chain options using the stored
+          order currency and amount.
+        in: query
+        name: trade_id
+        type: string
       produces:
       - application/json
       responses:
@@ -4188,6 +4194,12 @@ paths:
       description: |-
         Returns supported_assets for on-chain payments, site and epay defaults, and separate okpay and xlayer hosted payment settings. The xlayer allow_tokens list controls the tokens shown for OKX OnchainOS.
         The authenticated admin variant (/admin/api/v1/config) also includes provider credentials, internal callback settings and the merchant X Layer receiving address.
+      parameters:
+      - description: Public cashier only. Filter on-chain options using the stored
+          order currency and amount.
+        in: query
+        name: trade_id
+        type: string
       produces:
       - application/json
       responses:

@@ -183,7 +183,9 @@ A placeholder has no address or token and an `actual_amount` of zero. Expiration
 
 ## Public checkout configuration
 
-`GET /payments/gmpay/v1/config` returns the checkout branding, available on-chain assets, EPay defaults, and the public `okpay` and `xlayer` provider settings. Each entry in `supported_assets` requires an enabled chain, an available receiving address and an enabled token configured for payment. Hosted methods expose their own `enabled` flag and `allow_tokens` list.
+`GET /payments/gmpay/v1/config` returns the checkout branding, available on-chain assets, EPay defaults, and the public `okpay` and `xlayer` provider settings. Pass the cashier order ID as `?trade_id=...` to list on-chain options for that order. New options require a valid receiving address and an exchange rate that gives at least 0.01 tokens for the stored amount and currency. Existing payable reservations remain available at their original quote. Once the order family reaches its switch limit, only its existing on-chain reservations are listed. Omitting the parameter or looking up a terminal order returns the general list.
+
+Each entry in the general `supported_assets` list requires an enabled chain, an available receiving address and an enabled token configured for payment. Hosted methods expose their own `enabled` flag and `allow_tokens` list.
 
 ```json
 {

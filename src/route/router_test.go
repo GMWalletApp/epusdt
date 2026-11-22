@@ -12,6 +12,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -801,9 +803,21 @@ func TestGMPaySignedReplayAfterCheckoutSelection(t *testing.T) {
 // and returns a map of network → []token for easy assertions.
 func getSupportedNetworks(t *testing.T, e *echo.Echo) map[string][]string {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/payments/gmpay/v1/config", nil)
+	return getOrderSupportedNetworks(t, e, "")
+}
+
+func getOrderSupportedNetworks(t *testing.T, e *echo.Echo, tradeID string) map[string][]string {
+	t.Helper()
+	path := "/payments/gmpay/v1/config"
+	if tradeID != "" {
+		path += "?trade_id=" + url.QueryEscape(tradeID)
+	}
+	req := httptest.NewRequest(http.MethodGet, path, nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
+	if tradeID != "" && rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("cashier order config can be cached: %v", rec.Header())
+	}
 	if rec.Code != http.StatusOK {
 		t.Fatalf("getSupportedNetworks: status=%d body=%s", rec.Code, rec.Body.String())
 	}
@@ -822,6 +836,57 @@ func getSupportedNetworks(t *testing.T, e *echo.Echo) map[string][]string {
 		result[network] = tokens
 	}
 	return result
+}
+
+func TestPublicConfigForOrder(t *testing.T) {
+	e := setupTestEnv(t)
+	if err := data.SetSetting("rate", "rate.forced_rate_list", `{"cny":{"usdt":1,"trx":0.0001}}`, "json"); err != nil {
+		t.Fatal(err)
+	}
+	// Seed an unusable historical Solana address and a usable TRON address.
+	if err := dao.Mdb.Model(&mdb.WalletAddress{}).Where("network = ?", mdb.NetworkSolana).Update("address", "invalid").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkTron, "TJRabPrwbZy45sbavfcjinPJC18kjpRTv8"); err != nil {
+		t.Fatal(err)
+	}
+
+	root := mdb.Orders{TradeId: "cashier-order", OrderId: "merchant-order", Status: mdb.StatusWaitSelect, Currency: "CNY", Amount: 1}
+	if err := dao.Mdb.Create(&root).Error; err != nil {
+		t.Fatal(err)
+	}
+	general := getSupportedNetworks(t, e)
+	if !slices.Contains(general["tron"], "TRX") || len(general["solana"]) == 0 {
+		t.Fatalf("unexpected general list: %v", general)
+	}
+	options := getOrderSupportedNetworks(t, e, root.TradeId)
+	if len(options) != 1 || !slices.Equal(options["tron"], []string{"USDT"}) {
+		t.Fatalf("wanted TRON/USDT for this amount, got %v", options)
+	}
+
+	// The order was already quoted and the family has used its one switch.
+	// Neither its parent nor child reservation depends on a new quote.
+	if err := dao.Mdb.Model(&root).Updates(map[string]any{"status": mdb.StatusWaitPay, "network": "solana", "token": "SOL", "receive_address": "11111111111111111111111111111111", "actual_amount": 2}).Error; err != nil {
+		t.Fatal(err)
+	}
+	child := mdb.Orders{TradeId: "child-reservation", OrderId: "child-merchant-order", ParentTradeId: root.TradeId,
+		Status: mdb.StatusWaitPay, Network: "tron", Token: "TRX", ReceiveAddress: "TJRabPrwbZy45sbavfcjinPJC18kjpRTv8", ActualAmount: 20, Currency: "CNY", Amount: 1}
+	if err := dao.Mdb.Create(&child).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{root.TradeId, child.TradeId} {
+		options = getOrderSupportedNetworks(t, e, id)
+		if len(options) != 2 || !slices.Equal(options["solana"], []string{"SOL"}) || !slices.Equal(options["tron"], []string{"TRX"}) {
+			t.Fatalf("wanted only the existing reservations for %s, got %v", id, options)
+		}
+	}
+
+	if err := dao.Mdb.Model(&root).Update("status", mdb.StatusPaySuccess).Error; err != nil {
+		t.Fatal(err)
+	}
+	if terminal := getOrderSupportedNetworks(t, e, root.TradeId); !reflect.DeepEqual(terminal, general) {
+		t.Fatalf("terminal order changed the configuration: %v, want %v", terminal, general)
+	}
 }
 
 // TestGetSupportedAssets_ChainTokenToggle verifies that:
