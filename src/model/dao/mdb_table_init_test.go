@@ -72,6 +72,55 @@ func TestSeedChainTokensIncludesAptosAssets(t *testing.T) {
 	}
 }
 
+func TestSeedArbitrumUSDTRespectsExistingAssets(t *testing.T) {
+	const contract = "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
+	for _, tc := range []struct {
+		name, symbol, address string
+		deleted               bool
+	}{
+		{name: "fresh"},
+		{name: "custom contract", symbol: "USDT", address: "0x1111111111111111111111111111111111111111"},
+		{name: "disabled alias", symbol: "USDT0", address: strings.ToLower(contract)},
+		{name: "removed alias", symbol: "USD₮0", address: contract, deleted: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			Mdb = setupSeedTableTestDB(t, &mdb.ChainToken{})
+			var existing mdb.ChainToken
+			if tc.symbol != "" {
+				existing = mdb.ChainToken{Network: mdb.NetworkArbitrum, Symbol: tc.symbol, ContractAddress: tc.address, Decimals: 8, MinAmount: 10}
+				if err := Mdb.Create(&existing).Error; err != nil {
+					t.Fatal(err)
+				}
+				if err := Mdb.Model(&existing).Update("enabled", false).Error; err != nil {
+					t.Fatal(err)
+				}
+				if tc.deleted {
+					if err := Mdb.Delete(&existing).Error; err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			seedChainTokens()
+			seedChainTokens()
+			var rows []mdb.ChainToken
+			if err := Mdb.Unscoped().Where("network = ? AND (symbol = ? OR contract_address = ? COLLATE NOCASE)", mdb.NetworkArbitrum, "USDT", contract).Find(&rows).Error; err != nil {
+				t.Fatal(err)
+			}
+			if len(rows) != 1 {
+				t.Fatalf("expected one Arbitrum USDT configuration, found %d", len(rows))
+			}
+			row := rows[0]
+			if tc.symbol == "" {
+				if row.Symbol != "USDT" || row.ContractAddress != contract || row.Decimals != 6 || !row.Enabled || row.DeletedAt.Valid {
+					t.Fatalf("unexpected seeded asset: %+v", row)
+				}
+			} else if row.ID != existing.ID || row.Symbol != tc.symbol || row.ContractAddress != tc.address || row.Decimals != 8 || row.MinAmount != 10 || row.Enabled || row.DeletedAt.Valid != tc.deleted {
+				t.Fatalf("changed existing asset: %+v", row)
+			}
+		})
+	}
+}
+
 func TestSeedDefaultSettingsIncludesSystemLogLevel(t *testing.T) {
 	db := setupSeedSettingsTestDB(t)
 	Mdb = db

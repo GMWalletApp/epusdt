@@ -78,7 +78,7 @@ A fresh installation includes the 16 direct-payment networks below. Checkout off
 | Plasma | `plasma` | USDT |
 | Aptos | `aptos` | USDT, USDC |
 | Sui | `sui` | SUI, USDC |
-| Arbitrum One | `arbitrum` | ETH, USDC |
+| Arbitrum One | `arbitrum` | ETH, USDC, USDT |
 | Base | `base` | ETH, USDC |
 | OP Mainnet | `optimism` | ETH, USDC |
 | Avalanche C-Chain | `avalanche` | AVAX, USDC |
@@ -86,7 +86,7 @@ A fresh installation includes the 16 direct-payment networks below. Checkout off
 | Monad | `monad` | MON, USDC |
 | Arc | `arc` | USDC |
 
-Polygon has separate USDC and USDC.e assets. EPUSDT uses the symbol `USDT` for the preconfigured Plasma asset. Arc accepts USDC via both native and ERC-20 transfers.
+Polygon has separate USDC and USDC.e assets. EPUSDT uses the payment symbol `USDT` for USDT0 on Arbitrum One and Plasma. Arc accepts USDC via both native and ERC-20 transfers.
 
 <a id="checkout"></a>
 

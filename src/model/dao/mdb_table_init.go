@@ -140,6 +140,18 @@ func seedChainTokens() {
 	if err := Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&defaults).Error; err != nil {
 		color.Red.Printf("[store_db] seed chain_tokens err=%s\n", err)
 	}
+
+	// Some merchants already configured Arbitrum USD₮0 using its on-chain
+	// symbol or another alias. Respect those rows, including soft deletions.
+	const arbitrumUSDT = "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
+	if err := Mdb.Exec(`INSERT INTO chain_tokens
+		(network, symbol, contract_address, decimals, enabled, created_at, updated_at)
+		SELECT ?, 'USDT', ?, 6, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+		WHERE NOT EXISTS (SELECT 1 FROM chain_tokens WHERE network = ?
+			AND (symbol = 'USDT' COLLATE NOCASE OR contract_address = ? COLLATE NOCASE))`,
+		mdb.NetworkArbitrum, arbitrumUSDT, mdb.NetworkArbitrum, arbitrumUSDT).Error; err != nil {
+		color.Red.Printf("[store_db] seed Arbitrum USDT err=%s\n", err)
+	}
 }
 
 func backfillRpcNodePurpose() {

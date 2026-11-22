@@ -78,7 +78,7 @@ flowchart TB
 | Plasma | `plasma` | USDT |
 | Aptos | `aptos` | USDT、USDC |
 | Sui | `sui` | SUI、USDC |
-| Arbitrum One | `arbitrum` | ETH、USDC |
+| Arbitrum One | `arbitrum` | ETH、USDC、USDT |
 | Base | `base` | ETH、USDC |
 | OP Mainnet | `optimism` | ETH、USDC |
 | Avalanche C-Chain | `avalanche` | AVAX、USDC |
@@ -86,7 +86,7 @@ flowchart TB
 | Monad | `monad` | MON、USDC |
 | Arc | `arc` | USDC |
 
-Polygon 的 USDC 和 USDC.e 是两种不同资产。Plasma 的预置收款币种在 EPUSDT 中标记为 `USDT`。Arc 的原生转账和 ERC-20 转账都以 USDC 收款。
+Polygon 的 USDC 和 USDC.e 是两种不同资产。Arbitrum One 和 Plasma 上的 USDT0 在 EPUSDT 中使用收款币种代码 `USDT`。Arc 的原生转账和 ERC-20 转账都以 USDC 收款。
 
 <a id="checkout"></a>
 
