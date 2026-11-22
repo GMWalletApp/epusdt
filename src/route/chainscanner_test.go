@@ -80,7 +80,9 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	}
 	path := "/admin/blacklist/keyword:provider"
 	call("PUT", path, "", 204)
-	call("PUT", path, "", 204)
+	call("PUT", "/admin/blacklist/keyword%3Aprovider", "", 204)
+	call("PUT", "/admin/blacklist/exact%3Aother.example", "", 204)
+	call("DELETE", "/admin/blacklist/exact%3Aother.example", "", 204)
 	if !strings.Contains(call("GET", "/admin/blacklist", "", 200), "keyword:provider") {
 		t.Fatal("missing persisted blacklist rule")
 	}

@@ -218,6 +218,13 @@ func scannerForward(template string, connection config.ScannerConnection) echo.H
 		for i, p := range parts {
 			if strings.HasPrefix(p, ":") {
 				v := c.Param(p[1:])
+				if p == ":host" {
+					// Browser clients encode the colon in exact: and keyword: rules.
+					v, err = url.PathUnescape(v)
+					if err != nil {
+						return echo.NewHTTPError(400, "invalid scanner host rule")
+					}
+				}
 				if v == "" || v == "." || v == ".." || strings.ContainsAny(v, "/%\\?#") {
 					return echo.NewHTTPError(400, "invalid scanner path parameter")
 				}
