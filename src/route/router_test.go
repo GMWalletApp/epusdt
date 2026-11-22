@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/GMWalletApp/epusdt/internal/testutil"
 	"io"
 	"maps"
 	"net/http"
@@ -109,8 +110,8 @@ func setupTestEnv(t *testing.T) *echo.Echo {
 	}
 
 	// seed wallet addresses
-	dao.Mdb.Create(&mdb.WalletAddress{Network: mdb.NetworkTron, Address: "TTestTronAddress001", Status: mdb.TokenStatusEnable})
-	dao.Mdb.Create(&mdb.WalletAddress{Network: mdb.NetworkSolana, Address: "SolTestAddress001", Status: mdb.TokenStatusEnable})
+	dao.Mdb.Create(&mdb.WalletAddress{Network: mdb.NetworkTron, Address: testutil.TronAddress, Status: mdb.TokenStatusEnable})
+	dao.Mdb.Create(&mdb.WalletAddress{Network: mdb.NetworkSolana, Address: testutil.SolanaAddress, Status: mdb.TokenStatusEnable})
 	// seed chains so scanners know the test networks are "enabled".
 	// Use ON CONFLICT DO NOTHING: MdbTableInit (called via DBInit) uses sync.Once
 	// and may have already seeded these rows into this DB on the first test run.
@@ -317,7 +318,7 @@ func TestCreateOrderGmpayV1Solana(t *testing.T) {
 	if data["trade_id"] == nil || data["trade_id"] == "" {
 		t.Error("expected trade_id in response")
 	}
-	if data["receive_address"] != "SolTestAddress001" {
+	if data["receive_address"] != testutil.SolanaAddress {
 		t.Errorf("expected solana address, got: %v", data["receive_address"])
 	}
 	t.Logf("Order created: trade_id=%v address=%v amount=%v", data["trade_id"], data["receive_address"], data["actual_amount"])
@@ -705,7 +706,7 @@ func TestSwitchNetworkCompletesGmpayPlaceholderInPlace(t *testing.T) {
 	if respData["payment_type"] != "gmpay" {
 		t.Fatalf("switch payment_type = %v, want gmpay", respData["payment_type"])
 	}
-	if respData["network"] != "tron" || respData["token"] != "USDT" || respData["receive_address"] != "TTestTronAddress001" {
+	if respData["network"] != "tron" || respData["token"] != "USDT" || respData["receive_address"] != testutil.TronAddress {
 		t.Fatalf("switch chain fields = %#v", respData)
 	}
 
@@ -1218,7 +1219,7 @@ func seedOkPayNotifyFixture(t *testing.T) *okPayNotifyFixture {
 		Amount:         1,
 		Currency:       "CNY",
 		ActualAmount:   0.15,
-		ReceiveAddress: "TTestTronAddress001",
+		ReceiveAddress: testutil.TronAddress,
 		Token:          "USDT",
 		Network:        mdb.NetworkTron,
 		Status:         mdb.StatusWaitPay,
@@ -1473,11 +1474,11 @@ func TestCreateOrderNetworkIsolation(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected data, got: %v", resp)
 	}
-	if data["receive_address"] == "TTestTronAddress001" {
+	if data["receive_address"] == testutil.TronAddress {
 		t.Error("solana order should NOT get a tron address")
 	}
-	if data["receive_address"] != "SolTestAddress001" {
-		t.Errorf("expected SolTestAddress001, got %v", data["receive_address"])
+	if data["receive_address"] != testutil.SolanaAddress {
+		t.Errorf("expected %s, got %v", testutil.SolanaAddress, data["receive_address"])
 	}
 }
 
@@ -1572,7 +1573,7 @@ func TestEpaySubmitPhpRequestTokenNetworkOverrideDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload epay order: %v", err)
 	}
-	if order.Network != mdb.NetworkSolana || order.ReceiveAddress != "SolTestAddress001" || order.Token != "USDT" {
+	if order.Network != mdb.NetworkSolana || order.ReceiveAddress != testutil.SolanaAddress || order.Token != "USDT" {
 		t.Fatalf("epay override order fields = network %q address %q token %q", order.Network, order.ReceiveAddress, order.Token)
 	}
 	if order.PaymentType != mdb.PaymentTypeEpay {
@@ -1617,7 +1618,7 @@ func TestEpaySubmitPhpTypeSelectorOverridesRequestAndDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload epay selector order: %v", err)
 	}
-	if order.Token != "USDT" || order.Network != mdb.NetworkTron || order.ReceiveAddress != "TTestTronAddress001" {
+	if order.Token != "USDT" || order.Network != mdb.NetworkTron || order.ReceiveAddress != testutil.TronAddress {
 		t.Fatalf("selector order fields = token %q network %q address %q", order.Token, order.Network, order.ReceiveAddress)
 	}
 	if order.Currency != "CNY" {
@@ -1666,7 +1667,7 @@ func TestEpaySubmitPhpTypeSelectorUsesDefaultCurrencyWhenMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload epay selector order: %v", err)
 	}
-	if order.Token != "USDT" || order.Network != mdb.NetworkTron || order.ReceiveAddress != "TTestTronAddress001" {
+	if order.Token != "USDT" || order.Network != mdb.NetworkTron || order.ReceiveAddress != testutil.TronAddress {
 		t.Fatalf("selector order fields = token %q network %q address %q", order.Token, order.Network, order.ReceiveAddress)
 	}
 	if order.Currency != "USD" {
@@ -1752,7 +1753,7 @@ func TestEpaySubmitPhpWithoutTypeKeepsCurrentBehavior(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload epay empty-type order: %v", err)
 	}
-	if order.Token != "USDT" || order.Network != mdb.NetworkTron || order.ReceiveAddress != "TTestTronAddress001" {
+	if order.Token != "USDT" || order.Network != mdb.NetworkTron || order.ReceiveAddress != testutil.TronAddress {
 		t.Fatalf("empty-type order fields = token %q network %q address %q", order.Token, order.Network, order.ReceiveAddress)
 	}
 	if order.EpayType != "" {
@@ -1909,7 +1910,7 @@ func TestEpaySubmitPhpTypeSelectorPostFormCompatible(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload epay post selector order: %v", err)
 	}
-	if order.Token != "USDT" || order.Network != mdb.NetworkTron || order.ReceiveAddress != "TTestTronAddress001" {
+	if order.Token != "USDT" || order.Network != mdb.NetworkTron || order.ReceiveAddress != testutil.TronAddress {
 		t.Fatalf("post selector order fields = token %q network %q address %q", order.Token, order.Network, order.ReceiveAddress)
 	}
 	if order.EpayType != "usdt.tron" {
@@ -2484,7 +2485,7 @@ func TestSubmitTxHash_RejectsExistingHashBeforeRpc(t *testing.T) {
 		Amount:             10,
 		Currency:           "CNY",
 		ActualAmount:       1.23,
-		ReceiveAddress:     "TTestTronAddress001",
+		ReceiveAddress:     testutil.TronAddress,
 		Token:              "USDT",
 		Network:            mdb.NetworkTron,
 		Status:             mdb.StatusPaySuccess,

@@ -14,7 +14,7 @@ import (
 // AdminAddWalletRequest is the payload for adding a wallet via admin.
 type AdminAddWalletRequest struct {
 	Network string `json:"network" validate:"required" example:"tron"`
-	Address string `json:"address" validate:"required" example:"TTestTronAddress001"`
+	Address string `json:"address" validate:"required" example:"TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm"`
 	Remark  string `json:"remark" example:"主钱包"`
 }
 
@@ -34,7 +34,7 @@ type AdminBatchImportRequest struct {
 	Network string `json:"network" validate:"required" example:"tron"`
 	// Addresses listed as observation-only wallets. Private-key import
 	// and API-managed modes are out of scope for v1.
-	Addresses []string `json:"addresses" validate:"required" example:"TAddr001,TAddr002,TAddr003"`
+	Addresses []string `json:"addresses" validate:"required" example:"TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm,TA9pkx4DFxrEw8JZzUtyDrh2uAat1LDuJL"`
 }
 
 // WalletListItem extends WalletAddress with order count.

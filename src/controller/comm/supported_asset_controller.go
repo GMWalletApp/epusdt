@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	scanner "github.com/GMWalletApp/ChainScanner"
 	"github.com/GMWalletApp/epusdt/config"
 	"github.com/GMWalletApp/epusdt/middleware"
 	"github.com/GMWalletApp/epusdt/model/data"
@@ -49,7 +48,7 @@ func buildSupportedAssets(order *mdb.Orders) ([]response.NetworkTokenSupport, er
 	for _, w := range wallets {
 		network := strings.ToLower(w.Network)
 		if order != nil {
-			if _, err := scanner.Canonical(network, w.Address); err != nil {
+			if _, err := data.ReceivingAddress(network, w.Address); err != nil {
 				continue
 			}
 		}

@@ -558,7 +558,7 @@ func TestAdminWallets_CRUD(t *testing.T) {
 	// Add a new wallet.
 	rec = doPostAdmin(e, "/admin/api/v1/wallets", map[string]interface{}{
 		"network": "ethereum",
-		"address": "0xTestEthAddress001",
+		"address": "0x1111111111111111111111111111111111111111",
 	}, token)
 	t.Logf("AddWallet: %s", rec.Body.String())
 	resp2 := assertOK(t, rec)
@@ -599,10 +599,14 @@ func TestAdminWallets_BatchImport(t *testing.T) {
 	e, token := setupAdminTestEnv(t)
 	rec := doPostAdmin(e, "/admin/api/v1/wallets/batch-import", map[string]interface{}{
 		"network":   "ethereum",
-		"addresses": []string{"0xBatchAddr001", "0xBatchAddr002"},
+		"addresses": []string{"0x1111111111111111111111111111111111111111", "0xInvalid"},
 	}, token)
-	t.Logf("BatchImportWallets: %s", rec.Body.String())
-	assertOK(t, rec)
+	resp := assertOK(t, rec)
+	rows := resp["data"].([]interface{})
+	if len(rows) != 2 || rows[0].(map[string]interface{})["ok"] != true ||
+		rows[1].(map[string]interface{})["error_code"] != float64(10049) {
+		t.Fatalf("unexpected wallet import result: %v", rows)
+	}
 }
 
 // ─── Orders ──────────────────────────────────────────────────────────────────

@@ -21,6 +21,14 @@ import (
 	"gorm.io/gorm/schema"
 )
 
+// Syntactically valid receiving addresses shared by payment fixtures.
+const (
+	TronAddress       = "TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm"
+	SecondTronAddress = "TA9pkx4DFxrEw8JZzUtyDrh2uAat1LDuJL"
+	ThirdTronAddress  = "TAF8dttxK5iPKbvYC626aDBytrWANpLRXp"
+	SolanaAddress     = "So11111111111111111111111111111111111111112"
+)
+
 func SetupTestDatabases(t testing.TB) func() {
 	t.Helper()
 

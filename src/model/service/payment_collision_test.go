@@ -23,7 +23,7 @@ func TestConcurrentOrdersGetDistinctPaymentTargets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := data.AddWalletAddress("audit-wallet"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatal(err)
 	}
 
@@ -72,7 +72,7 @@ func TestSwitchNetworkExtendsParentAndItsReservation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := data.AddWalletAddress("audit-parent-wallet"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkEthereum, "0x1111111111111111111111111111111111111111"); err != nil {
@@ -142,7 +142,7 @@ func TestSwitchNetworkReusingChildRenewsParentReservation(t *testing.T) {
 	if err := data.ReloadSettings(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := data.AddWalletAddress("reuse-parent-wallet"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkEthereum, "0x1111111111111111111111111111111111111111"); err != nil {
@@ -209,7 +209,7 @@ func TestSwitchNetworkFailedRenewalRollsBackNewChild(t *testing.T) {
 	if err := data.ReloadSettings(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := data.AddWalletAddress("conflict-parent-wallet"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkEthereum, "0x1111111111111111111111111111111111111111"); err != nil {
@@ -242,7 +242,7 @@ func TestLateSettlementDoesNotReleaseReassignedTarget(t *testing.T) {
 	if err := data.ReloadSettings(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := data.AddWalletAddress("late-payment-wallet"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatal(err)
 	}
 	old, err := CreateTransaction(newCreateTransactionRequest("late-payment-old", 1), nil)
@@ -282,7 +282,7 @@ func TestParentSettlementRetainsLockWhenChildExpirationFails(t *testing.T) {
 	if err := data.ReloadSettings(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := data.AddWalletAddress("expire-failure-wallet"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatal(err)
 	}
 	parent, err := CreateTransaction(newCreateTransactionRequest("expire-failure-parent", 1), nil)

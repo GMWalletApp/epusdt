@@ -32,7 +32,7 @@ const (
 
 type WalletAddress struct {
 	Network string `gorm:"column:network;uniqueIndex:wallet_address_network_address_uindex" json:"network" example:"tron"`
-	Address string `gorm:"column:address;uniqueIndex:wallet_address_network_address_uindex" json:"address" example:"TTestTronAddress001"`
+	Address string `gorm:"column:address;uniqueIndex:wallet_address_network_address_uindex" json:"address" example:"TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm"`
 	// 状态 1=启用 2=禁用
 	Status int64  `gorm:"column:status;default:1" json:"status" enums:"1,2" example:"1"`
 	Remark string `gorm:"column:remark;size:255" json:"remark" example:"主钱包"`

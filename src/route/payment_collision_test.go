@@ -1,6 +1,7 @@
 package route
 
 import (
+	"github.com/GMWalletApp/epusdt/internal/testutil"
 	"testing"
 	"time"
 
@@ -13,7 +14,7 @@ func TestAdminCloseOrderPreservesReassignedReservation(t *testing.T) {
 	e, token := setupAdminTestEnv(t)
 	old := &mdb.Orders{
 		TradeId: "admin-close-old", OrderId: "admin-close-old",
-		Network: mdb.NetworkTron, Token: "USDT", ReceiveAddress: "TTestTronAddress001",
+		Network: mdb.NetworkTron, Token: "USDT", ReceiveAddress: testutil.TronAddress,
 		ActualAmount: 1, Status: mdb.StatusWaitPay,
 	}
 	if err := dao.Mdb.Create(old).Error; err != nil {

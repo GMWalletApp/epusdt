@@ -23,7 +23,7 @@ func TestExpiredOrderCleanupPreservesNewReservation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := data.AddWalletAddress("audit-wallet"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatal(err)
 	}
 	create := func(id string) *response.CreateTransactionResponse {

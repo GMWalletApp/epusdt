@@ -501,5 +501,6 @@ fail
 | `10044` | 400 | Invalid redirect URL |
 | `10045` | 400 | Order merchant key unavailable |
 | `10046` | 400 | Unable to sign EPay return parameters |
+| `10049` | 400 | Invalid receiving address for the selected network |
 
 [Full application error list](../src/util/constant/errno.go)

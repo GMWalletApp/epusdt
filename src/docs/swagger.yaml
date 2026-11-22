@@ -2,7 +2,7 @@ definitions:
   admin.AdminAddWalletRequest:
     properties:
       address:
-        example: TTestTronAddress001
+        example: TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm
         type: string
       network:
         example: tron
@@ -21,9 +21,8 @@ definitions:
           Addresses listed as observation-only wallets. Private-key import
           and API-managed modes are out of scope for v1.
         example:
-        - TAddr001
-        - TAddr002
-        - TAddr003
+        - TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm
+        - TA9pkx4DFxrEw8JZzUtyDrh2uAat1LDuJL
         items:
           type: string
         type: array
@@ -637,7 +636,7 @@ definitions:
   admin.WalletListItem:
     properties:
       address:
-        example: TTestTronAddress001
+        example: TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm
         type: string
       created_at:
         example: "2026-04-16 12:00:00"
@@ -1166,7 +1165,7 @@ definitions:
   mdb.WalletAddress:
     properties:
       address:
-        example: TTestTronAddress001
+        example: TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm
         type: string
       created_at:
         example: "2026-04-16 12:00:00"

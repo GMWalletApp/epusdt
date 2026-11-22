@@ -4166,7 +4166,7 @@
             "properties": {
                 "address": {
                     "type": "string",
-                    "example": "TTestTronAddress001"
+                    "example": "TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm"
                 },
                 "network": {
                     "type": "string",
@@ -4192,9 +4192,8 @@
                         "type": "string"
                     },
                     "example": [
-                        "TAddr001",
-                        "TAddr002",
-                        "TAddr003"
+                        "TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm",
+                        "TA9pkx4DFxrEw8JZzUtyDrh2uAat1LDuJL"
                     ]
                 },
                 "network": {
@@ -5012,7 +5011,7 @@
             "properties": {
                 "address": {
                     "type": "string",
-                    "example": "TTestTronAddress001"
+                    "example": "TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm"
                 },
                 "created_at": {
                     "type": "string",
@@ -5719,7 +5718,7 @@
             "properties": {
                 "address": {
                     "type": "string",
-                    "example": "TTestTronAddress001"
+                    "example": "TA4Wt1DUCqz6YegbnsmqsWC5uUfbdBqPxm"
                 },
                 "created_at": {
                     "type": "string",

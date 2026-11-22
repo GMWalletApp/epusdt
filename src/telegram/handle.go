@@ -9,6 +9,7 @@ import (
 
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
+	"github.com/GMWalletApp/epusdt/util/constant"
 	"github.com/gookit/goutil/mathutil"
 	"github.com/gookit/goutil/strutil"
 	tb "gopkg.in/telebot.v3"
@@ -56,19 +57,17 @@ func OnTextMessageHandle(c tb.Context) error {
 		return nil
 	}
 
-	var err error
-	if !isValidAddressByNetwork(state.Network, msgText) {
+	wallet, err := data.AddWalletAddressWithNetwork(state.Network, msgText)
+	if err == constant.InvalidReceivingAddress {
 		_ = c.Send(fmt.Sprintf("钱包 [%s] 添加失败：不是合法的 %s 地址", msgText, strings.ToUpper(state.Network)))
 		return nil
 	}
-	storeAddress := normalizeWalletAddressByNetwork(state.Network, msgText)
-	_, err = data.AddWalletAddressWithNetwork(state.Network, storeAddress)
 	if err != nil {
 		return c.Send(err.Error())
 	}
 	pendingWalletAddressUsers.Delete(senderID)
 
-	_ = c.Send(fmt.Sprintf("钱包 [%s] 添加成功（%s）", storeAddress, strings.ToUpper(state.Network)))
+	_ = c.Send(fmt.Sprintf("钱包 [%s] 添加成功（%s）", wallet.Address, strings.ToUpper(state.Network)))
 	return WalletList(c)
 }
 

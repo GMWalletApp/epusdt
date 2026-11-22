@@ -65,7 +65,7 @@ func TestAddWalletAddressWithNetworkKeepsOriginalCaseForNonEvm(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	tronAddress := "TCaseSensitiveTronAddress001"
+	tronAddress := testutil.TronAddress
 	tronRow, err := AddWalletAddressWithNetwork(mdb.NetworkTron, tronAddress)
 	if err != nil {
 		t.Fatalf("add tron wallet: %v", err)
@@ -74,7 +74,7 @@ func TestAddWalletAddressWithNetworkKeepsOriginalCaseForNonEvm(t *testing.T) {
 		t.Fatalf("tron wallet address = %q, want %q", tronRow.Address, tronAddress)
 	}
 
-	solAddress := "SoLAnACaseSensitiveAddress111111111111111111"
+	solAddress := testutil.SolanaAddress
 	solRow, err := AddWalletAddressWithNetwork(mdb.NetworkSolana, solAddress)
 	if err != nil {
 		t.Fatalf("add solana wallet: %v", err)
@@ -118,5 +118,24 @@ func TestAddWalletAddressWithNetworkNormalizesMoveAddressVariants(t *testing.T) 
 	}
 	if _, err = AddWalletAddressWithNetwork(mdb.NetworkAptos, "0x0A"); err != constant.WalletAddressAlreadyExists {
 		t.Fatalf("add equivalent aptos wallet error = %v, want already exists", err)
+	}
+}
+
+func TestRejectsInvalidWalletAndSkipsInvalidLegacyRows(t *testing.T) {
+	defer testutil.SetupTestDatabases(t)()
+	for _, network := range []string{mdb.NetworkEthereum, mdb.NetworkTron, mdb.NetworkSolana, mdb.NetworkTon, mdb.NetworkAptos, mdb.NetworkSui} {
+		if _, err := AddWalletAddressWithNetwork(network, "invalid"); err != constant.InvalidReceivingAddress {
+			t.Fatalf("add invalid %s wallet: %v", network, err)
+		}
+	}
+	if err := dao.Mdb.Create(&mdb.WalletAddress{Network: mdb.NetworkTron, Address: "historically-invalid", Status: mdb.TokenStatusEnable}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddWalletAddress(testutil.TronAddress); err != nil {
+		t.Fatal(err)
+	}
+	wallets, err := GetAvailableWalletAddressByNetwork(mdb.NetworkTron)
+	if err != nil || len(wallets) != 1 || wallets[0].Address != testutil.TronAddress {
+		t.Fatalf("available TRON wallets: %v, error %v", wallets, err)
 	}
 }

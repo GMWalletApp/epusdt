@@ -175,7 +175,7 @@ func TestCreateTransactionAssignsIncrementedAmountsAndLocks(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -194,7 +194,7 @@ func TestCreateTransactionAssignsIncrementedAmountsAndLocks(t *testing.T) {
 	if got := fmt.Sprintf("%.2f", resp2.ActualAmount); got != "1.01" {
 		t.Fatalf("second actual amount = %s, want 1.01", got)
 	}
-	if resp1.ReceiveAddress != "wallet_1" || resp2.ReceiveAddress != "wallet_1" {
+	if resp1.ReceiveAddress != testutil.TronAddress || resp2.ReceiveAddress != testutil.TronAddress {
 		t.Fatalf("unexpected receive addresses: %s, %s", resp1.ReceiveAddress, resp2.ReceiveAddress)
 	}
 	if resp1.Token != "USDT" || resp2.Token != "USDT" {
@@ -226,17 +226,17 @@ func TestCreateTransactionWatchesShuffledWalletBeforeLock(t *testing.T) {
 	t.Cleanup(func() { shuffleWalletAddresses = orig })
 	shuffleWalletAddresses = func(wallets []mdb.WalletAddress) {
 		for i, wallet := range wallets {
-			if wallet.Address == "wallet_shuffle_2" {
+			if wallet.Address == testutil.SecondTronAddress {
 				wallets[0], wallets[i] = wallets[i], wallets[0]
 				return
 			}
 		}
 	}
 
-	if _, err := data.AddWalletAddress("wallet_shuffle_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet 1: %v", err)
 	}
-	if _, err := data.AddWalletAddress("wallet_shuffle_2"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.SecondTronAddress); err != nil {
 		t.Fatalf("add wallet 2: %v", err)
 	}
 
@@ -247,7 +247,7 @@ func TestCreateTransactionWatchesShuffledWalletBeforeLock(t *testing.T) {
 	var watchCalls int
 	EnsurePaymentWatch = func(network, address string) error {
 		watchCalls++
-		if network != mdb.NetworkTron || address != "wallet_shuffle_2" {
+		if network != mdb.NetworkTron || address != testutil.SecondTronAddress {
 			t.Fatalf("subscription = %s/%s, want tron/wallet_shuffle_2", network, address)
 		}
 		owner, err := data.GetTradeIdByWalletAddressAndAmountAndToken(network, address, "USDT", 1)
@@ -266,7 +266,7 @@ func TestCreateTransactionWatchesShuffledWalletBeforeLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create transaction: %v", err)
 	}
-	if resp.ReceiveAddress != "wallet_shuffle_2" {
+	if resp.ReceiveAddress != testutil.SecondTronAddress {
 		t.Fatalf("receive address = %s, want wallet_shuffle_2 after shuffle", resp.ReceiveAddress)
 	}
 	owner, err := data.GetTradeIdByWalletAddressAndAmountAndToken(mdb.NetworkTron, resp.ReceiveAddress, resp.Token, resp.ActualAmount)
@@ -279,13 +279,13 @@ func TestCreateTransactionRandomWalletAssignmentUsesMoreThanFirstAddress(t *test
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_rand_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet 1: %v", err)
 	}
-	if _, err := data.AddWalletAddress("wallet_rand_2"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.SecondTronAddress); err != nil {
 		t.Fatalf("add wallet 2: %v", err)
 	}
-	if _, err := data.AddWalletAddress("wallet_rand_3"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.ThirdTronAddress); err != nil {
 		t.Fatalf("add wallet 3: %v", err)
 	}
 
@@ -309,7 +309,7 @@ func TestCreateTransactionUsesConfiguredAmountPrecision(t *testing.T) {
 	if err := data.SetSetting(mdb.SettingGroupSystem, mdb.SettingKeyAmountPrecision, "4", mdb.SettingTypeInt); err != nil {
 		t.Fatalf("set amount precision: %v", err)
 	}
-	if _, err := data.AddWalletAddress("wallet_precision_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -334,7 +334,7 @@ func TestCreateTransactionStoresNormalizedMerchantAmount(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_normalized_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -381,7 +381,7 @@ func TestCreateTransactionUsesRateAPIWhenForcedSettingIsNotPositive(t *testing.T
 	if err := data.SetSetting("rate", "rate.mode", config.RateModeAuto, "string"); err != nil {
 		t.Fatalf("set rate.mode: %v", err)
 	}
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -410,10 +410,10 @@ func TestCreateTransactionUsesDefaultForcedRateWithoutRateAPI(t *testing.T) {
 	if err := data.SetSetting("rate", "rate.api_url", "", "string"); err != nil {
 		t.Fatalf("clear rate.api_url: %v", err)
 	}
-	if _, err := data.AddWalletAddress("wallet_default_rate_usdt"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
-	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkSolana, "SolDefaultRateAddress001"); err != nil {
+	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkSolana, testutil.SolanaAddress); err != nil {
 		t.Fatalf("add solana wallet: %v", err)
 	}
 	if err := dao.Mdb.Create(&mdb.ChainToken{
@@ -694,7 +694,7 @@ func TestSwitchNetworkCreatesTonSubOrderAndRawLock(t *testing.T) {
 	if err := data.SetSetting("rate", "rate.forced_rate_list", `{"cny":{"usdt":0.1,"ton":0.5}}`, "json"); err != nil {
 		t.Fatalf("set forced rate: %v", err)
 	}
-	if _, err := data.AddWalletAddress("TTestTronAddress001"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 	addr := address.MustParseAddr("EQC6KV4zs8TJtSZapOrRFmqSkxzpq-oSCoxekQRKElf4nC1I")
@@ -743,7 +743,7 @@ func TestSwitchNetworkCompletesWaitSelectPlaceholderInPlace(t *testing.T) {
 	if err := data.SetSetting("rate", "rate.forced_rate_list", `{"cny":{"usdt":0.1}}`, "json"); err != nil {
 		t.Fatalf("set forced rate: %v", err)
 	}
-	if _, err := data.AddWalletAddress("TWaitSelectAddress001"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 
@@ -778,7 +778,7 @@ func TestSwitchNetworkCompletesWaitSelectPlaceholderInPlace(t *testing.T) {
 	if switched.PaymentUrl != "" {
 		t.Fatalf("switch payment_url = %q, want empty for unselected chain parent", switched.PaymentUrl)
 	}
-	if switched.Token != "USDT" || switched.Network != mdb.NetworkTron || switched.ReceiveAddress != "TWaitSelectAddress001" {
+	if switched.Token != "USDT" || switched.Network != mdb.NetworkTron || switched.ReceiveAddress != testutil.TronAddress {
 		t.Fatalf("switch chain fields = token %q network %q address %q", switched.Token, switched.Network, switched.ReceiveAddress)
 	}
 	if got := fmt.Sprintf("%.2f", switched.ActualAmount); got != "1.00" {
@@ -821,7 +821,7 @@ func TestSwitchNetworkAfterWaitSelectCompletionUsesExistingSubOrderFlow(t *testi
 	if err := data.SetSetting("rate", "rate.forced_rate_list", `{"cny":{"usdt":0.1}}`, "json"); err != nil {
 		t.Fatalf("set forced rate: %v", err)
 	}
-	if _, err := data.AddWalletAddress("TWaitSelectAddress002"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.SecondTronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkEthereum, "0xA1B2c3D4e5F60718293aBcDeF001122334455668"); err != nil {
@@ -883,7 +883,7 @@ func TestSwitchNetworkRejectsUnsupportedTonToken(t *testing.T) {
 	if err := data.SetSetting("rate", "rate.forced_rate_list", `{"cny":{"usdt":0.1}}`, "json"); err != nil {
 		t.Fatalf("set forced rate: %v", err)
 	}
-	if _, err := data.AddWalletAddress("TTestTronAddress002"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.SecondTronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 	parentResp, err := CreateTransaction(newCreateTransactionRequest("order_switch_gram_1", 10), nil)
@@ -1054,7 +1054,7 @@ func TestTonCreditConfirmsParentAndChildTogether(t *testing.T) {
 	if err := data.SetSetting("rate", "rate.forced_rate_list", `{"cny":{"usdt":0.1,"ton":0.5}}`, "json"); err != nil {
 		t.Fatalf("set forced rate: %v", err)
 	}
-	if _, err := data.AddWalletAddress("TTestTronAddressForTonSub"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 	addr := address.MustParseAddr("EQC6KV4zs8TJtSZapOrRFmqSkxzpq-oSCoxekQRKElf4nC1I")
@@ -1122,7 +1122,7 @@ func TestOrderProcessingMarksPaidAndReleasesLock(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -1170,7 +1170,7 @@ func TestOrderProcessingRejectsDuplicateBlockForSameOrder(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -1212,7 +1212,7 @@ func TestOrderProcessingDoesNotReviveExpiredOrder(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -1255,10 +1255,10 @@ func TestOrderProcessingOnlyOneOrderClaimsABlockTransaction(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("wallet_1"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
-	if _, err := data.AddWalletAddress("wallet_2"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.SecondTronAddress); err != nil {
 		t.Fatalf("add wallet: %v", err)
 	}
 
@@ -1355,7 +1355,7 @@ func TestOrderProcessingSubOrderReturnsErrorWhenParentNotWaitPay(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("TTestTronAddress001"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkEthereum, "0xA1B2c3D4e5F60718293aBcDeF001122334455667"); err != nil {
@@ -1401,7 +1401,7 @@ func TestOrderProcessingSubOrderReturnsErrorWhenParentMissing(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("TTestTronAddress001"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkEthereum, "0xA1B2c3D4e5F60718293aBcDeF001122334455667"); err != nil {
@@ -1450,7 +1450,7 @@ func TestOrderProcessingSubOrderPaidParentKeepsOwnFields(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("TTestTronAddress001"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkEthereum, "0xA1B2c3D4e5F60718293aBcDeF001122334455667"); err != nil {
@@ -1541,7 +1541,7 @@ func TestOrderProcessingParentDirectPayExpiresOkPayProviderOrder(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("TTestTronAddress001"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 
@@ -1619,7 +1619,7 @@ func TestOrderProcessingSubOrderExpiresSiblingsAndReleasesLocks(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
-	if _, err := data.AddWalletAddress("TTestTronAddress001"); err != nil {
+	if _, err := data.AddWalletAddress(testutil.TronAddress); err != nil {
 		t.Fatalf("add tron wallet: %v", err)
 	}
 	if _, err := data.AddWalletAddressWithNetwork(mdb.NetworkEthereum, "0xA1B2c3D4e5F60718293aBcDeF001122334455667"); err != nil {
