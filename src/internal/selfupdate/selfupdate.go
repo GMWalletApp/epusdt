@@ -339,13 +339,17 @@ func detectSupervisor() (string, bool) {
 	if os.Getenv("INVOCATION_ID") == "" && os.Getenv("JOURNAL_STREAM") == "" {
 		return SupervisorNone, false
 	}
-	unit := systemdUnit()
+	unit, userManager := systemdUnit()
 	if unit == "" {
 		return SupervisorSystemd, false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "systemctl", "show", unit, "-p", "Restart", "--value").Output()
+	args := []string{"show", unit, "-p", "Restart", "--value"}
+	if userManager {
+		args = append([]string{"--user"}, args...)
+	}
+	out, err := exec.CommandContext(ctx, "systemctl", args...).Output()
 	if err != nil {
 		return SupervisorSystemd, false
 	}
@@ -353,19 +357,36 @@ func detectSupervisor() (string, bool) {
 	return SupervisorSystemd, restart == "always" || restart == "on-failure"
 }
 
-func systemdUnit() string {
+// systemdUnit returns the innermost service unit from the process cgroup and
+// whether it belongs to a user manager. A user service cgroup contains the
+// manager unit before the leaf, e.g.
+// /user.slice/user-1000.slice/user@1000.service/app.slice/epusdt.service.
+func systemdUnit() (string, bool) {
 	data, err := os.ReadFile("/proc/self/cgroup")
 	if err != nil {
-		return ""
+		return "", false
 	}
-	for _, line := range strings.Split(string(data), "\n") {
+	return parseSystemdUnit(string(data))
+}
+
+func parseSystemdUnit(cgroup string) (string, bool) {
+	for _, line := range strings.Split(cgroup, "\n") {
+		var unit string
+		var userManager bool
 		for _, part := range strings.Split(line, "/") {
-			if strings.HasSuffix(part, ".service") {
-				return part
+			if !strings.HasSuffix(part, ".service") {
+				continue
+			}
+			unit = part
+			if strings.HasPrefix(part, "user@") {
+				userManager = true
 			}
 		}
+		if unit != "" {
+			return unit, userManager
+		}
 	}
-	return ""
+	return "", false
 }
 
 type updater struct{ client *http.Client }
