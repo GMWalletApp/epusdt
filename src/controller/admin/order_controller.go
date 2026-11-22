@@ -41,15 +41,15 @@ type OrderWithSubListResponse struct {
 
 // ListOrders handles the admin order list with filters + pagination.
 // @Summary      List orders
-// @Description  Returns paginated orders with optional filters
+// @Description  Returns one row per merchant order with the actual settlement details
 // @Tags         Admin Orders
 // @Security     AdminJWT
 // @Produce      json
-// @Param        network query string false "Network filter"
+// @Param        network query []string false "Settlement network filter" collectionFormat(multi)
 // @Param        token query string false "Token filter"
 // @Param        address query string false "Receive address filter"
 // @Param        keyword query string false "Keyword search (trade_id or order_id)"
-// @Param        status query int false "Order status filter"
+// @Param        status query []int false "Order status filter" collectionFormat(multi)
 // @Param        start_at query int false "Start time (Unix seconds)"
 // @Param        end_at query int false "End time (Unix seconds)"
 // @Param        page query int false "Page number" default(1)
@@ -73,7 +73,7 @@ func (c *BaseAdminController) ListOrders(ctx echo.Context) error {
 
 // GetOrder returns full order detail by trade_id.
 // @Summary      Get order
-// @Description  Returns full order detail by trade_id
+// @Description  Returns settlement details for a merchant order or the individual payment attempt for a child trade ID
 // @Tags         Admin Orders
 // @Security     AdminJWT
 // @Produce      json
@@ -83,7 +83,7 @@ func (c *BaseAdminController) ListOrders(ctx echo.Context) error {
 // @Router       /admin/api/v1/orders/{trade_id} [get]
 func (c *BaseAdminController) GetOrder(ctx echo.Context) error {
 	tradeID := ctx.Param("trade_id")
-	order, err := data.GetOrderInfoByTradeId(tradeID)
+	order, err := data.GetAdminOrder(tradeID)
 	if err != nil {
 		return c.FailJson(ctx, err)
 	}
@@ -208,7 +208,7 @@ func (c *BaseAdminController) ResendCallback(ctx echo.Context) error {
 		log.Sugar.Warnf("[admin-order] resend-callback rejected admin_user_id=%d trade_id=%s err=%v", adminUserID, tradeID, err)
 		return c.FailJson(ctx, err)
 	}
-	if order.Status != mdb.StatusPaySuccess {
+	if order.Status != mdb.StatusPaySuccess || order.ParentTradeId != "" {
 		err = constant.OrderCallbackNotApplicable
 		log.Sugar.Warnf("[admin-order] resend-callback rejected admin_user_id=%d trade_id=%s status=%d err=%v", adminUserID, tradeID, order.Status, err)
 		return c.FailJson(ctx, err)
@@ -240,11 +240,11 @@ func (c *BaseAdminController) ResendCallback(ctx echo.Context) error {
 // @Tags         Admin Orders
 // @Security     AdminJWT
 // @Produce      text/csv
-// @Param        network query string false "Network filter"
+// @Param        network query []string false "Settlement network filter" collectionFormat(multi)
 // @Param        token query string false "Token filter"
 // @Param        address query string false "Receive address filter"
 // @Param        keyword query string false "Keyword search"
-// @Param        status query int false "Order status filter"
+// @Param        status query []int false "Order status filter" collectionFormat(multi)
 // @Param        start_at query int false "Start time (Unix seconds)"
 // @Param        end_at query int false "End time (Unix seconds)"
 // @Success      200 {string} string "CSV file"
@@ -252,9 +252,7 @@ func (c *BaseAdminController) ResendCallback(ctx echo.Context) error {
 // @Router       /admin/api/v1/orders/export [get]
 func (c *BaseAdminController) ExportOrders(ctx echo.Context) error {
 	f := parseOrderFilter(ctx)
-	f.Page = 1
-	f.PageSize = 10000
-	rows, _, err := data.ListOrders(f)
+	rows, err := data.OrdersForExport(f)
 	if err != nil {
 		return c.FailJson(ctx, err)
 	}
@@ -288,14 +286,18 @@ func (c *BaseAdminController) ExportOrders(ctx echo.Context) error {
 // string. Time params are Unix seconds.
 func parseOrderFilter(ctx echo.Context) data.OrderListFilter {
 	f := data.OrderListFilter{
-		Network: strings.ToLower(strings.TrimSpace(ctx.QueryParam("network"))),
 		Token:   strings.ToUpper(strings.TrimSpace(ctx.QueryParam("token"))),
 		Address: strings.TrimSpace(ctx.QueryParam("address")),
 		Keyword: strings.TrimSpace(ctx.QueryParam("keyword")),
 	}
-	if s := ctx.QueryParam("status"); s != "" {
-		if n, err := strconv.Atoi(s); err == nil {
-			f.Status = n
+	for _, raw := range ctx.QueryParams()["network"] {
+		if network := strings.ToLower(strings.TrimSpace(raw)); network != "" {
+			f.Networks = append(f.Networks, network)
+		}
+	}
+	for _, s := range ctx.QueryParams()["status"] {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			f.Statuses = append(f.Statuses, n)
 		}
 	}
 	if s := ctx.QueryParam("start_at"); s != "" {
@@ -332,15 +334,15 @@ func parseOrderFilter(ctx echo.Context) data.OrderListFilter {
 // ListOrdersWithSub returns the same paginated order list as ListOrders but
 // each row has a sub_orders field containing all child orders under it.
 // @Summary      List orders with sub-orders
-// @Description  Returns paginated orders; each item embeds its child orders in sub_orders
+// @Description  Returns one row per merchant order with settlement details and all payment attempts in sub_orders
 // @Tags         Admin Orders
 // @Security     AdminJWT
 // @Produce      json
-// @Param        network query string false "Network filter"
+// @Param        network query []string false "Settlement network filter" collectionFormat(multi)
 // @Param        token query string false "Token filter"
 // @Param        address query string false "Receive address filter"
 // @Param        keyword query string false "Keyword search (trade_id or order_id)"
-// @Param        status query int false "Order status filter"
+// @Param        status query []int false "Order status filter" collectionFormat(multi)
 // @Param        start_at query int false "Start time (Unix seconds)"
 // @Param        end_at query int false "End time (Unix seconds)"
 // @Param        page query int false "Page number" default(1)
@@ -350,8 +352,6 @@ func parseOrderFilter(ctx echo.Context) data.OrderListFilter {
 // @Router       /admin/api/v1/orders/list-with-sub [get]
 func (c *BaseAdminController) ListOrdersWithSub(ctx echo.Context) error {
 	f := parseOrderFilter(ctx)
-	// Only parent orders at the top level; sub-orders appear nested inside sub_orders.
-	f.ParentOnly = true
 	rows, total, err := data.ListOrders(f)
 	if err != nil {
 		return c.FailJson(ctx, err)
@@ -404,14 +404,23 @@ func (c *BaseAdminController) ListOrdersWithSub(ctx echo.Context) error {
 // @Router       /admin/api/v1/orders/{trade_id}/with-sub [get]
 func (c *BaseAdminController) GetOrderWithSub(ctx echo.Context) error {
 	tradeID := ctx.Param("trade_id")
-	order, err := data.GetOrderInfoByTradeId(tradeID)
+	order, err := data.GetAdminOrder(tradeID)
 	if err != nil {
 		return c.FailJson(ctx, err)
 	}
 	if order.ID == 0 {
 		return c.FailJson(ctx, constant.OrderNotExists)
 	}
-	subOrders, err := data.GetAllSubOrders(tradeID)
+	if order.ParentTradeId != "" {
+		order, err = data.GetAdminOrder(order.ParentTradeId)
+		if err != nil {
+			return c.FailJson(ctx, err)
+		}
+		if order.ID == 0 {
+			return c.FailJson(ctx, constant.OrderNotExists)
+		}
+	}
+	subOrders, err := data.GetAllSubOrders(order.TradeId)
 	if err != nil {
 		return c.FailJson(ctx, err)
 	}

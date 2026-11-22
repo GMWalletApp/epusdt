@@ -3,6 +3,7 @@ package route
 import (
 	"bufio"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -2479,4 +2480,63 @@ func TestAdminOrders_ListWithSubExcludesSubOrdersFromTopLevel(t *testing.T) {
 	if !subOrderIds[subTradeId] {
 		t.Fatalf("sub-order trade_id=%s not found in any sub_orders array", subTradeId)
 	}
+}
+
+func TestAdminOrders_SettledFamily(t *testing.T) {
+	e, token := setupAdminTestEnv(t)
+	const base = "/admin/api/v1/orders"
+	parent := mdb.Orders{TradeId: "root", OrderId: "merchant", Network: "tron", Status: mdb.StatusPaySuccess, NotifyUrl: "https://merchant.example/callback", CallBackConfirm: mdb.CallBackConfirmOk}
+	child := mdb.Orders{TradeId: "attempt", OrderId: "merchant-sub", ParentTradeId: parent.TradeId, Network: "bsc", Token: "USDC", ActualAmount: 12.5, Status: mdb.StatusPaySuccess, BlockTransactionId: "tx-bsc", NotifyUrl: parent.NotifyUrl, CallBackConfirm: mdb.CallBackConfirmOk}
+	for _, o := range []*mdb.Orders{&parent, &child} {
+		if err := dao.Mdb.Create(o).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := dao.Mdb.Model(&parent).UpdateColumn("pay_by_sub_id", child.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{base, base + "/list-with-sub"} {
+		rec := doGetAdmin(e, path+"?network=base&network=bsc&status=1&status=2&keyword=tx-bsc&page_size=1", token)
+		var response struct {
+			Data struct {
+				Total int
+				List  []mdb.Orders
+			}
+		}
+		assertOK(t, rec)
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		if response.Data.Total != 1 || len(response.Data.List) != 1 || response.Data.List[0].TradeId != parent.TradeId || response.Data.List[0].Network != "bsc" {
+			t.Errorf("filtered %s: %s", path, rec.Body)
+		}
+	}
+	for _, id := range []string{parent.TradeId, child.TradeId} {
+		rec := doGetAdmin(e, base+"/"+id+"/with-sub", token)
+		var response struct {
+			Data struct {
+				mdb.Orders
+				Attempts []mdb.Orders `json:"sub_orders"`
+			}
+		}
+		assertOK(t, rec)
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		d := response.Data
+		if d.TradeId != parent.TradeId || d.BlockTransactionId != child.BlockTransactionId || d.PayBySubId != child.ID || len(d.Attempts) != 1 || d.Attempts[0].TradeId != child.TradeId {
+			t.Errorf("detail for %s: %s", id, rec.Body)
+		}
+	}
+	rec := doGetAdmin(e, base+"/export?network=bsc", token)
+	records, err := csv.NewReader(rec.Body).ReadAll()
+	if err != nil || rec.Code != http.StatusOK || len(records) != 2 || records[1][0] != parent.TradeId || records[1][6] != "bsc" || records[1][9] != "tx-bsc" {
+		t.Errorf("CSV %v: %v", records, err)
+	}
+	rec = doPostAdmin(e, base+"/"+child.TradeId+"/resend-callback", nil, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("resend on child: %d %s", rec.Code, rec.Body)
+	}
+	assertOK(t, doPostAdmin(e, base+"/"+parent.TradeId+"/resend-callback", nil, token))
 }

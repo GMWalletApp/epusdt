@@ -63,7 +63,7 @@ func HourlyOrderStats(start, end time.Time) ([]DailyStat, error) {
 func queryOrderStats(start, end time.Time, hourly bool) ([]DailyStat, error) {
 	var rows []DailyStat
 	bucket := statsBucketExpr(hourly)
-	err := dao.Mdb.Model(&mdb.Orders{}).
+	err := merchantOrders().
 		Select(fmt.Sprintf(`%s AS day,
             COUNT(*) AS order_count,
             SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS success_count,
@@ -145,7 +145,7 @@ func HourlyAssetByAddress(start, end time.Time) ([]AddressDailyStat, error) {
 func queryAssetByAddress(start, end time.Time, hourly bool) ([]AddressDailyStat, error) {
 	var rows []AddressDailyStat
 	bucket := statsBucketExpr(hourly)
-	err := dao.Mdb.Model(&mdb.Orders{}).
+	err := merchantOrders().
 		Select(fmt.Sprintf(`%s AS day,
             receive_address AS address,
             SUM(actual_amount) AS actual_amount`, bucket)).
@@ -214,7 +214,7 @@ func fillAddressStats(start, end time.Time, rows []AddressDailyStat, hourly bool
 // time. Used by the overview "total asset" card.
 func SumPaidActualAmount() (float64, error) {
 	var sum float64
-	err := dao.Mdb.Model(&mdb.Orders{}).
+	err := merchantOrders().
 		Select("COALESCE(SUM(actual_amount), 0)").
 		Where("status = ?", mdb.StatusPaySuccess).
 		Scan(&sum).Error
@@ -230,7 +230,7 @@ func PaidStatsInRange(start, end time.Time) (int64, int64, float64, error) {
 		ActualSum    float64
 	}
 	var r row
-	err := dao.Mdb.Model(&mdb.Orders{}).
+	err := merchantOrders().
 		Select(`COUNT(*) AS order_count,
             SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS success_count,
             SUM(CASE WHEN status = ? THEN actual_amount ELSE 0 END) AS actual_sum`,
@@ -245,7 +245,7 @@ func PaidStatsInRange(start, end time.Time) (int64, int64, float64, error) {
 // that appear in at least one order within [start, end].
 func ActiveAddressCountInRange(start, end time.Time) (int64, error) {
 	var count int64
-	err := dao.Mdb.Model(&mdb.Orders{}).
+	err := merchantOrders().
 		Where("created_at >= ?", start).
 		Where("created_at <= ?", end).
 		Distinct("receive_address").
@@ -266,7 +266,7 @@ func AveragePaymentDurationSeconds(start, end time.Time) (float64, error) {
 		UpdatedAt time.Time
 	}
 	var pairs []pair
-	err := dao.Mdb.Model(&mdb.Orders{}).
+	err := merchantOrders().
 		Select("created_at, updated_at").
 		Where("status = ?", mdb.StatusPaySuccess).
 		Where("created_at >= ?", start).
@@ -289,7 +289,7 @@ func AveragePaymentDurationSeconds(start, end time.Time) (float64, error) {
 // CountExpiredInRange returns the number of StatusExpired orders in range.
 func CountExpiredInRange(start, end time.Time) (int64, error) {
 	var n int64
-	err := dao.Mdb.Model(&mdb.Orders{}).
+	err := merchantOrders().
 		Where("status = ?", mdb.StatusExpired).
 		Where("created_at >= ?", start).
 		Where("created_at <= ?", end).
@@ -306,7 +306,7 @@ func RecentOrders(limit int) ([]mdb.Orders, error) {
 		limit = 100
 	}
 	var rows []mdb.Orders
-	err := dao.Mdb.Model(&mdb.Orders{}).
+	err := merchantOrders().
 		Order("id DESC").
 		Limit(limit).
 		Find(&rows).Error
