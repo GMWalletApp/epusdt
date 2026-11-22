@@ -71,7 +71,7 @@ A7A5 支持以下主网，需要商户按网络启用。
 
 [VectorBits 安全审计报告（2026 年 5 月）](https://github.com/VectorBits/audit/blob/main/epusdt-secure-audit-report-2026-05-14.pdf) · [GM Wallet 社区许可 2.2](LICENSE)
 
-公司及其关联实体过去 12 个月的全球合计收入严格超过 100 万美元，即使亏损也须购买许可。按社区条款，修改版在发布、交付或上线运行时须免费向公众提供该版本的完整对应源码，显著保留指定署名及原项目链接。每个修改版本（包括 SaaS 上线版本）还须按第 13 节通过 PR 或分支将该版本的实际修改提交给原项目，并注明提交号。GM Wallet 自行决定是否合并。另行签署的商业合同可约定不同条款。 [许可](LICENSE) · [贡献者条款](CONTRIBUTING.md) · [info@gmwallet.app](mailto:info@gmwallet.app)
+公司及其关联实体过去 12 个月的全球合计收入严格超过 100 万美元，即使亏损也须购买许可。按社区条款，修改版在发布、交付或上线运行时须免费向公众提供该版本的完整对应源码，显著保留指定署名及原项目链接。每个修改版本（包括 SaaS 上线版本）还须按第 13 节通过 PR 或分支将该版本的实际修改提交给原项目，并注明提交号。GM Wallet 自行决定是否合并。另行签署的商业合同可约定不同条款。 [许可](LICENSE) · [info@gmwallet.app](mailto:info@gmwallet.app)
 
 <details>
 <summary>免责声明及使用条款</summary>

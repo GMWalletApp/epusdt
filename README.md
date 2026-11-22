@@ -71,7 +71,7 @@ Read https://epusdt.com/agent-setup/prompt.md. Inspect my target environment fir
 
 [VectorBits audit report (May 2026)](https://github.com/VectorBits/audit/blob/main/epusdt-secure-audit-report-2026-05-14.pdf) · [GM Wallet Community License 2.2](LICENSE)
 
-Companies whose worldwide revenue with affiliates strictly exceeds USD 1,000,000 over the preceding 12 months need a paid license, including loss-making groups. Under the community terms, release, delivery or operational deployment of a modified version requires free public access to its exact corresponding source, prominent attribution and an original-project link. For each such version, including SaaS deployments, submit the exact revision upstream by pull request or a branch as described in section 13. GM Wallet decides whether to merge it. Separate written commercial terms may apply. [License](LICENSE) · [Contributor terms](CONTRIBUTING.md) · [info@gmwallet.app](mailto:info@gmwallet.app)
+Companies whose worldwide revenue with affiliates strictly exceeds USD 1,000,000 over the preceding 12 months need a paid license, including loss-making groups. Under the community terms, release, delivery or operational deployment of a modified version requires free public access to its exact corresponding source, prominent attribution and an original-project link. For each such version, including SaaS deployments, submit the exact revision upstream by pull request or a branch as described in section 13. GM Wallet decides whether to merge it. Separate written commercial terms may apply. [License](LICENSE) · [info@gmwallet.app](mailto:info@gmwallet.app)
 
 <details>
 <summary>Disclaimer and Terms of Use</summary>

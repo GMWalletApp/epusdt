@@ -12,8 +12,8 @@ License steward: Good Morning Technology, LLC <info@gmwallet.app>
 Portions of the license terms: Copyright (C) 2007 Free Software Foundation,
 Inc. Adaptations: Copyright (c) 2026 Good Morning Technology, LLC.
 This is an independent license. Permission is granted to reproduce this
-license text and its accompanying Contributor Terms verbatim, including
-in source releases and forks; retain the Original Project URL.
+complete license text verbatim, including in source releases and forks.
+Retain the Original Project URL and the Contributor Terms in section 19.
 
 0. Definitions.
 
@@ -164,8 +164,7 @@ appropriately publish on each copy an appropriate copyright notice;
 keep intact all notices stating that this License and any
 non-permissive terms added in accord with section 7 apply to the code;
 keep intact all notices of the absence of any warranty; and give all
-recipients a copy of this License and its accompanying Contributor Terms
-2.2 along with the Program.
+recipients a copy of this complete License along with the Program.
 
   You may charge any price or no price for each copy that you convey,
 and you may offer support or warranty protection for a fee.
@@ -699,13 +698,71 @@ the extent of your essential patent claims as defined in section 11 for
 those modifications. This grant to GM Wallet survives termination of your
 own permissions. It does not transfer ownership of an unsubmitted fork.
 
-Anyone intentionally submitting contributions to an official GMWalletApp
-repository, including commits, patches, pull requests, issues, comments,
-reviews, documentation and attachments, agrees to the Contributor Terms
-set out in the accompanying CONTRIBUTING.md (version 2.2). By submitting,
-you agree that GM Wallet may use and commercialize your contribution.
-Under those terms, you assign the copyright you control in the original
-material you contribute to GM Wallet and grant the fallback rights
-specified there. Submission itself constitutes acceptance of those terms.
-Third-party rights are preserved. Mere facts and ideas may
-be used as feedback; no exclusive copyright in them is claimed.
+19.1. Contributor Terms 2.2
+
+These terms apply to contributions intentionally submitted to the project
+identified by the Original Project URL on or after the commit first
+introducing Contributor Terms 2.2 to that project. A contribution includes
+original code, patches, documents, designs, tests, issue text, attachments,
+comments, reviews and suggestions submitted for the project in a commit,
+pull request, issue or other official project channel. The recipient is
+Good Morning Technology, LLC ("GM Wallet").
+
+19.2. Rights in your submission.
+
+By submitting a contribution, you agree to these terms and authorize GM
+Wallet to use and commercialize it. In consideration of GM Wallet
+considering your submission, you hereby assign to GM Wallet, to the extent
+you own and may transfer them, all copyrights in the original material you
+submit, worldwide for their full term, including renewals and extensions.
+GM Wallet may use, reproduce, modify, publish, distribute, sublicense,
+sell, license commercially and enforce the assigned rights. GM Wallet need
+not accept or publish your contribution. You retain ownership of
+pre-existing work that you identify separately when submitting it.
+
+To the extent an assignment is unavailable, incomplete or ineffective, or
+your identified pre-existing material is needed to use the contribution,
+you grant GM Wallet a non-exclusive, worldwide, fully paid, royalty-free,
+transferable, sublicensable and irrevocable license for the duration of the
+rights you control to exercise those same rights, including proprietary
+licensing. You also grant GM Wallet and its sublicensees a worldwide,
+royalty-free patent license under claims you can license that are
+necessarily infringed by your contribution alone or as submitted with the
+project. Where legally permitted, you waive or agree not to assert moral
+rights to the extent needed for the authorized uses. Mandatory rights under
+applicable law remain effective.
+
+You may continue to use the original material you contributed under a
+perpetual, worldwide, royalty-free, non-exclusive license back from GM
+Wallet. This license back applies only to your own original contribution.
+Existing public rights in already licensed copies continue. GM Wallet may
+use and commercialize feedback freely. Copyright assignment covers
+copyrightable expression in submissions, subject to applicable law. No
+exclusive copyright in mere facts or ideas is claimed.
+
+19.3. Authority and third-party materials.
+
+Submit material that you own or have authority to license. Identify any
+third-party material, its source and license. You convey only the rights
+you control. If an employer or another person owns the contribution, you
+must have authority to submit it on their behalf and grant the rights
+described above. Do not submit confidential information that you lack
+permission to disclose.
+
+Submission itself constitutes acceptance, including when you submit through
+a commit, pull request, issue or comment. Earlier submissions remain
+subject to the terms that applied when they were made. For downstream
+modifications, see the opening paragraph of section 19.
+
+19.4. Submitting a released or deployed modification.
+
+When releasing, delivering or deploying a modified version, including a
+SaaS update, publish its complete corresponding source and send the exact
+revision upstream by that same time. Open or update a pull request against
+this project, or push to a dedicated branch here if you have write access.
+You may also post a public fork branch and its immutable commit ID in a
+project issue. If this repository cannot accept a pull request or issue
+from you, email that public branch URL and commit ID to info@gmwallet.app.
+Identify the release or deployment and link to its source. GM Wallet may
+decline or close the submission. An acknowledgement or merge is
+unnecessary. See sections 13 and 18 of this License.
