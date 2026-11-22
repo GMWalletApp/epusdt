@@ -111,6 +111,7 @@ func newInstallServer(envFilePath string, frontend http.FileSystem) (*echo.Echo,
 	}
 
 	e := echo.New()
+	e.Pre(luluHttp.PublicCashierBoundary(config.CashierScriptOrigin(), true))
 	e.HideBanner = true
 	e.HidePort = true
 

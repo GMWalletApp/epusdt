@@ -36,3 +36,9 @@ Set `CHAINSCANNER_URL=http://chainscanner:9081` and provide distinct consumer an
 ```sh
 docker compose --profile scanner up -d
 ```
+
+## Checkout support scripts
+
+In System settings → Base settings → Custom checkout script, paste the complete public installation snippet from your support provider. The widget loads when the buyer opens checkout. Clear the field to disable it. The support link remains available as a fallback. Use only public site identifiers in the snippet.
+
+The default deployment runs the widget inside an isolated browser frame. For plugins that require first-party storage, cookies or the top-level document, assign a dedicated HTTPS hostname such as `pay.example.com` to checkout and use a different hostname for administration. Set both `APP_URI` and the process environment variable `CASHIER_SCRIPT_ORIGIN` to `https://pay.example.com`, preserve the original Host at the reverse proxy, and restart EPUSDT. The dedicated host rejects management and installation requests. Trusted native plugins can read and modify the public payment page.

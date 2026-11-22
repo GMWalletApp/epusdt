@@ -33,6 +33,7 @@ services:
     environment:
       EPUSDT_CONFIG: "/app/runtime/.env"
       EPUSDT_INSTALL:
+      CASHIER_SCRIPT_ORIGIN:
       APP_URI: "${APP_URI:-http://127.0.0.1:8000}"
       HTTP_LISTEN: "0.0.0.0:8000"
       CHAINSCANNER_URL:

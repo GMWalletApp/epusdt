@@ -19,6 +19,7 @@ import (
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/model/service"
 	"github.com/GMWalletApp/epusdt/util/constant"
+	luluHttp "github.com/GMWalletApp/epusdt/util/http"
 	"github.com/GMWalletApp/epusdt/util/sign"
 	"github.com/labstack/echo/v4"
 	echoMiddleware "github.com/labstack/echo/v4/middleware"
@@ -60,6 +61,7 @@ func RegisterRoute(e *echo.Echo) {
 }
 
 func RegisterRouteWithScanner(e *echo.Echo, connection config.ScannerConnection) {
+	e.Pre(luluHttp.PublicCashierBoundary(config.CashierScriptOrigin(), false))
 	e.POST("/", func(c echo.Context) error {
 		return c.String(http.StatusOK, "hello epusdt, https://github.com/GMwalletApp/epusdt")
 	})

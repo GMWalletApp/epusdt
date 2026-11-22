@@ -63,6 +63,7 @@ import (
 //     brand.site_title       (string) — payment page title / website title (preferred)
 //     brand.success_copy     (string) — text shown on payment success (preferred)
 //     brand.support_url      (string) — support / help URL
+//     brand.cashier_script   (string) — optional public support widget installation snippet
 //     brand.withdrawal_reminder_enabled (bool) — show the on-chain payment reminder (default false)
 //     brand.payment_reminder_title (string) — optional plain-text title
 //     brand.payment_reminder_body (string) — optional plain-text body supporting {amount}
@@ -119,7 +120,7 @@ func (c *BaseAdminController) ListSettings(ctx echo.Context) error {
 // @Description  okpay group keys: okpay.enabled, okpay.shop_id, okpay.shop_token, okpay.api_url, okpay.callback_url, okpay.return_url, okpay.timeout_seconds, okpay.allow_tokens.
 // @Description  xlayer group keys: xlayer.enabled, xlayer.api_key, xlayer.api_secret, xlayer.passphrase, xlayer.to_address, xlayer.return_url, xlayer.timeout_seconds, xlayer.allow_tokens. The Onchain OS Payment base URL is fixed to https://web3.okx.com in code; any leftover xlayer.api_url row is ignored.
 // @Description  rate group keys: rate.mode (fixed|auto, default fixed), rate.cache_ttl_seconds (10-86400, default 300), rate.forced_rate_list (JSON map, e.g. {"cny":{"usdt":0.14635,"ton":0.5}}; base/coin keys are normalized to lowercase; empty is restored to the built-in CNY USDT/USDC default), rate.api_url (optional; non-empty value must be a public http/https URL), rate.adjust_percent, rate.okx_c2c_enabled.
-// @Description  brand group keys: brand.checkout_name, brand.logo_url, brand.site_title, brand.success_copy, brand.support_url, brand.background_color, brand.background_image_url, brand.withdrawal_reminder_enabled, brand.payment_reminder_title, brand.payment_reminder_body. Legacy aliases brand.site_name, brand.page_title and brand.pay_success_text are also supported.
+// @Description  brand group keys: brand.checkout_name, brand.logo_url, brand.site_title, brand.success_copy, brand.support_url, brand.cashier_script, brand.background_color, brand.background_image_url, brand.withdrawal_reminder_enabled, brand.payment_reminder_title, brand.payment_reminder_body. Legacy aliases brand.site_name, brand.page_title and brand.pay_success_text are also supported.
 // @Description  system group keys: system.order_expiration_time, system.amount_precision (int, 2-6, default 2), system.log_level (debug|info|warn|error, default error).
 // @Tags         Admin Settings
 // @Security     AdminJWT
@@ -155,7 +156,7 @@ func (c *BaseAdminController) UpsertSettings(ctx echo.Context) error {
 			out = append(out, errorResult(item.Key, constant.SettingItemErr))
 			continue
 		}
-		if key == mdb.SettingKeyBrandReminderTitle || key == mdb.SettingKeyBrandReminderBody {
+		if key == mdb.SettingKeyBrandReminderTitle || key == mdb.SettingKeyBrandReminderBody || key == mdb.SettingKeyBrandCashierScript {
 			text, ok := item.Value.(string)
 			if !ok || !strings.EqualFold(strings.TrimSpace(item.Group), mdb.SettingGroupBrand) {
 				out = append(out, errorResult(key, constant.SettingItemErr))

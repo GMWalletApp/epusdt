@@ -192,9 +192,15 @@ func (c *BaseCommController) GetPublicConfig(ctx echo.Context) error {
 		xlayer.TimeoutSeconds = data.GetXLayerTimeoutSeconds()
 		xlayer.ToAddress = data.GetXLayerToAddress()
 	}
+	nativeOrigin := ""
+	if origin := config.CashierScriptOrigin(); origin != nil && (strings.EqualFold(ctx.Request().Host, origin.Host) || strings.EqualFold(ctx.Request().Host, origin.Host+":443")) {
+		nativeOrigin = origin.String()
+	}
 	return c.SucJson(ctx, response.PublicConfigResponse{
 		SupportedAssets: supports,
 		Site: response.SitePublicConfig{
+			CashierScript:             data.GetSettingString(mdb.SettingKeyBrandCashierScript, ""),
+			CashierScriptOrigin:       nativeOrigin,
 			WithdrawalReminderEnabled: data.GetSettingBool(mdb.SettingKeyBrandWithdrawalReminder, false),
 			PaymentReminderTitle:      data.GetSettingString(mdb.SettingKeyBrandReminderTitle, ""),
 			PaymentReminderBody:       data.GetSettingString(mdb.SettingKeyBrandReminderBody, ""),
