@@ -29,6 +29,7 @@ func apiKeyFromContext(ctx echo.Context) *mdb.ApiKey {
 // @Summary      Create transaction
 // @Description  Create a payment transaction order. Accepts JSON body (application/json) or form-encoded body (application/x-www-form-urlencoded).
 // @Description  GMPay may omit both token and network to create a status=4 placeholder order; EPay submit.php can also create one when neither request parameters nor database defaults provide token/network. Supplying only one of token/network is invalid.
+// @Description  Authenticated GMPay retries with the same order_id and original normalized inputs return the same trade_id, current order state and original creation deadline. A changed request, a different merchant, an EPay-format order, or an order created before replay support returns status_code 10002.
 // @Description  payment_type is optional for GMPay. If it is sent, it is a normal signed parameter and must be included when calculating signature.
 // @Description  GMPay signature uses lowercase hexadecimal HMAC-SHA256 with secret_key as the HMAC key. Legacy MD5 signatures are not accepted.
 // @Tags         Payment
@@ -47,7 +48,7 @@ func apiKeyFromContext(ctx echo.Context) *mdb.ApiKey {
 // @Param        name formData string false "Order name"
 // @Param        payment_type formData string false "Optional GMPay compatibility flag; include in signature when sent"
 // @Success      200 {object} response.ApiResponse{data=response.CreateTransactionResponse}
-// @Failure      400 {object} response.ApiResponse "Stable errno in status_code: 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel"
+// @Failure      400 {object} response.ApiResponse "Stable errno in status_code: 10002 order ID conflict, 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel"
 // @Router       /payments/gmpay/v1/order/create-transaction [post]
 func (c *BaseCommController) CreateTransaction(ctx echo.Context) (err error) {
 	req := new(request.CreateTransactionRequest)
