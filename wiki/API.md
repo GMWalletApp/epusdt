@@ -392,6 +392,8 @@ function epaySign(array $params, string $secretKey): string
 
 `GET /pay/check-status/{trade_id}`
 
+收银台可添加 `?checkout=true`。若当前子单已过期且父单已支付，返回父单的 `trade_id`、`status: 2` 以及已配置的 `redirect_url`。EPay 使用父单的签名返回入口。直接打开该子单的收银台时也会显示已支付的父单。省略参数时，状态接口始终返回所查订单自身的状态。
+
 ### 成功响应示例
 
 ```json

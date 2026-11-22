@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/GMWalletApp/epusdt/model/request"
-	"github.com/GMWalletApp/epusdt/model/response"
 	"github.com/GMWalletApp/epusdt/model/service"
 	"github.com/GMWalletApp/epusdt/util/constant"
 	"github.com/labstack/echo/v4"
@@ -14,6 +13,7 @@ import (
 // CheckoutCounter 收银台
 // @Summary      Checkout counter page
 // @Description  Return checkout initialization data when the order exists. This endpoint only confirms order existence and returns base order data; call /pay/check-status/{trade_id} for the current order status (1=waiting payment, 2=paid, 3=expired, 4=waiting token/network selection, 5=confirming on-chain payment, 6=manual review required).
+// @Description  A pending parent resumes its selected attempt. An expired child of a paid parent returns the paid parent checkout details and return URL.
 // @Description  When status=4, actual_amount is 0 and token/network/receive_address are empty; this state is produced by GMPay placeholders or EPay submit.php when no token/network request values or defaults resolve to a concrete payment asset. The cashier should guide the payer to choose an on-chain token/network or OkPay and then call /pay/switch-network.
 // @Description  For EPay orders with a merchant return_url, the response redirect_url is rewritten to the internal /pay/return/{trade_id} hop; the database still stores the merchant's raw return_url.
 // @Tags         Payment
@@ -62,18 +62,15 @@ func (c *BaseCommController) ReturnToMerchant(ctx echo.Context) error {
 // @Tags         Payment
 // @Produce      json
 // @Param        trade_id path string true "Trade ID"
+// @Param        checkout query bool false "When true, an expired child of a paid parent returns the parent trade_id, paid status and optional redirect_url. Otherwise the requested order status is returned."
 // @Success      200 {object} response.ApiResponse{data=response.CheckStatusResponse}
 // @Failure      400 {object} response.ApiResponse "Order not found (status_code=10008) or other request error"
 // @Router       /pay/check-status/{trade_id} [get]
 func (c *BaseCommController) CheckStatus(ctx echo.Context) (err error) {
 	tradeId := ctx.Param("trade_id")
-	order, err := service.GetOrderInfoByTradeId(tradeId)
+	resp, err := service.GetPaymentStatus(tradeId, ctx.QueryParam("checkout") == "true")
 	if err != nil {
 		return c.FailJson(ctx, err)
-	}
-	resp := response.CheckStatusResponse{
-		TradeId: order.TradeId,
-		Status:  order.Status,
 	}
 	return c.SucJson(ctx, resp)
 }

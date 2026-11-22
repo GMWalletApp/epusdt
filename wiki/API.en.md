@@ -310,6 +310,8 @@ Checkout returns `payment_type` in lowercase (`gmpay` or `epay`), which selects 
 
 `GET /pay/check-status/{trade_id}`
 
+For the cashier, append `?checkout=true`. If this payment attempt expired because its parent was paid, the response uses the parent’s `trade_id`, `status: 2`, and its `redirect_url` when configured. EPay returns the parent’s signed-return endpoint. Opening the expired attempt in the cashier also returns the paid parent’s details. Without the query parameter the status endpoint always reports the requested order.
+
 ```json
 {
   "status_code": 200,

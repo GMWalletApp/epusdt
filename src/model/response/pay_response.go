@@ -22,6 +22,8 @@ type CheckStatusResponse struct {
 	TradeId string `json:"trade_id" example:"3nQ9pL2xV7sK1mR8cT4yB_aZ"` //  epusdt订单号
 	// 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
 	Status int `json:"status" enums:"1,2,3,4,5,6" example:"1"`
+	// Populated when an expired attempt resolves to a paid parent with a return URL.
+	RedirectUrl string `json:"redirect_url,omitempty" example:"https://example.com/return"`
 }
 
 type ManualPaymentResponse struct {

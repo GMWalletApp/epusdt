@@ -22,6 +22,7 @@ import (
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
+	"github.com/GMWalletApp/epusdt/model/request"
 	"github.com/GMWalletApp/epusdt/model/service"
 	"github.com/GMWalletApp/epusdt/util/constant"
 	apihttp "github.com/GMWalletApp/epusdt/util/http"
@@ -1930,6 +1931,61 @@ func TestCheckStatus_NotFound(t *testing.T) {
 	}
 	if got := int(resp["status_code"].(float64)); got != 10008 {
 		t.Fatalf("status_code = %d, want 10008; response=%v", got, resp)
+	}
+}
+
+func TestCheckoutFollowsPaidParentFromExpiredChild(t *testing.T) {
+	for _, paymentType := range []string{"GMPay", "EPay"} {
+		t.Run(paymentType, func(t *testing.T) {
+			e := setupTestEnv(t)
+			const merchantReturn = "https://merchant.example/return"
+			wantReturn := merchantReturn
+			var parentID string
+			if paymentType == "EPay" {
+				parentID = mustCreateEPayOrder(t, e, "epay-family", merchantReturn, url.Values{"type": {"usdt.tron"}})
+				wantReturn = "http://localhost:8080/pay/return/" + parentID
+			} else {
+				parentID = createCheckoutCounterRespTestOrder(t, e, "gmpay-family")
+			}
+			child := assertOK(t, doPost(e, "/pay/switch-network", map[string]interface{}{
+				"trade_id": parentID, "token": "USDT", "network": "solana",
+			}))["data"].(map[string]interface{})
+			childID := child["trade_id"].(string)
+			if childID == parentID {
+				t.Fatal("switch did not allocate a child")
+			}
+			statusPath := "/pay/check-status/" + childID
+			detailsPath := "/pay/checkout-counter-resp/" + childID
+			check := func(path, wantID string, wantStatus int, wantRedirect string) {
+				t.Helper()
+				body := assertOK(t, doGet(e, path))["data"].(map[string]interface{})
+				if body["trade_id"] != wantID || body["status"] != float64(wantStatus) {
+					t.Fatalf("%s: trade_id=%v status=%v", path, body["trade_id"], body["status"])
+				}
+				redirect, exists := body["redirect_url"]
+				if (wantRedirect == "" && exists) || (wantRedirect != "" && redirect != wantRedirect) {
+					t.Fatalf("%s: redirect_url=%v want %q", path, redirect, wantRedirect)
+				}
+			}
+			check(statusPath+"?checkout=true", childID, mdb.StatusWaitPay, "")
+
+			if err := service.OrderProcessing(&request.OrderProcessingRequest{
+				TradeId: parentID, BlockTransactionId: "original-address-payment",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			check(statusPath, childID, mdb.StatusExpired, "")
+			check(statusPath+"?checkout=true", parentID, mdb.StatusPaySuccess, wantReturn)
+			check(detailsPath, parentID, mdb.StatusPaySuccess, wantReturn)
+
+			// A held or confirming child remains visible when a parent has been paid.
+			for _, state := range []int{mdb.StatusConfirming, mdb.StatusManualReview} {
+				if err := dao.Mdb.Model(&mdb.Orders{}).Where("trade_id = ?", childID).Update("status", state).Error; err != nil {
+					t.Fatal(err)
+				}
+				check(statusPath+"?checkout=true", childID, state, "")
+			}
+		})
 	}
 }
 
