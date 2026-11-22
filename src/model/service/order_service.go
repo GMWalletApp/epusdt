@@ -287,28 +287,23 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 
 	tradeID := GenerateCode()
 	amount := math.MustParsePrecFloat64(decimalTokenAmount.InexactFloat64(), amountPrecision)
-	availableAddress, availableAmount, err := ReserveAvailableWalletAndAmount(tradeID, network, token, amount, walletAddress)
+	wallet, availableAmount, err := reserveAvailableWalletAndAmount(tradeID, network, token, amount, walletAddress)
 	if err != nil {
 		return nil, err
 	}
-	if availableAddress == "" {
+	if wallet.ID == 0 {
 		return nil, constant.NotAvailableAmountErr
 	}
 
-	tx := dao.Mdb.Begin()
 	order.TradeId = tradeID
 	order.ActualAmount = availableAmount
-	order.ReceiveAddress = availableAddress
+	order.ReceiveAddress = wallet.Address
 	order.Status = mdb.StatusWaitPay
-	if err = insertMerchantOrder(tx, order); err != nil {
-		tx.Rollback()
+	if err = data.WithReceivingWallet(wallet.ID, func(tx *gorm.DB) error {
+		return insertMerchantOrder(tx, order)
+	}); err != nil {
 		_ = data.UnLockTransactionByTradeId(tradeID)
 		return replayAfterCreateError(order, err)
-	}
-	if err = tx.Commit().Error; err != nil {
-		tx.Rollback()
-		_ = data.UnLockTransactionByTradeId(tradeID)
-		return nil, err
 	}
 
 	return buildCreateTransactionResponse(order), nil
@@ -416,46 +411,49 @@ var shuffleWalletAddresses = shuffleWalletAddressesRandom
 
 // ReserveAvailableWalletAndAmount finds and locks a network+address+token+amount pair.
 func ReserveAvailableWalletAndAmount(tradeID string, network string, token string, amount float64, walletAddress []mdb.WalletAddress) (string, float64, error) {
-	availableAddress := ""
+	wallet, reservedAmount, err := reserveAvailableWalletAndAmount(tradeID, network, token, amount, walletAddress)
+	return wallet.Address, reservedAmount, err
+}
+
+func reserveAvailableWalletAndAmount(tradeID string, network string, token string, amount float64, walletAddress []mdb.WalletAddress) (mdb.WalletAddress, float64, error) {
 	availableAmount := amount
 	amountPrecision := data.GetAmountPrecision()
 	shuffleWalletAddresses(walletAddress)
 
-	tryLockWalletFunc := func(targetAmount float64) (string, error) {
+	tryLockWalletFunc := func(targetAmount float64) (mdb.WalletAddress, error) {
 		for _, address := range walletAddress {
 			normalizedAddress := normalizeOrderAddressByNetwork(network, address.Address)
 			if EnsurePaymentWatch != nil {
 				if err := EnsurePaymentWatch(network, normalizedAddress); err != nil {
-					return "", err
+					return mdb.WalletAddress{}, err
 				}
 			}
 			err := data.LockTransaction(network, normalizedAddress, token, tradeID, targetAmount, config.GetOrderExpirationTimeDuration())
 			if err == nil {
-				return normalizedAddress, nil
+				address.Address = normalizedAddress
+				return address, nil
 			}
 			if errors.Is(err, data.ErrTransactionLocked) {
 				continue
 			}
-			return "", err
+			return mdb.WalletAddress{}, err
 		}
-		return "", nil
+		return mdb.WalletAddress{}, nil
 	}
 
 	for i := 0; i < IncrementalMaximumNumber; i++ {
-		address, err := tryLockWalletFunc(availableAmount)
+		wallet, err := tryLockWalletFunc(availableAmount)
 		if err != nil {
-			return "", 0, err
+			return mdb.WalletAddress{}, 0, err
 		}
-		if address == "" {
-			decimalOldAmount := decimal.NewFromFloat(availableAmount)
-			decimalIncr := decimal.New(1, int32(-amountPrecision))
-			availableAmount = math.MustParsePrecFloat64(decimalOldAmount.Add(decimalIncr).InexactFloat64(), amountPrecision)
-			continue
+		if wallet.Address != "" {
+			return wallet, availableAmount, nil
 		}
-		availableAddress = address
-		break
+		decimalOldAmount := decimal.NewFromFloat(availableAmount)
+		decimalIncr := decimal.New(1, int32(-amountPrecision))
+		availableAmount = math.MustParsePrecFloat64(decimalOldAmount.Add(decimalIncr).InexactFloat64(), amountPrecision)
 	}
-	return availableAddress, availableAmount, nil
+	return mdb.WalletAddress{}, availableAmount, nil
 }
 
 // GenerateCode creates a unique trade id.
@@ -714,16 +712,15 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 
 	subTradeID := GenerateCode()
 	amount := math.MustParsePrecFloat64(decimalTokenAmount.InexactFloat64(), data.GetAmountPrecision())
-	availableAddress, availableAmount, err := ReserveAvailableWalletAndAmount(subTradeID, network, token, amount, walletAddress)
+	wallet, availableAmount, err := reserveAvailableWalletAndAmount(subTradeID, network, token, amount, walletAddress)
 	if err != nil {
 		return nil, err
 	}
-	if availableAddress == "" {
+	if wallet.ID == 0 {
 		return nil, constant.NotAvailableAmountErr
 	}
 
 	// 8. Create sub-order
-	tx := dao.Mdb.Begin()
 	subOrder := &mdb.Orders{
 		TradeId:         subTradeID,
 		OrderId:         subTradeID, // sub-order uses its own trade_id as order_id (unique constraint)
@@ -731,7 +728,7 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 		Amount:          parent.Amount,
 		Currency:        parent.Currency,
 		ActualAmount:    availableAmount,
-		ReceiveAddress:  availableAddress,
+		ReceiveAddress:  wallet.Address,
 		Token:           token,
 		Network:         network,
 		Status:          mdb.StatusWaitPay,
@@ -744,18 +741,12 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 		PayProvider:     mdb.PaymentProviderOnChain,
 		ApiKeyID:        parent.ApiKeyID, // inherit from parent so resolveOrderApiKey never fails
 	}
-	if err = data.CreateOrderWithTransaction(tx, subOrder); err != nil {
-		tx.Rollback()
-		_ = data.UnLockTransactionByTradeId(subTradeID)
-		return nil, err
-	}
-	if err = data.SelectCheckoutOrder(tx, parent.TradeId, subOrder, true); err != nil {
-		tx.Rollback()
-		_ = data.UnLockTransactionByTradeId(subTradeID)
-		return nil, err
-	}
-	if err = tx.Commit().Error; err != nil {
-		tx.Rollback()
+	if err = data.WithReceivingWallet(wallet.ID, func(tx *gorm.DB) error {
+		if err := data.CreateOrderWithTransaction(tx, subOrder); err != nil {
+			return err
+		}
+		return data.SelectCheckoutOrder(tx, parent.TradeId, subOrder, true)
+	}); err != nil {
 		_ = data.UnLockTransactionByTradeId(subTradeID)
 		return nil, err
 	}
@@ -785,22 +776,24 @@ func completeWaitSelectOrder(parent *mdb.Orders, token string, network string) (
 	}
 
 	amount := math.MustParsePrecFloat64(decimalTokenAmount.InexactFloat64(), data.GetAmountPrecision())
-	availableAddress, availableAmount, err := ReserveAvailableWalletAndAmount(parent.TradeId, network, token, amount, walletAddress)
+	wallet, availableAmount, err := reserveAvailableWalletAndAmount(parent.TradeId, network, token, amount, walletAddress)
 	if err != nil {
 		return nil, err
 	}
-	if availableAddress == "" {
+	if wallet.ID == 0 {
 		return nil, constant.NotAvailableAmountErr
 	}
 
-	updated, err := data.CompleteWaitSelectOrder(parent.TradeId, network, token, availableAddress, availableAmount)
+	err = data.WithReceivingWallet(wallet.ID, func(tx *gorm.DB) error {
+		updated, err := data.CompleteWaitSelectOrderWithTransaction(tx, parent.TradeId, network, token, wallet.Address, availableAmount)
+		if err == nil && !updated {
+			return constant.OrderStatusConflict
+		}
+		return err
+	})
 	if err != nil {
 		_ = data.UnLockTransactionByTradeId(parent.TradeId)
 		return nil, err
-	}
-	if !updated {
-		_ = data.UnLockTransactionByTradeId(parent.TradeId)
-		return nil, constant.OrderStatusConflict
 	}
 
 	order, err := data.GetOrderInfoByTradeId(parent.TradeId)

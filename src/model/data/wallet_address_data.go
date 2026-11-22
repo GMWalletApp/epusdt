@@ -8,6 +8,7 @@ import (
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	addressutil "github.com/GMWalletApp/epusdt/util/address"
 	"github.com/GMWalletApp/epusdt/util/constant"
+	"gorm.io/gorm"
 )
 
 // AddWalletAddress 创建钱包 (默认 tron 网络，用于 Telegram 添加)
@@ -130,6 +131,39 @@ func GetAvailableWalletAddress() ([]mdb.WalletAddress, error) {
 	var WalletAddressList []mdb.WalletAddress
 	err := dao.Mdb.Model(WalletAddressList).Where("status = ?", mdb.TokenStatusEnable).Find(&WalletAddressList).Error
 	return WalletAddressList, err
+}
+
+// PaymentWatchAddresses reads the full scanner subscription from one database
+// snapshot. Orders remain payable after their wallet is disabled or deleted.
+func PaymentWatchAddresses() ([]scanner.Watch, error) {
+	wallets := dao.Mdb.Model(&mdb.WalletAddress{}).Select("network, address").
+		Where("status = ?", mdb.TokenStatusEnable)
+	orders := dao.Mdb.Model(&mdb.Orders{}).Select("network, receive_address AS address").
+		Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusConfirming}).
+		Where("(pay_provider IS NULL OR pay_provider IN ?)", []string{"", mdb.PaymentProviderOnChain}).
+		Where("receive_address <> '' AND token <> '' AND actual_amount > 0")
+	var watches []scanner.Watch
+	err := dao.Mdb.Raw("? UNION ?", wallets, orders).Scan(&watches).Error
+	return watches, err
+}
+
+// WithReceivingWallet commits a new address assignment only while its wallet
+// is enabled. The order write acquires SQLite's writer lock before the check,
+// so removal and assignment cannot commit in the wrong order.
+func WithReceivingWallet(walletID uint64, save func(*gorm.DB) error) error {
+	return dao.Mdb.Transaction(func(tx *gorm.DB) error {
+		if err := save(tx); err != nil {
+			return err
+		}
+		var count int64
+		if err := tx.Model(&mdb.WalletAddress{}).Where("id = ? AND status = ?", walletID, mdb.TokenStatusEnable).Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return constant.NotAvailableWalletAddress
+		}
+		return nil
+	})
 }
 
 // GetAvailableWalletAddressByNetwork 获得指定网络的所有可用钱包地址

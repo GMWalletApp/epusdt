@@ -63,7 +63,7 @@ type Orders struct {
 	Token              string  `gorm:"column:token" json:"token" example:"USDT"`
 	Network            string  `gorm:"column:network" json:"network" example:"tron"`
 	// 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
-	Status      int    `gorm:"column:status;default:1" json:"status" enums:"1,2,3,4,5,6" example:"1"`
+	Status      int    `gorm:"column:status;default:1;index:orders_status_index" json:"status" enums:"1,2,3,4,5,6" example:"1"`
 	NotifyUrl   string `gorm:"column:notify_url" json:"notify_url" example:"https://example.com/notify"`
 	RedirectUrl string `gorm:"column:redirect_url" json:"redirect_url" example:"https://example.com/success"`
 	Name        string `gorm:"column:name" json:"name" example:"VIP月卡"`

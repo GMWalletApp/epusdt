@@ -377,11 +377,16 @@ func SelectedCheckoutChild(rootID string) (*mdb.Orders, error) {
 	return &child, err
 }
 
-// CompleteWaitSelectOrder fills a placeholder order with concrete chain fields
+// CompleteWaitSelectOrder turns a waiting placeholder into an on-chain order.
+func CompleteWaitSelectOrder(tradeID string, network string, token string, receiveAddress string, actualAmount float64) (bool, error) {
+	return CompleteWaitSelectOrderWithTransaction(dao.Mdb, tradeID, network, token, receiveAddress, actualAmount)
+}
+
+// CompleteWaitSelectOrderWithTransaction fills a placeholder order with concrete chain fields
 // and makes it payable. It only updates status=WaitSelect rows so concurrent
 // switch-network attempts cannot overwrite a payable order.
-func CompleteWaitSelectOrder(tradeID string, network string, token string, receiveAddress string, actualAmount float64) (bool, error) {
-	result := dao.Mdb.Model(&mdb.Orders{}).
+func CompleteWaitSelectOrderWithTransaction(tx *gorm.DB, tradeID string, network string, token string, receiveAddress string, actualAmount float64) (bool, error) {
+	result := tx.Model(&mdb.Orders{}).
 		Where("trade_id = ?", tradeID).
 		Where("status = ?", mdb.StatusWaitSelect).
 		Updates(map[string]interface{}{

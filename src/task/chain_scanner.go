@@ -30,7 +30,7 @@ func (p *paymentSubscriptions) refresh(ctx context.Context) error {
 }
 
 func (p *paymentSubscriptions) syncLocked(ctx context.Context) error {
-	wallets, err := data.GetAvailableWalletAddress()
+	addresses, err := data.PaymentWatchAddresses()
 	if err != nil {
 		return err
 	}
@@ -42,18 +42,23 @@ func (p *paymentSubscriptions) syncLocked(ctx context.Context) error {
 	for _, c := range chains {
 		enabled[c.Network] = true
 	}
-	watches := make([]scanner.Watch, 0, len(wallets))
+	watches := make([]scanner.Watch, 0, len(addresses))
 
-	for _, w := range wallets {
+	seen := make(map[scanner.Watch]bool, len(addresses))
+	for _, w := range addresses {
 		if w.Network == mdb.NetworkXLayer || !enabled[w.Network] {
 			continue
 		}
 		a, e := scanner.Canonical(w.Network, w.Address)
 		if e != nil {
-			log.Sugar.Warnf("[ChainScanner] invalid wallet row %d on %s", w.ID, w.Network)
+			log.Sugar.Warnf("[ChainScanner] invalid payment address on %s", w.Network)
 			continue
 		}
-		watches = append(watches, scanner.Watch{Network: w.Network, Address: a})
+		w.Address = a
+		if !seen[w] {
+			watches = append(watches, w)
+			seen[w] = true
+		}
 	}
 	receipt, err := p.feed.Subscribe(ctx, paymentConsumer, watches)
 	if err != nil {

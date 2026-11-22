@@ -1926,3 +1926,57 @@ func TestGMPayReplayAfterConcurrentOrderInsertReleasesOnlyLosingReservation(t *t
 		t.Fatalf("reservations after concurrent insert: %+v, %v", locks, err)
 	}
 }
+
+func TestWalletRemovedDuringNewAddressAssignment(t *testing.T) {
+	for _, path := range []string{"create", "first-choice", "sub-order"} {
+		t.Run(path, func(t *testing.T) {
+			defer testutil.SetupTestDatabases(t)()
+			wallet, err := data.AddWalletAddress(testutil.TronAddress)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var parent mdb.Orders
+			if path != "create" {
+				parent = mdb.Orders{TradeId: "parent", OrderId: "merchant", Currency: "CNY", Amount: 1, Status: mdb.StatusWaitSelect}
+				if path == "sub-order" {
+					parent.Status = mdb.StatusWaitPay
+					parent.Token, parent.Network, parent.PayProvider = "USDT", mdb.PaymentProviderOkPay, mdb.PaymentProviderOkPay
+				}
+				if err := dao.Mdb.Create(&parent).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			previous := EnsurePaymentWatch
+			t.Cleanup(func() { EnsurePaymentWatch = previous })
+			// Interleave the wallet change after selection, exactly when the
+			// scanner acknowledges the watch and before the order is persisted.
+			EnsurePaymentWatch = func(string, string) error {
+				if path == "sub-order" {
+					return data.DeleteWalletAddressById(wallet.ID)
+				}
+				return data.ChangeWalletAddressStatus(wallet.ID, mdb.TokenStatusDisable)
+			}
+			if path == "create" {
+				_, err = CreateTransaction(newCreateTransactionRequest("merchant", 1), nil)
+			} else {
+				_, err = SwitchNetwork(&request.SwitchNetworkRequest{TradeId: parent.TradeId, Token: "USDT", Network: mdb.NetworkTron})
+			}
+			if !errors.Is(err, constant.NotAvailableWalletAddress) {
+				t.Fatalf("stale allocation error = %v", err)
+			}
+
+			var locks int64
+			if err := dao.RuntimeDB.Model(&mdb.TransactionLock{}).Count(&locks).Error; err != nil || locks != 0 {
+				t.Fatalf("reservation after rollback: %d, %v", locks, err)
+			}
+			var stored []mdb.Orders
+			if err := dao.Mdb.Find(&stored).Error; err != nil {
+				t.Fatal(err)
+			}
+			if path == "create" && len(stored) != 0 || path != "create" && (len(stored) != 1 || stored[0].Status != parent.Status || stored[0].ReceiveAddress != "" || stored[0].IsSelected) {
+				t.Fatalf("unexpected orders after rollback: %+v", stored)
+			}
+		})
+	}
+}
