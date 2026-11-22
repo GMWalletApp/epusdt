@@ -1,0 +1,1 @@
+import{t as e}from"./not-found-error-Ck09W-np.js";var t=e;export{t as component};
