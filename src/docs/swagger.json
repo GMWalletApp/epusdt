@@ -1434,6 +1434,54 @@
                 }
             }
         },
+        "/admin/api/v1/chainscanner/admin/scan-retry-rate": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "description": "Counts provider range reads since scanner startup, including failover and gap retries. retry_rate is retry_attempts divided by total_attempts, or null before the first read.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Get block scan retry rates by network",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Limit to one configured network",
+                        "name": "network",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/scanneradmin.ScanRetryStats"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid network filter",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Scanner version does not expose retry rates",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/api/v1/chainscanner/heights/{network}": {
             "get": {
                 "security": [
@@ -6796,6 +6844,34 @@
                 },
                 "target": {
                     "type": "string"
+                }
+            }
+        },
+        "scanneradmin.ScanRetryStats": {
+            "type": "object",
+            "required": [
+                "network",
+                "retry_attempts",
+                "retry_rate",
+                "total_attempts"
+            ],
+            "properties": {
+                "network": {
+                    "type": "string"
+                },
+                "retry_attempts": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "retry_rate": {
+                    "type": "number",
+                    "maximum": 1,
+                    "minimum": 0,
+                    "x-nullable": true
+                },
+                "total_attempts": {
+                    "type": "integer",
+                    "minimum": 0
                 }
             }
         },

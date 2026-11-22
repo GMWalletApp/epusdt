@@ -37,6 +37,7 @@ func (r *NodeRegistry) Handler(consumers map[string]string, token string) (http.
 	admin := http.NewServeMux()
 	r.registerBlacklistRoutes(admin)
 	r.registerManagement(admin)
+	admin.HandleFunc("GET /v1/admin/scan-retry-rate", r.scanRetryRate)
 	admin.HandleFunc("GET /v1/admin/progress", func(w http.ResponseWriter, req *http.Request) {
 		rows, err := r.store.ScanProgress(req.Context())
 		nodeReply(w, 200, rows, err)

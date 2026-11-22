@@ -42,7 +42,7 @@ func (p *SourcePool) ScanPending(ctx context.Context, spans []chains.Span, finis
 
 	jobs := make([]pendingRange, len(spans))
 	for i, r := range spans {
-		jobs[i] = pendingRange{segment: segment{from: r.First, to: r.Last}, tried: map[*endpoint]bool{}}
+		jobs[i] = pendingRange{segment: segment{from: r.First, to: r.Last, readStarted: r.Failed}, tried: map[*endpoint]bool{}}
 	}
 	calls, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup

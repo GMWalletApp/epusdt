@@ -88,6 +88,25 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	if p := progress[0]; p.Success == nil || p.Failure == nil || *p.Success != 0 || *p.Failure != 0 {
 		t.Fatalf("idle scanner counters: %+v", p)
 	}
+	const retryPath = "/admin/scan-retry-rate"
+	unauthorized := httptest.NewRecorder()
+	e.ServeHTTP(unauthorized, httptest.NewRequest("GET", base+retryPath, nil))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated retry rate: %d", unauthorized.Code)
+	}
+	for _, path := range []string{retryPath, retryPath + "?network=solana"} {
+		var rows []map[string]any
+		body := call("GET", path, "", http.StatusOK)
+		if err := json.Unmarshal([]byte(body), &rows); err != nil || len(rows) != 1 {
+			t.Fatalf("retry rate snapshot: %s", body)
+		}
+		row := rows[0]
+		if rate, ok := row["retry_rate"]; !ok || rate != nil || row["network"] != "solana" || row["total_attempts"] != 0.0 || row["retry_attempts"] != 0.0 {
+			t.Fatalf("unexpected initial retry rate: %s", body)
+		}
+	}
+	call("GET", retryPath+"?network=unknown", "", http.StatusBadRequest)
+	call("GET", retryPath+"?network=solana&network=solana", "", http.StatusBadRequest)
 	const host = "provider.example"
 	for i, endpoint := range []string{"/admin/nodes", "/admin/nodes/fallback"} {
 		b := call("POST", endpoint, `{"network":"solana","protocol":"http","url":"https://`+[]string{"ordinary.", "fallback."}[i]+host+`"}`, 201)

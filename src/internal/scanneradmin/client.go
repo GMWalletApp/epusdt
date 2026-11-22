@@ -97,6 +97,14 @@ type ConnectionInfo struct {
 	Target   string `json:"target,omitempty"`
 }
 
+// ScanRetryStats documents the per-network snapshot forwarded from ChainScanner.
+type ScanRetryStats struct {
+	Network       string   `json:"network" binding:"required"`
+	TotalAttempts uint64   `json:"total_attempts" binding:"required" minimum:"0"`
+	RetryAttempts uint64   `json:"retry_attempts" binding:"required" minimum:"0"`
+	RetryRate     *float64 `json:"retry_rate" binding:"required" extensions:"x-nullable" minimum:"0" maximum:"1"`
+}
+
 func Connection(ctx context.Context, c config.ScannerConnection) (ConnectionInfo, error) {
 	info := ConnectionInfo{Embedded: c.Embedded}
 	if !c.Embedded {
