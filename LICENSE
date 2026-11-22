@@ -1,21 +1,66 @@
-GM Wallet Community License 2.2
+                    GNU AFFERO GENERAL PUBLIC LICENSE
+                       Version 3, 19 November 2007
 
-This license is derived from the GNU Affero General Public License,
-version 3 (AGPLv3), and adds conditions on its scope and use, including
-commercial licensing, public source, attribution and contributions.
+ Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
 
-Original Project URL: https://github.com/GMWalletApp/epusdt
-License steward: Good Morning Technology, LLC <info@gmwallet.app>
+                            Preamble
 
-Portions of the license terms: Copyright (C) 2007 Free Software Foundation,
-Inc. Adaptations: Copyright (c) 2026 Good Morning Technology, LLC.
-This is an independent license. Permission is granted to reproduce this
-complete license text verbatim, including in source releases and forks.
-Retain the Original Project URL and the Contributor Terms in section 19.
+  The GNU Affero General Public License is a free, copyleft license for
+software and other kinds of works, specifically designed to ensure
+cooperation with the community in the case of network server software.
 
-0. Definitions.
+  The licenses for most software and other practical works are designed
+to take away your freedom to share and change the works.  By contrast,
+our General Public Licenses are intended to guarantee your freedom to
+share and change all versions of a program--to make sure it remains free
+software for all its users.
 
-  "This License" refers to the GM Wallet Community License, version 2.2.
+  When we speak of free software, we are referring to freedom, not
+price.  Our General Public Licenses are designed to make sure that you
+have the freedom to distribute copies of free software (and charge for
+them if you wish), that you receive source code or can get it if you
+want it, that you can change the software or use pieces of it in new
+free programs, and that you know you can do these things.
+
+  Developers that use our General Public Licenses protect your rights
+with two steps: (1) assert copyright on the software, and (2) offer
+you this License which gives you legal permission to copy, distribute
+and/or modify the software.
+
+  A secondary benefit of defending all users' freedom is that
+improvements made in alternate versions of the program, if they
+receive widespread use, become available for other developers to
+incorporate.  Many developers of free software are heartened and
+encouraged by the resulting cooperation.  However, in the case of
+software used on network servers, this result may fail to come about.
+The GNU General Public License permits making a modified version and
+letting the public access it on a server without ever releasing its
+source code to the public.
+
+  The GNU Affero General Public License is designed specifically to
+ensure that, in such cases, the modified source code becomes available
+to the community.  It requires the operator of a network server to
+provide the source code of the modified version running there to the
+users of that server.  Therefore, public use of a modified version, on
+a publicly accessible server, gives the public access to the source
+code of the modified version.
+
+  An older license, called the Affero General Public License and
+published by Affero, was designed to accomplish similar goals.  This is
+a different license, not a version of the Affero GPL, but Affero has
+released a new version of the Affero GPL which permits relicensing under
+this license.
+
+  The precise terms and conditions for copying, distribution and
+modification follow.
+
+                       TERMS AND CONDITIONS
+
+  0. Definitions.
+
+  "This License" refers to version 3 of the GNU Affero General Public License.
 
   "Copyright" also means copyright-like laws that apply to other kinds of
 works, such as semiconductor masks.
@@ -52,16 +97,7 @@ work under this License, and how to view a copy of this License.  If
 the interface presents a list of user commands or options, such as a
 menu, a prominent item in the list meets this criterion.
 
-"GM Wallet" means Good Morning Technology, LLC. The Original Project URL is
-the canonical GMWalletApp repository URL printed at the head of this copy.
-The Program covers code, documentation and other copyrightable materials
-that GM Wallet owns or has authority to license under these terms.
-Third-party material, dependencies, artwork, data and trademarks remain
-subject to their own notices and applicable rights. No grant is made
-beyond the rights of the granting party. Prior grants for earlier copies
-remain governed by the terms under which those copies were received.
-
-1. Source Code.
+  1. Source Code.
 
   The "source code" for a work means the preferred form of the work
 for making modifications to it.  "Object code" means any non-source
@@ -103,42 +139,32 @@ Source.
   The Corresponding Source for a work in source code form is that
 same work.
 
-For binaries, packages, container images, hosted services and deployed
-contracts, identify the exact version served or delivered. Provide build
-inputs such as lockfiles, interface definitions, configuration templates
-and deployment scripts where required to reproduce and modify that version.
-Live credentials, wallet keys, customer records and operational data are
-not source. Supply placeholders and setup instructions where needed; this
-does not excuse withholding source or the User Product installation
-information required by section 6.
+  2. Basic Permissions.
 
-2. Basic permissions and private development.
+  All rights granted under this License are granted for the term of
+copyright on the Program, and are irrevocable provided the stated
+conditions are met.  This License explicitly affirms your unlimited
+permission to run the unmodified Program.  The output from running a
+covered work is covered by this License only if the output, given its
+content, constitutes a covered work.  This License acknowledges your
+rights of fair use or other equivalent, as provided by copyright law.
 
-Subject to sections 13, 18 and 19 and the other conditions of this License,
-each rightsholder grants you a worldwide, non-exclusive license for the
-term of copyright to use, study, run, copy, modify, display, perform,
-propagate and convey covered works, commercially or otherwise. These
-permissions are irrevocable while their conditions are met. Eligible
-recipients owe no royalty for the community grant. Fair use and other
-rights independently available under applicable law are unaffected. Output
-is covered only to the extent that its contents constitute a covered work.
+  You may make, run and propagate covered works that you do not
+convey, without conditions so long as your license otherwise remains
+in force.  You may convey covered works to others for the sole purpose
+of having them make modifications exclusively for you, or provide you
+with facilities for running those works, provided that you comply with
+the terms of this License in conveying all material for which you do
+not control copyright.  Those thus making or running the covered works
+for you must do so exclusively on your behalf, under your direction
+and control, on terms that prohibit them from making any copies of
+your copyrighted material outside their relationship with you.
 
-You may develop and test private local drafts without publication while
-they have not been released, delivered or put into operational use.
-Employees working within the same legal entity may collaborate on these
-drafts. Giving a modified version to another legal entity, even an
-affiliate or contractor, is delivery under section 13. Operation on your
-behalf is subject to the same conditions as operation by you. An unmodified
-copy may be entrusted to a contractor solely to operate it or develop it
-on your behalf, under your direction and on terms confining copies to that
-engagement, subject to other rightsholders' terms, section 18 and the
-publication duties for resulting modified versions.
+  Conveying under any other circumstances is permitted solely under
+the conditions stated below.  Sublicensing is not allowed; section 10
+makes it unnecessary.
 
-Recipients obtain their community rights directly under section 10.
-Separate commercial grants and rights given to GM Wallet are addressed
-in sections 18 and 19.
-
-3. Protecting Users' Legal Rights From Anti-Circumvention Law.
+  3. Protecting Users' Legal Rights From Anti-Circumvention Law.
 
   No covered work shall be deemed part of an effective technological
 measure under any applicable law fulfilling obligations under article
@@ -154,7 +180,7 @@ modification of the work as a means of enforcing, against the work's
 users, your or third parties' legal rights to forbid circumvention of
 technological measures.
 
-4. Conveying Verbatim Copies.
+  4. Conveying Verbatim Copies.
 
   You may convey verbatim copies of the Program's source code as you
 receive it, in any medium, provided that you conspicuously and
@@ -162,12 +188,12 @@ appropriately publish on each copy an appropriate copyright notice;
 keep intact all notices stating that this License and any
 non-permissive terms added in accord with section 7 apply to the code;
 keep intact all notices of the absence of any warranty; and give all
-recipients a copy of this complete License along with the Program.
+recipients a copy of this License along with the Program.
 
   You may charge any price or no price for each copy that you convey,
 and you may offer support or warranty protection for a fee.
 
-5. Conveying Modified Source Versions.
+  5. Conveying Modified Source Versions.
 
   You may convey a work based on the Program, or the modifications to
 produce it from the Program, in the form of source code under the
@@ -204,23 +230,7 @@ beyond what the individual works permit.  Inclusion of a covered work
 in an aggregate does not cause this License to apply to the other
 parts of the aggregate.
 
-When you release, deliver or operationally deploy a modified version
-under section 13, include the following exact credit in its
-appropriate legal notices and retain a prominently visible link to the
-Original Project URL. Display the credit and visible, usable project link
-together in a prominent About, Legal, footer or credits location in each
-user-facing interface, including any new interface. Where there is no
-graphical interface, provide them in the distributed legal notices and in
-the ordinary user-facing equivalent, such as CLI help or API documentation.
-For text-only output, print the full URL. Preserve existing attributions,
-and identify the modifier separately so the credit cannot imply endorsement.
-
-Frontend design and development by Good Morning Technology, LLC.
-
-The credit and original-project link are distinct from the link to the
-modifier's exact Corresponding Source required by section 13.
-
-6. Conveying Non-Source Forms.
+  6. Conveying Non-Source Forms.
 
   You may convey a covered work in object code form under the terms
 of sections 4 and 5, provided that you also convey the
@@ -318,7 +328,7 @@ documented (and with an implementation available to the public in
 source code form), and must require no special password or key for
 unpacking, reading or copying.
 
-7. Additional Terms.
+  7. Additional Terms.
 
   "Additional permissions" are terms that supplement the terms of this
 License by making exceptions from one or more of its conditions.
@@ -382,19 +392,13 @@ where to find the applicable terms.
 form of a separately written license, or stated as exceptions;
 the above requirements apply either way.
 
-Sections 5 (credit and original-project link), 13, 18 and 19 are integral
-conditions of this License. A downstream author cannot remove them under
-this section. Additional permissions may cover only rights the grantor
-controls. Only an authorized written agreement under section 18 can vary
-GM Wallet's conditions for the parties and rights it covers.
+  8. Termination.
 
-8. Termination.
-
-  Exercising a licensed right in breach of these conditions automatically
-terminates your rights under this License, including its patent licenses.
-The following cure provisions apply. Reinstatement does not supply a paid
-license required under section 18 or authorize continued use above the
-threshold without that license.
+  You may not propagate or modify a covered work except as expressly
+provided under this License.  Any attempt otherwise to propagate or
+modify it is void, and will automatically terminate your rights under
+this License (including any patent licenses granted under the third
+paragraph of section 11).
 
   However, if you cease all violation of this License, then your
 license from a particular copyright holder is reinstated (a)
@@ -416,17 +420,18 @@ this License.  If your rights have been terminated and not permanently
 reinstated, you do not qualify to receive new licenses for the same
 material under section 10.
 
-9. Acceptance and possession of copies.
+  9. Acceptance Not Required for Having Copies.
 
-You need not accept these terms merely to receive or inspect a copy or
-obtain its published source. Incidental peer-to-peer transmission solely
-to receive a copy likewise does not require acceptance. Where you rely on
-this License to run, modify, deploy or convey a covered work, exercising
-those permissions signifies acceptance of its conditions. Separate written
-commercial agreements are governed by section 18. Submissions to the
-official project are additionally governed by section 19.
+  You are not required to accept this License in order to receive or
+run a copy of the Program.  Ancillary propagation of a covered work
+occurring solely as a consequence of using peer-to-peer transmission
+to receive a copy likewise does not require acceptance.  However,
+nothing other than this License grants you permission to propagate or
+modify any covered work.  These actions infringe copyright if you do
+not accept this License.  Therefore, by modifying or propagating a
+covered work, you indicate your acceptance of this License to do so.
 
-10. Automatic Licensing of Downstream Recipients.
+  10. Automatic Licensing of Downstream Recipients.
 
   Each time you convey a covered work, the recipient automatically
 receives a license from the original licensors, to run, modify and
@@ -451,12 +456,7 @@ rights granted under this License, and you may not initiate litigation
 any patent claim is infringed by making, using, selling, offering for
 sale, or importing the Program or any portion of it.
 
-The limits of the community grant in section 18 apply independently to
-each recipient, including after an entity transaction. A downstream
-distributor cannot impose an additional fee for exercising the community
-grant or sell a waiver of the conditions on GM Wallet's behalf.
-
-11. Patents.
+  11. Patents.
 
   A "contributor" is a copyright holder who authorizes use under this
 License of the Program or a work on which the Program is based.  The
@@ -525,7 +525,7 @@ or that patent license was granted, prior to 28 March 2007.
 any implied license or other defenses to infringement that may
 otherwise be available to you under applicable patent law.
 
-12. No Surrender of Others' Freedom.
+  12. No Surrender of Others' Freedom.
 
   If conditions are imposed on you (whether by court order, agreement or
 otherwise) that contradict the conditions of this License, they do not
@@ -537,77 +537,54 @@ to collect a royalty for further conveying from those to whom you convey
 the Program, the only way you could satisfy both those terms and this
 License would be to refrain entirely from conveying the Program.
 
-13. Public source, upstream submission and remote users.
+  13. Remote Network Interaction; Use with the GNU General Public License.
 
-No later than the first time you release, deliver to another party, or
-deploy a modified version for operational use, publish its complete,
-machine-readable Corresponding Source under this License. Each subsequent
-modified version has the same obligation, including changes to a prior
-fork. Operational use includes internal production, a private or public
-network service, software as a service (SaaS), a hosted API and an
-on-chain deployment. A downloadable
-binary, container, patch or source-only release counts as delivery.
-Private local development and testing under section 2 remains permitted.
+  Notwithstanding any other provision of this License, if you modify the
+Program, your modified version must prominently offer all users
+interacting with it remotely through a computer network (if your version
+supports such interaction) an opportunity to receive the Corresponding
+Source of your version by providing access to the Corresponding Source
+from a network server at no charge, through some standard or customary
+means of facilitating copying of software.  This Corresponding Source
+shall include the Corresponding Source for any work covered by version 3
+of the GNU General Public License that is incorporated pursuant to the
+following paragraph.
 
-Provide a stable, publicly accessible download for the exact revision,
-without payment, registration, approval, a nondisclosure agreement or
-recipient-specific credentials. A public repository with an accessible
-immutable revision or versioned source archive suffices. A link to an
-unmodified upstream release only suffices if it supplies the actual
-Corresponding Source. Identify the relevant source revision with the
-release, delivery or deployment. The source must be available throughout
-the period you distribute or operate that version and for at least three
-years after your last release, delivery or operational use of it. Any
-longer obligation under section 6 continues to apply.
+  Notwithstanding any other provision of this License, you have
+permission to link or combine any covered work with a work licensed
+under version 3 of the GNU General Public License into a single
+combined work, and to convey the resulting work.  The terms of this
+License will continue to apply to the part which is the covered work,
+but the work with which it is combined will remain governed by version
+3 of the GNU General Public License.
 
-By the same release, delivery or deployment deadline, also submit the
-exact modified revision to the original project identified by the Original
-Project URL. Push the revision to a dedicated branch in that repository
-if authorized, or open or update a pull request against that repository
-from a branch containing the changes. Alternatively, publish the changes
-on a dedicated branch of a public fork and submit the branch URL and
-immutable commit ID to the original project's issue tracker. If that
-repository cannot accept your pull request or issue, send the public
-branch URL and immutable commit ID to info@gmwallet.app. Identify the
-release or deployment and where its complete Corresponding Source can be
-obtained. Keep the public source available for the period specified above.
+  14. Revised Versions of this License.
 
-Each distinct modified revision, including each SaaS update, must be
-submitted. An existing branch or pull request may be updated to identify
-successive revisions. Redeploying a previously submitted, identical
-revision requires no duplicate submission. Submission is complete when
-you have taken one of the steps above for the exact revision. GM Wallet
-may merge, decline, close or leave it unreviewed. No acknowledgement or
-merge is required, and closure does not require resubmission of the same
-revision. Publication of source and submission upstream are separate
-obligations. Section 18 governs express commercial exceptions.
+  The Free Software Foundation may publish revised and/or new versions of
+the GNU Affero General Public License from time to time.  Such new versions
+will be similar in spirit to the present version, but may differ in detail to
+address new problems or concerns.
 
-Prominently offer all users interacting with a modified version remotely,
-including users of a private service, free access to its Corresponding
-Source. A visible Source link in the service or a documented, readily
-discoverable source URL in its API or protocol documentation can do this.
-For an on-chain deployment, publish the chain, address and revision with
-the source link in the deployment record. These requirements also apply
-when delivery or operation is delegated. Section 18 governs express
-commercial exceptions.
+  Each version is given a distinguishing version number.  If the
+Program specifies that a certain numbered version of the GNU Affero General
+Public License "or any later version" applies to it, you have the
+option of following the terms and conditions either of that numbered
+version or of any later version published by the Free Software
+Foundation.  If the Program does not specify a version number of the
+GNU Affero General Public License, you may choose any version ever published
+by the Free Software Foundation.
 
-You may combine independently licensed material only if you hold the
-permissions needed from every relevant rightsholder and can comply with
-all applicable terms. Separately distributed independent works keep their
-own licenses. This custom license supplies no compatibility exception
-on behalf of a third party.
+  If the Program specifies that a proxy can decide which future
+versions of the GNU Affero General Public License can be used, that proxy's
+public statement of acceptance of a version permanently authorizes you
+to choose that version for the Program.
 
-14. Revisions.
+  Later license versions may give you additional or different
+permissions.  However, no additional obligations are imposed on any
+author or copyright holder as a result of your choosing to follow a
+later version.
 
-GM Wallet may publish new numbered versions of this License. The version
-attached to a copy governs it. If its copyright holder expressly permits
-that version or a later version, recipients may choose any permitted
-version. If a designated proxy is authorized to approve future versions,
-its published approval permanently adds that option. A later publication
-alone does not replace an existing grant or bind an earlier contributor
-to additional obligations.
-
-15. Disclaimer of Warranty.
+  15. Disclaimer of Warranty.
 
   THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY
 APPLICABLE LAW.  EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT
@@ -618,7 +595,7 @@ PURPOSE.  THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM
 IS WITH YOU.  SHOULD THE PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF
 ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
 
-16. Limitation of Liability.
+  16. Limitation of Liability.
 
   IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
 WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR CONVEYS
@@ -630,7 +607,7 @@ PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER PROGRAMS),
 EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF
 SUCH DAMAGES.
 
-17. Interpretation of Sections 15 and 16.
+  17. Interpretation of Sections 15 and 16.
 
   If the disclaimer of warranty and limitation of liability provided
 above cannot be given local legal effect according to their terms,
@@ -639,124 +616,46 @@ an absolute waiver of all civil liability in connection with the
 Program, unless a warranty or assumption of liability accompanies a
 copy of the Program in return for a fee.
 
-18. Group revenue and alternative commercial terms.
+                     END OF TERMS AND CONDITIONS
 
-A company must obtain a separate paid written license from GM Wallet
-before beginning or continuing licensed use if its annual group revenue
-strictly exceeds USD 1,000,000. Exactly USD 1,000,000 remains eligible for
-the community grant. The test applies to use for the company, including
-through its employees, affiliates or contractors, whether internal,
-hosted, customer-facing or otherwise. Each company relying on the grant
-tests its own group. Merely obtaining or inspecting published source
-under section 9 remains available to everyone.
+            How to Apply These Terms to Your New Programs
 
-Aggregate worldwide revenue from all business activities of the company
-and entities that directly or indirectly control it, are controlled by it,
-or are under common control with it, over the immediately preceding
-twelve months. Control is the power to direct management or policies
-through voting rights, contract or otherwise. Include each entity once
-for its period of group membership. Eliminate intragroup transactions.
-For a newly formed group use actual revenue since formation. Use revenue
-recognized under applicable accounting standards before costs or expenses,
-even if the company or group has a net loss. Count funds handled for
-others only to the extent recognized as the group's own revenue. Convert
-foreign currency at a consistently applied published rate applicable to
-the period of recognition. On crossing the threshold, obtain the written
-license before further licensed use.
+  If you develop a new program, and you want it to be of the greatest
+possible use to the public, the best way to achieve this is to make it
+free software which everyone can redistribute and change under these terms.
 
-A written commercial agreement with GM Wallet may replace this License
-for the rights and versions it expressly covers, or vary specified duties,
-including publication of source, upstream submission, attribution or
-grant-back. For
-supplemental agreements the unvaried terms continue to apply. Payment or
-a request alone grants no exception. Existing grants to other recipients
-and third-party rights remain effective. GM Wallet can license only those
-rights it owns or is authorized to grant.
+  To do so, attach the following notices to the program.  It is safest
+to attach them to the start of each source file to most effectively
+state the exclusion of warranty; and each file should have at least
+the "copyright" line and a pointer to where the full notice is found.
 
-If your organization's policy prohibits software under licenses similar
-to AGPLv3, or you need an alternative to AGPLv3-style source-sharing
-obligations, contact info@gmwallet.app for commercial terms.
-This is a custom source-available license.
+    <one line to give the program's name and a brief idea of what it does.>
+    Copyright (C) <year>  <name of author>
 
-19. GM Wallet's rights in downstream modifications and project submissions.
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
 
-Upon a section 13 release, delivery or deployment, you grant GM Wallet,
-for the modifications you own or are authorized to license, a worldwide,
-non-exclusive, irrevocable, royalty-free, fully paid-up, transferable and
-sublicensable license for the duration of the applicable rights to use,
-copy, modify, create derivative works, perform, display, distribute,
-commercialize and relicense those modifications under community or
-proprietary commercial terms. This grant takes effect at the section 13 trigger regardless of whether
-the modifier complies with the separate upstream submission obligation. It includes a sublicensable patent license to
-the extent of your essential patent claims as defined in section 11 for
-those modifications. This grant to GM Wallet survives termination of your
-own permissions. It does not transfer ownership of an unsubmitted fork.
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
 
-19.1. Contributor Terms 2.2
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-These terms apply to contributions intentionally submitted to the project
-identified by the Original Project URL on or after the commit first
-introducing Contributor Terms 2.2 to that project. A contribution includes
-original code, patches, documents, designs, tests, issue text, attachments,
-comments, reviews and suggestions submitted for the project in a commit,
-pull request, issue or other official project channel. The recipient is
-Good Morning Technology, LLC ("GM Wallet").
+Also add information on how to contact you by electronic and paper mail.
 
-19.2. Rights in your submission.
+  If your software can interact with users remotely through a computer
+network, you should also make sure that it provides a way for users to
+get its source.  For example, if your program is a web application, its
+interface could display a "Source" link that leads users to an archive
+of the code.  There are many ways you could offer source, and different
+solutions will be better for different programs; see section 13 for the
+specific requirements.
 
-By submitting a contribution, you agree to these terms and authorize GM
-Wallet to use and commercialize it. In consideration of GM Wallet
-considering your submission, you hereby assign to GM Wallet, to the extent
-you own and may transfer them, all copyrights in the original material you
-submit, worldwide for their full term, including renewals and extensions.
-GM Wallet may use, reproduce, modify, publish, distribute, sublicense,
-sell, license commercially and enforce the assigned rights. GM Wallet need
-not accept or publish your contribution. You retain ownership of
-pre-existing work that you identify separately when submitting it.
-
-To the extent an assignment is unavailable, incomplete or ineffective, or
-your identified pre-existing material is needed to use the contribution,
-you grant GM Wallet a non-exclusive, worldwide, fully paid, royalty-free,
-transferable, sublicensable and irrevocable license for the duration of the
-rights you control to exercise those same rights, including proprietary
-licensing. You also grant GM Wallet and its sublicensees a worldwide,
-royalty-free patent license under claims you can license that are
-necessarily infringed by your contribution alone or as submitted with the
-project. Where legally permitted, you waive or agree not to assert moral
-rights to the extent needed for the authorized uses. Mandatory rights under
-applicable law remain effective.
-
-You may continue to use the original material you contributed under a
-perpetual, worldwide, royalty-free, non-exclusive license back from GM
-Wallet. This license back applies only to your own original contribution.
-Existing public rights in already licensed copies continue. GM Wallet may
-use and commercialize feedback freely. Copyright assignment covers
-copyrightable expression in submissions, subject to applicable law. No
-exclusive copyright in mere facts or ideas is claimed.
-
-19.3. Authority and third-party materials.
-
-Submit material that you own or have authority to license. Identify any
-third-party material, its source and license. You convey only the rights
-you control. If an employer or another person owns the contribution, you
-must have authority to submit it on their behalf and grant the rights
-described above. Do not submit confidential information that you lack
-permission to disclose.
-
-Submission itself constitutes acceptance, including when you submit through
-a commit, pull request, issue or comment. Earlier submissions remain
-subject to the terms that applied when they were made. For downstream
-modifications, see the opening paragraph of section 19.
-
-19.4. Submitting a released or deployed modification.
-
-When releasing, delivering or deploying a modified version, including a
-SaaS update, publish its complete corresponding source and send the exact
-revision upstream by that same time. Open or update a pull request against
-this project, or push to a dedicated branch here if you have write access.
-You may also post a public fork branch and its immutable commit ID in a
-project issue. If this repository cannot accept a pull request or issue
-from you, email that public branch URL and commit ID to info@gmwallet.app.
-Identify the release or deployment and link to its source. GM Wallet may
-decline or close the submission. An acknowledgement or merge is
-unnecessary. See sections 13 and 18 of this License.
+  You should also get your employer (if you work as a programmer) or school,
+if any, to sign a "copyright disclaimer" for the program, if necessary.
+For more information on this, and how to apply and follow the GNU AGPL, see
+<https://www.gnu.org/licenses/>.
