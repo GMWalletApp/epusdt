@@ -140,6 +140,18 @@ func seedChainTokens() {
 	if err := Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&defaults).Error; err != nil {
 		color.Red.Printf("[store_db] seed chain_tokens err=%s\n", err)
 	}
+	// ChainToken's GORM default replaces a false struct field with true.
+	// Set the flag explicitly on insert and preserve the merchant's choice on restart.
+	if err := Mdb.Exec(`INSERT INTO chain_tokens
+		(network, symbol, contract_address, decimals, enabled, created_at, updated_at)
+		VALUES (?, 'A7A5', ?, 6, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+		       (?, 'A7A5', ?, 6, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		ON CONFLICT(network, symbol) DO NOTHING`,
+		mdb.NetworkTron, "TLeVfrdym8RoJreJ23dAGyfJDygRtiWKBZ",
+		mdb.NetworkEthereum, "0x6fA0BE17e4beA2fCfA22ef89BF8ac9aab0AB0fc9",
+	).Error; err != nil {
+		color.Red.Printf("[store_db] seed A7A5 chain_tokens err=%s\n", err)
+	}
 }
 
 // seedRpcNodes inserts default RPC endpoints for each chain. Checks per

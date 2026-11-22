@@ -1,9 +1,16 @@
 package response
 
+// TokenDetails identifies the on-chain asset. Native assets without an identifier use an empty address.
+type TokenDetails struct {
+	ContractAddress string `json:"contract_address"`
+	Decimals        int    `json:"decimals"`
+}
+
 type NetworkTokenSupport struct {
-	Network     string   `json:"network" example:"tron"`
-	DisplayName string   `json:"display_name" example:"TRON"`
-	Tokens      []string `json:"tokens" example:"USDT,USDC"`
+	Network      string                  `json:"network" example:"tron"`
+	DisplayName  string                  `json:"display_name" example:"TRON"`
+	Tokens       []string                `json:"tokens" example:"USDT,USDC"`
+	TokenDetails map[string]TokenDetails `json:"token_details"`
 }
 
 type EpayPublicConfig struct {

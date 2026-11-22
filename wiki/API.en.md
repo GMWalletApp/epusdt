@@ -193,12 +193,22 @@ A placeholder has no address or token and an `actual_amount` of zero. Expiration
       {
         "network": "tron",
         "display_name": "TRON",
-        "tokens": ["TRX", "USDT"]
+        "tokens": ["A7A5", "TRX", "USDT"],
+        "token_details": {
+          "A7A5": {"contract_address": "TLeVfrdym8RoJreJ23dAGyfJDygRtiWKBZ", "decimals": 6},
+          "TRX": {"contract_address": "", "decimals": 6},
+          "USDT": {"contract_address": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "decimals": 6}
+        }
       },
       {
         "network": "solana",
         "display_name": "Solana",
-        "tokens": ["SOL", "USDC", "USDT"]
+        "tokens": ["SOL", "USDC", "USDT"],
+        "token_details": {
+          "SOL": {"contract_address": "", "decimals": 9},
+          "USDC": {"contract_address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "decimals": 6},
+          "USDT": {"contract_address": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "decimals": 6}
+        }
       }
     ],
     "site": {
@@ -223,7 +233,7 @@ A placeholder has no address or token and an `actual_amount` of zero. Expiration
       "enabled": false,
       "allow_tokens": ["USDC", "USDT0", "USDG"]
     },
-    "version": "v2.1.0"
+    "version": "0.0.0-dev"
   },
   "request_id": "b1344d70-ff19-4543-b601-37abfb3b3686"
 }

@@ -17,4 +17,4 @@ Identify the protocol supported by your plugin, including Dujiaoka plugins. Earl
 2. Query `GET /payments/gmpay/v1/config` for supported network/token pairs. For GMPay, omit both values if the buyer will select them at checkout.
 3. Check the signature against the [merchant API examples](API.en.md). Test order creation, the browser redirect, and the signed merchant notification. Accept repeated notifications idempotently and acknowledge success with HTTP 200 and `ok` or `success`.
 
-For deployments also changing their data directories or database engine, follow the [upgrade notes](../README.md#installation-and-upgrades).
+For deployments also changing their data directories or database engine, follow the [upgrade notes](https://epusdt.com/guide/installation/docker).

@@ -44,6 +44,7 @@ func buildSupportedAssets() ([]response.NetworkTokenSupport, error) {
 			continue
 		}
 		symbols := make([]string, 0, len(tokens))
+		details := make(map[string]response.TokenDetails, len(tokens))
 		for _, t := range tokens {
 			if !service.ChainTokenReadyForPayment(t) {
 				continue
@@ -53,6 +54,7 @@ func buildSupportedAssets() ([]response.NetworkTokenSupport, error) {
 				continue
 			}
 			symbols = append(symbols, sym)
+			details[sym] = response.TokenDetails{ContractAddress: t.ContractAddress, Decimals: t.Decimals}
 		}
 		if len(symbols) == 0 {
 			continue
@@ -63,9 +65,10 @@ func buildSupportedAssets() ([]response.NetworkTokenSupport, error) {
 			displayName = network
 		}
 		supports = append(supports, response.NetworkTokenSupport{
-			Network:     network,
-			DisplayName: displayName,
-			Tokens:      symbols,
+			Network:      network,
+			DisplayName:  displayName,
+			Tokens:       symbols,
+			TokenDetails: details,
 		})
 	}
 
