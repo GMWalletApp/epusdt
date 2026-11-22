@@ -16,7 +16,7 @@
 </p>
 
 <p>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GM_Wallet_Community_1.0-blue" alt="GM Wallet Community License 1.0"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GM_Wallet_Community_2.0-blue" alt="GM Wallet Community License 2.0"></a>
   <a href="https://github.com/GMWalletApp/epusdt/releases/latest"><img src="https://img.shields.io/github/v/release/GMWalletApp/epusdt?color=brightgreen" alt="GitHub release"></a>
   <a href="https://hub.docker.com/r/gmwallet/epusdt"><img src="https://img.shields.io/badge/Docker-gmwallet%2Fepusdt-2496ED?logo=docker&logoColor=white" alt="Docker Hub"></a>
 </p>
@@ -69,9 +69,9 @@ Read https://epusdt.com/agent-setup/prompt.md. Inspect my target environment fir
 
 ## Audit and license
 
-[VectorBits audit report (May 2026)](https://github.com/VectorBits/audit/blob/main/epusdt-secure-audit-report-2026-05-14.pdf) · [GM Wallet Community License 1.0](LICENSE)
+[VectorBits audit report (May 2026)](https://github.com/VectorBits/audit/blob/main/epusdt-secure-audit-report-2026-05-14.pdf) · [GM Wallet Community License 2.0](LICENSE)
 
-Companies whose combined worldwide revenue with their affiliates is above USD 1,000,000 over the preceding 12 months must obtain a paid license, even if they operate at a loss. At or below that threshold, commercial use is permitted under the community license. Distributors must provide corresponding source. [Commercial licensing](https://github.com/GMWalletApp/epusdt/issues/new)
+Companies whose worldwide revenue with affiliates strictly exceeds USD 1,000,000 over the preceding 12 months need a paid license, including loss-making groups. Under the community terms, release, delivery or operational deployment of a modified version requires free public access to its exact corresponding source, prominent attribution and an original-project link. Separate written commercial terms may apply. [License](LICENSE) · [Contributor terms](CONTRIBUTING.md) · [info@gmwallet.app](mailto:info@gmwallet.app)
 
 <details>
 <summary>Disclaimer and Terms of Use</summary>

@@ -12,6 +12,6 @@ Read https://epusdt.com/agent-setup/prompt.md. Inspect my target environment fir
 
 [Read the deployment checklist](https://epusdt.com/agent-setup/prompt.md)
 
-[GM Wallet Community License 1.0](LICENSE)
+[GM Wallet Community License 2.0](LICENSE)
 
-Companies whose combined worldwide revenue with their affiliates is above USD 1,000,000 over the preceding 12 months must obtain a paid license, even if they operate at a loss. At or below that threshold, commercial use is permitted under the community license. Distributors must provide corresponding source. [Commercial licensing](https://github.com/GMWalletApp/epusdt/issues/new)
+Companies whose worldwide revenue with affiliates strictly exceeds USD 1,000,000 over the preceding 12 months need a paid license, including loss-making groups. Under the community terms, release, delivery or operational deployment of a modified version requires free public access to its exact corresponding source, prominent attribution and an original-project link. Separate written commercial terms may apply. [License](LICENSE) · [Contributor terms](CONTRIBUTING.md) · [info@gmwallet.app](mailto:info@gmwallet.app)

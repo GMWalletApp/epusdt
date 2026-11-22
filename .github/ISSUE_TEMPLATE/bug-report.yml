@@ -109,3 +109,11 @@ body:
       placeholder: 其他你认为有帮助的信息（可选）
     validations:
       required: false
+  - type: input
+    id: contributor-signature
+    attributes:
+      label: Contributor signature
+      description: "By typing your full name and the entity you represent (or 'myself'), you electronically sign the [GM Wallet Contributor Terms 2.0](https://github.com/GMWalletApp/epusdt/blob/HEAD/CONTRIBUTING.md) for this submission."
+      placeholder: Full name, for myself or legal entity
+    validations:
+      required: true
