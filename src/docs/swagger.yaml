@@ -1332,7 +1332,6 @@ definitions:
         type: string
     required:
     - currency
-    - notify_url
     - signature
     type: object
   request.ManualPaymentRequest:
@@ -3074,12 +3073,15 @@ paths:
       - Admin Notifications
   /admin/api/v1/orders:
     get:
-      description: Returns paginated orders with optional filters
+      description: Returns one row per merchant order with the actual settlement details
       parameters:
-      - description: Network filter
+      - collectionFormat: multi
+        description: Settlement network filter
         in: query
+        items:
+          type: string
         name: network
-        type: string
+        type: array
       - description: Token filter
         in: query
         name: token
@@ -3092,10 +3094,13 @@ paths:
         in: query
         name: keyword
         type: string
-      - description: Order status filter
+      - collectionFormat: multi
+        description: Order status filter
         in: query
+        items:
+          type: integer
         name: status
-        type: integer
+        type: array
       - description: Start time (Unix seconds)
         in: query
         name: start_at
@@ -3137,7 +3142,8 @@ paths:
       - Admin Orders
   /admin/api/v1/orders/{trade_id}:
     get:
-      description: Returns full order detail by trade_id
+      description: Returns settlement details for a merchant order or the individual
+        payment attempt for a child trade ID
       parameters:
       - description: Trade ID
         in: path
@@ -3286,10 +3292,13 @@ paths:
     get:
       description: Stream matching orders as a CSV file (max 10k rows)
       parameters:
-      - description: Network filter
+      - collectionFormat: multi
+        description: Settlement network filter
         in: query
+        items:
+          type: string
         name: network
-        type: string
+        type: array
       - description: Token filter
         in: query
         name: token
@@ -3302,10 +3311,13 @@ paths:
         in: query
         name: keyword
         type: string
-      - description: Order status filter
+      - collectionFormat: multi
+        description: Order status filter
         in: query
+        items:
+          type: integer
         name: status
-        type: integer
+        type: array
       - description: Start time (Unix seconds)
         in: query
         name: start_at
@@ -3332,13 +3344,16 @@ paths:
       - Admin Orders
   /admin/api/v1/orders/list-with-sub:
     get:
-      description: Returns paginated orders; each item embeds its child orders in
-        sub_orders
+      description: Returns one row per merchant order with settlement details and
+        all payment attempts in sub_orders
       parameters:
-      - description: Network filter
+      - collectionFormat: multi
+        description: Settlement network filter
         in: query
+        items:
+          type: string
         name: network
-        type: string
+        type: array
       - description: Token filter
         in: query
         name: token
@@ -3351,10 +3366,13 @@ paths:
         in: query
         name: keyword
         type: string
-      - description: Order status filter
+      - collectionFormat: multi
+        description: Order status filter
         in: query
+        items:
+          type: integer
         name: status
-        type: integer
+        type: array
       - description: Start time (Unix seconds)
         in: query
         name: start_at
@@ -4031,7 +4049,7 @@ paths:
         in: query
         name: out_trade_no
         type: string
-      - description: Callback URL (GET query)
+      - description: Callback URL (defaults to the merchant API key setting)
         in: query
         name: notify_url
         type: string
@@ -4071,10 +4089,9 @@ paths:
         name: out_trade_no
         required: true
         type: string
-      - description: Callback URL
+      - description: Callback URL (defaults to the merchant API key setting)
         in: formData
         name: notify_url
-        required: true
         type: string
       - description: Redirect URL after payment
         in: formData
@@ -4137,7 +4154,7 @@ paths:
         in: query
         name: out_trade_no
         type: string
-      - description: Callback URL (GET query)
+      - description: Callback URL (defaults to the merchant API key setting)
         in: query
         name: notify_url
         type: string
@@ -4177,10 +4194,9 @@ paths:
         name: out_trade_no
         required: true
         type: string
-      - description: Callback URL
+      - description: Callback URL (defaults to the merchant API key setting)
         in: formData
         name: notify_url
-        required: true
         type: string
       - description: Redirect URL after payment
         in: formData
@@ -4291,7 +4307,7 @@ paths:
         in: formData
         name: amount
         type: number
-      - description: Callback URL
+      - description: Callback URL (defaults to the merchant API key setting)
         in: formData
         name: notify_url
         type: string

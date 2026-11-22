@@ -2245,7 +2245,7 @@
                         "AdminJWT": []
                     }
                 ],
-                "description": "Returns paginated orders with optional filters",
+                "description": "Returns one row per merchant order with the actual settlement details",
                 "produces": [
                     "application/json"
                 ],
@@ -2255,8 +2255,12 @@
                 "summary": "List orders",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Network filter",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Settlement network filter",
                         "name": "network",
                         "in": "query"
                     },
@@ -2279,7 +2283,11 @@
                         "in": "query"
                     },
                     {
-                        "type": "integer",
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "collectionFormat": "multi",
                         "description": "Order status filter",
                         "name": "status",
                         "in": "query"
@@ -2356,8 +2364,12 @@
                 "summary": "Export orders as CSV",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Network filter",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Settlement network filter",
                         "name": "network",
                         "in": "query"
                     },
@@ -2380,7 +2392,11 @@
                         "in": "query"
                     },
                     {
-                        "type": "integer",
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "collectionFormat": "multi",
                         "description": "Order status filter",
                         "name": "status",
                         "in": "query"
@@ -2421,7 +2437,7 @@
                         "AdminJWT": []
                     }
                 ],
-                "description": "Returns paginated orders; each item embeds its child orders in sub_orders",
+                "description": "Returns one row per merchant order with settlement details and all payment attempts in sub_orders",
                 "produces": [
                     "application/json"
                 ],
@@ -2431,8 +2447,12 @@
                 "summary": "List orders with sub-orders",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Network filter",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Settlement network filter",
                         "name": "network",
                         "in": "query"
                     },
@@ -2455,7 +2475,11 @@
                         "in": "query"
                     },
                     {
-                        "type": "integer",
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "collectionFormat": "multi",
                         "description": "Order status filter",
                         "name": "status",
                         "in": "query"
@@ -2522,7 +2546,7 @@
                         "AdminJWT": []
                     }
                 ],
-                "description": "Returns full order detail by trade_id",
+                "description": "Returns settlement details for a merchant order or the individual payment attempt for a child trade ID",
                 "produces": [
                     "application/json"
                 ],
@@ -3727,7 +3751,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Callback URL (GET query)",
+                        "description": "Callback URL (defaults to the merchant API key setting)",
                         "name": "notify_url",
                         "in": "query"
                     },
@@ -3784,10 +3808,9 @@
                     },
                     {
                         "type": "string",
-                        "description": "Callback URL",
+                        "description": "Callback URL (defaults to the merchant API key setting)",
                         "name": "notify_url",
-                        "in": "formData",
-                        "required": true
+                        "in": "formData"
                     },
                     {
                         "type": "string",
@@ -3872,7 +3895,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Callback URL (GET query)",
+                        "description": "Callback URL (defaults to the merchant API key setting)",
                         "name": "notify_url",
                         "in": "query"
                     },
@@ -3929,10 +3952,9 @@
                     },
                     {
                         "type": "string",
-                        "description": "Callback URL",
+                        "description": "Callback URL (defaults to the merchant API key setting)",
                         "name": "notify_url",
-                        "in": "formData",
-                        "required": true
+                        "in": "formData"
                     },
                     {
                         "type": "string",
@@ -4086,7 +4108,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Callback URL",
+                        "description": "Callback URL (defaults to the merchant API key setting)",
                         "name": "notify_url",
                         "in": "formData"
                     },
@@ -5925,7 +5947,6 @@
             "type": "object",
             "required": [
                 "currency",
-                "notify_url",
                 "signature"
             ],
             "properties": {
