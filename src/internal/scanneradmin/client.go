@@ -52,6 +52,19 @@ func request(ctx context.Context, conn config.ScannerConnection, method, path st
 	return res.StatusCode, err
 }
 
+// Progress reads the snapshot API shared by embedded and external scanners.
+// Keep each row intact so newer scanner fields reach the dashboard immediately.
+func Progress(ctx context.Context, c config.ScannerConnection) (json.RawMessage, error) {
+	var rows []json.RawMessage
+	if _, err := request(ctx, c, http.MethodGet, "progress", nil, &rows); err != nil {
+		return nil, err
+	}
+	if rows == nil {
+		return nil, errors.New("invalid ChainScanner progress snapshot")
+	}
+	return json.Marshal(rows) // One SSE data line, including for pretty-printed snapshots.
+}
+
 func Inventory(ctx context.Context, c config.ScannerConnection, network, use string) (scanner.RouteInventory, error) {
 	var nodes scanner.RouteInventory
 	_, err := request(ctx, c, "GET", "routes?"+url.Values{"network": {network}, "use": {use}}.Encode(), nil, &nodes)

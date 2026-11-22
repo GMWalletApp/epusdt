@@ -1409,6 +1409,31 @@
                 }
             }
         },
+        "/admin/api/v1/chainscanner/admin/progress/stream": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "description": "The progress event contains the same JSON array as GET /admin/progress. EPUSDT reads the configured scanner on connection and every five seconds. A scanner_error event indicates a temporarily unavailable snapshot. The stream stays open for recovery.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "ChainScanner"
+                ],
+                "summary": "Stream scanner progress by network",
+                "responses": {
+                    "200": {
+                        "description": "Server-sent events with progress snapshots or scanner errors",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/api/v1/chainscanner/heights/{network}": {
             "get": {
                 "security": [

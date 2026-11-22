@@ -1,17 +1,23 @@
 package route
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/GMWalletApp/epusdt/model/dao"
-	"github.com/GMWalletApp/epusdt/model/data"
-	"github.com/GMWalletApp/epusdt/model/mdb"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	scanner "github.com/GMWalletApp/ChainScanner"
+	"github.com/GMWalletApp/epusdt/config"
+	"github.com/GMWalletApp/epusdt/model/dao"
+	"github.com/GMWalletApp/epusdt/model/data"
+	"github.com/GMWalletApp/epusdt/model/mdb"
+	"github.com/labstack/echo/v4"
 )
 
 func TestScannerAdminBlacklistAndFallback(t *testing.T) {
@@ -65,6 +71,11 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	e.ServeHTTP(w, httptest.NewRequest("GET", base+"/admin/nodes", nil))
 	if w.Code == 200 {
 		t.Fatal("admin route accessible without JWT")
+	}
+	unauthedStream := httptest.NewRecorder()
+	e.ServeHTTP(unauthedStream, httptest.NewRequest("GET", base+"/admin/progress/stream", nil))
+	if unauthedStream.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated progress stream: %d", unauthedStream.Code)
 	}
 	var progress []struct {
 		Network, Status string
@@ -186,4 +197,73 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	call("GET", "/transactions/solana/invalid", "", 400)
 	call("GET", "/transactions/solana/invalid/strict", "", 400)
 	call("GET", "/heights/solana", "", 200)
+}
+
+func TestScannerProgressStreamRecoversAndCancelsUpstream(t *testing.T) {
+	const adminToken = "scanner-stream-private-admin-token"
+	var requests atomic.Int32
+	started, stopped := make(chan struct{}), make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/admin/progress" || r.Header.Get("Authorization") != "Bearer "+adminToken {
+			t.Errorf("unexpected scanner request to %s", r.URL.Path)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		switch requests.Add(1) {
+		case 1:
+			// A legacy scanner supplies only its historical fields.
+			fmt.Fprintln(w, `[
+				{"network":"base","cursor_height":7,"status":"ok"}
+			]`)
+		case 2:
+			http.Error(w, "upstream diagnostic: "+adminToken, http.StatusServiceUnavailable)
+		case 3:
+			fmt.Fprintln(w, `[{"network":"base","cursor_height":9,"status":"ok","scan_success_count":3,"scan_failure_count":1}]`)
+		default:
+			close(started)
+			<-r.Context().Done()
+			close(stopped)
+		}
+	}))
+	defer upstream.Close()
+	e := echo.New()
+	e.GET("/stream", scannerProgressStream(config.ScannerConnection{URL: upstream.URL, AdminToken: adminToken}, 5*time.Millisecond))
+	api := httptest.NewServer(e)
+	defer api.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, api.URL+"/stream", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := api.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") || resp.Header.Get("X-Accel-Buffering") != "no" {
+		t.Fatalf("stream response: %s, %v", resp.Status, resp.Header)
+	}
+	input := bufio.NewScanner(resp.Body)
+	for _, want := range []string{
+		"retry: 5000", "",
+		"event: progress", `data: [{"network":"base","cursor_height":7,"status":"ok"}]`, "",
+		"event: scanner_error", "data: {}", "",
+		"event: progress", `data: [{"network":"base","cursor_height":9,"status":"ok","scan_success_count":3,"scan_failure_count":1}]`, "",
+	} {
+		if !input.Scan() || input.Text() != want {
+			t.Fatalf("stream line = %q, want %q, err %v", input.Text(), want, input.Err())
+		}
+	}
+	select {
+	case <-started:
+	case <-ctx.Done():
+		t.Fatal("next scanner request did not start")
+	}
+	cancel()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("closing the dashboard left an upstream request active")
+	}
 }

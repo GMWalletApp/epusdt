@@ -1,6 +1,7 @@
 package route
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -64,6 +65,14 @@ func registerScannerAdmin(group *echo.Group, connection config.ScannerConnection
 		}
 		return c.JSON(200, report)
 	})
+	// @Summary Stream scanner progress by network
+	// @Description The progress event contains the same JSON array as GET /admin/progress. EPUSDT reads the configured scanner on connection and every five seconds. A scanner_error event indicates a temporarily unavailable snapshot. The stream stays open for recovery.
+	// @Tags ChainScanner
+	// @Security AdminJWT
+	// @Produce text/event-stream
+	// @Success 200 {string} string "Server-sent events with progress snapshots or scanner errors"
+	// @Router /admin/api/v1/chainscanner/admin/progress/stream [get]
+	scanner.GET("/admin/progress/stream", scannerProgressStream(connection, 5*time.Second))
 	for _, r := range []struct{ method, path string }{
 		// @Summary List blocked node hosts
 		// @Tags ChainScanner
@@ -268,5 +277,48 @@ func scannerForward(template string, connection config.ScannerConnection) echo.H
 		c.Response().WriteHeader(res.StatusCode)
 		_, err = io.Copy(c.Response(), res.Body)
 		return err
+	}
+}
+
+func scannerProgressStream(connection config.ScannerConnection, interval time.Duration) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		ctx := c.Request().Context()
+		out := c.Response()
+		out.Header().Set(echo.HeaderContentType, "text/event-stream; charset=utf-8")
+		out.Header().Set("Cache-Control", "no-store")
+		out.Header().Set("X-Accel-Buffering", "no")
+		out.WriteHeader(http.StatusOK)
+		controller := http.NewResponseController(out.Writer)
+		if _, err := fmt.Fprint(out, "retry: 5000\n\n"); err != nil {
+			return err
+		}
+		if err := controller.Flush(); err != nil {
+			return err
+		}
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			progress, err := scanneradmin.Progress(ctx, connection)
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err == nil {
+				_, err = fmt.Fprintf(out, "event: progress\ndata: %s\n\n", progress)
+			} else {
+				_, err = fmt.Fprint(out, "event: scanner_error\ndata: {}\n\n")
+			}
+			if err != nil {
+				return err
+			}
+			if err := controller.Flush(); err != nil {
+				return err
+			}
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-ticker.C:
+			}
+		}
 	}
 }

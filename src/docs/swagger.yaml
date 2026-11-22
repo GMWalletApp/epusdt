@@ -2562,6 +2562,24 @@ paths:
       summary: Get scanner progress by network
       tags:
       - ChainScanner
+  /admin/api/v1/chainscanner/admin/progress/stream:
+    get:
+      description: The progress event contains the same JSON array as GET /admin/progress.
+        EPUSDT reads the configured scanner on connection and every five seconds.
+        A scanner_error event indicates a temporarily unavailable snapshot. The stream
+        stays open for recovery.
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: Server-sent events with progress snapshots or scanner errors
+          schema:
+            type: string
+      security:
+      - AdminJWT: []
+      summary: Stream scanner progress by network
+      tags:
+      - ChainScanner
   /admin/api/v1/chainscanner/heights/{network}:
     get:
       parameters:
