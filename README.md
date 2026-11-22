@@ -16,7 +16,7 @@
 </p>
 
 <p>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-brightgreen" alt="GPLv3"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GM_Wallet_Community_1.0-blue" alt="GM Wallet Community License 1.0"></a>
   <a href="https://github.com/GMWalletApp/epusdt/releases/latest"><img src="https://img.shields.io/github/v/release/GMWalletApp/epusdt?color=brightgreen" alt="GitHub release"></a>
   <a href="https://hub.docker.com/r/gmwallet/epusdt"><img src="https://img.shields.io/badge/Docker-gmwallet%2Fepusdt-2496ED?logo=docker&logoColor=white" alt="Docker Hub"></a>
 </p>
@@ -69,16 +69,18 @@ Read https://epusdt.com/agent-setup/prompt.md. Inspect my target environment fir
 
 ## Audit and license
 
-[VectorBits audit report (May 2026)](https://github.com/VectorBits/audit/blob/main/epusdt-secure-audit-report-2026-05-14.pdf) · [GPLv3 license](LICENSE)
+[VectorBits audit report (May 2026)](https://github.com/VectorBits/audit/blob/main/epusdt-secure-audit-report-2026-05-14.pdf) · [GM Wallet Community License 1.0](LICENSE)
+
+Companies whose combined worldwide revenue with their affiliates is above USD 1,000,000 over the preceding 12 months must obtain a paid license, even if they operate at a loss. At or below that threshold, commercial use is permitted under the community license. Distributors must provide corresponding source. [Commercial licensing](https://github.com/GMWalletApp/epusdt/issues/new)
 
 <details>
 <summary>Disclaimer and Terms of Use</summary>
 
-EPusdt is developed and published by Good Morning Technology, LLC as free, open-source, non-profit, and non-custodial software for learning, research, and technical communication. Nothing in this project constitutes investment, financial, legal, tax, compliance, or any other professional advice, nor should it be interpreted as a guarantee regarding any asset, transaction outcome, revenue, fund safety, technical availability, or fitness for a particular purpose.
+EPusdt is developed and published by Good Morning Technology, LLC as source-available, non-custodial software under the project license. Nothing in this project constitutes investment, financial, legal, tax, compliance, or any other professional advice, nor should it be interpreted as a guarantee regarding any asset, transaction outcome, revenue, fund safety, technical availability, or fitness for a particular purpose.
 
 Good Morning Technology, LLC is an entity organized under United States law and will comply with applicable legal and regulatory obligations as required. Under U.S. regulatory frameworks, whether virtual currencies, digital assets, or related technical services constitute money transmission, a money services business (MSB), or another regulated activity generally depends on the specific business model, including whether the operator receives, holds, controls, or transmits funds or value, provides custody on behalf of users, or engages in exchange, payment, clearing, settlement, or other intermediary financial services.
 
-As a free, open-source, non-profit, and non-custodial software project, the source code, documentation, technical communication, and related development activities of EPusdt should not be interpreted as authorization, endorsement, control, participation, warranty, or commitment by Good Morning Technology, LLC or its contributors regarding any user's downstream use, modification, deployment, integration, distribution, or secondary development.
+Publishing the EPusdt source code and documentation and engaging in related development or technical communication do not constitute endorsement, control, participation, warranty, or commitment by Good Morning Technology, LLC or its contributors regarding any user's downstream use, modification, deployment, integration, distribution, or secondary development.
 
 Users independently determine how they use this project, for what purpose, and in what context. Good Morning Technology, LLC and its contributors cannot control, review, or restrict such conduct. Users are solely responsible for ensuring that their use, modification, deployment, integration, distribution, or derivative development complies with applicable laws, regulations, sanctions rules, and third-party rights in the relevant jurisdictions, and they bear all resulting risks, liabilities, and consequences.
 

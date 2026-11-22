@@ -16,7 +16,7 @@
 </p>
 
 <p>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-brightgreen" alt="GPLv3"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GM_Wallet_Community_1.0-blue" alt="GM Wallet Community License 1.0"></a>
   <a href="https://github.com/GMWalletApp/epusdt/releases/latest"><img src="https://img.shields.io/github/v/release/GMWalletApp/epusdt?color=brightgreen" alt="GitHub release"></a>
   <a href="https://hub.docker.com/r/gmwallet/epusdt"><img src="https://img.shields.io/badge/Docker-gmwallet%2Fepusdt-2496ED?logo=docker&logoColor=white" alt="Docker Hub"></a>
 </p>
@@ -69,16 +69,18 @@ A7A5 支持以下主网，需要商户按网络启用。
 
 ## 安全审计与许可
 
-[VectorBits 安全审计报告（2026 年 5 月）](https://github.com/VectorBits/audit/blob/main/epusdt-secure-audit-report-2026-05-14.pdf) · [GPLv3 开源协议](LICENSE)
+[VectorBits 安全审计报告（2026 年 5 月）](https://github.com/VectorBits/audit/blob/main/epusdt-secure-audit-report-2026-05-14.pdf) · [GM Wallet 社区许可 1.0](LICENSE)
+
+公司及其关联实体过去 12 个月的全球合计收入（抵销内部交易后）严格超过 100 万美元，须购买商业授权，即使公司亏损也适用。总收入等于或低于门槛时，可按社区许可商用。分发软件时须提供对应源码。 [申请商业授权](https://github.com/GMWalletApp/epusdt/issues/new)
 
 <details>
 <summary>免责声明及使用条款</summary>
 
-EPusdt 由 Good Morning Technology, LLC 以免费、开源、非盈利及非托管性质开发和披露，仅供学习、研究与技术交流使用。项目本身不构成投资、金融、法律、税务、合规或任何其他专业建议，也不应被视为对任何资产、交易结果、收益、资金安全、技术可用性或特定用途作出任何保证。
+EPusdt 由 Good Morning Technology, LLC 开发和发布，是一款按项目许可提供源代码的非托管软件。项目本身不构成投资、金融、法律、税务、合规或任何其他专业建议，也不应被视为对任何资产、交易结果、收益、资金安全、技术可用性或特定用途作出任何保证。
 
 Good Morning Technology, LLC 为依据美国法律设立的主体，并将在适用法律法规范围内履行相应合规义务。就美国监管框架而言，虚拟货币、数字资产及相关技术服务是否构成 money transmission、money services business（MSB）或其他受监管活动，通常取决于具体业务模式，包括项目方是否接收、持有、控制或传输资金或价值，是否代表用户托管资产，以及是否从事兑换、支付、清算、结算或其他中介性金融服务。
 
-作为免费、开源、非盈利、非托管的软件项目，EPusdt 的代码披露、文档说明、技术交流及相关开发活动，本身不应被理解为 Good Morning Technology, LLC 或其贡献者对任何用户后续使用、修改、部署、集成、分发或二次开发行为的授权、背书、控制、参与、保证或承诺。
+EPusdt 的代码披露、文档说明、技术交流及相关开发活动，本身不应被理解为 Good Morning Technology, LLC 或其贡献者对任何用户后续使用、修改、部署、集成、分发或二次开发行为的背书、控制、参与、保证或承诺。
 
 用户对本项目的实际使用方式、使用目的及后续行为由其自行决定，Good Morning Technology, LLC 及其贡献者无法控制、审查或限制该等行为。用户应自行确保其使用、修改、部署、集成、分发或二次开发行为符合所在地适用法律法规、监管要求、制裁规则及第三方权利，并独立承担由此产生的全部风险、责任与后果。
 
