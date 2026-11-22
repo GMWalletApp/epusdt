@@ -5304,6 +5304,14 @@
                 "network": {
                     "type": "string"
                 },
+                "scan_failure_count": {
+                    "description": "ScanFailureCount counts terminal range failures after provider failover.",
+                    "type": "integer"
+                },
+                "scan_success_count": {
+                    "description": "ScanSuccessCount counts committed scan ranges in the current watch period.",
+                    "type": "integer"
+                },
                 "status": {
                     "type": "string"
                 },

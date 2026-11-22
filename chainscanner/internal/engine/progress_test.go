@@ -1,10 +1,13 @@
 package engine
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/GMWalletApp/ChainScanner/internal/chains"
+	"github.com/GMWalletApp/ChainScanner/internal/feed"
 )
 
 func TestLagFollowsOldestOutstandingObservedTarget(t *testing.T) {
@@ -89,4 +92,59 @@ func TestProgressUsesContiguousCursorAndResetsWithLastWatch(t *testing.T) {
 	if p := get(); p.Status != "warming" || p.Target != nil {
 		t.Fatal(p)
 	}
+}
+
+func TestRangeCountsExcludeHeadPollsCancellationAndUnwatchedNetworks(t *testing.T) {
+	ctx := t.Context()
+	s, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	base := chains.Network{Name: "base"}
+	ConfigureNetworks(s, map[string]chains.Network{"base": base, "ethereum": {Name: "ethereum"}}, func(context.Context, string) (int64, error) { return 19, nil })
+	watches := []feed.Watch{{Network: "base", Address: wallet}}
+	if _, err := s.Subscribe(ctx, "pay", watches); err != nil {
+		t.Fatal(err)
+	}
+	check := func(want uint64) {
+		t.Helper()
+		rows, err := s.ScanProgress(ctx)
+		if err != nil || len(rows) != 2 {
+			t.Fatal(rows, err)
+		}
+		for _, r := range rows {
+			if r.ScanFailureCount != 0 || r.Network == "base" && r.ScanSuccessCount != want || r.Network == "ethereum" && r.ScanSuccessCount != 0 {
+				t.Fatalf("unexpected range counters: %+v", r)
+			}
+		}
+	}
+	if _, err := s.Step(ctx, base, &chain{height: 19}); err != nil {
+		t.Fatal(err)
+	}
+	check(0)
+	inFlight := &lateSource{entered: make(chan struct{}), release: make(chan struct{})}
+	run, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := s.Step(run, base, inFlight); done <- err }()
+	<-inFlight.entered
+	cancel()
+	close(inFlight.release)
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	check(0)
+	if _, err := s.Step(ctx, base, &chain{height: 20}); err != nil {
+		t.Fatal(err)
+	}
+	check(1)
+	if _, err := s.Subscribe(ctx, "pay", nil); err != nil {
+		t.Fatal(err)
+	}
+	check(0)
+	if _, err := s.Subscribe(ctx, "pay", watches); err != nil {
+		t.Fatal(err)
+	}
+	check(0)
 }

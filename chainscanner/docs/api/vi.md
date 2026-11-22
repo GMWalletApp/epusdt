@@ -396,6 +396,8 @@ admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protoco
 
 Trả về một dòng cho mỗi mạng đã cấu hình mà không gọi RPC. `target_height` đã tính độ sâu xác nhận, còn `cursor_height` là độ cao đã quét liên tục. `lag_ms` là thời gian chờ tối thiểu đã quan sát của một độ cao đủ điều kiện nhưng chưa quét xong. Dữ liệu quan sát được làm mới khi khởi động lại hoặc bắt đầu đợt theo dõi mới. Trạng thái là `warning` khi vượt 300.000 ms, ngược lại là `ok`. Độ trễ là null với `idle`, `warming` và `stale`.
 
+`scan_success_count` và `scan_failure_count` đếm số dải khối quét thành công và thất bại trong đợt theo dõi liên tục hiện tại. Mỗi dải có một kết quả sau khi thử các nút thay thế. Lần quét bù sau đó được tính riêng. Truy vấn chiều cao, kiểm tra nút, thời gian chờ và tác vụ bị hủy không tạo mẫu. Hai bộ đếm trở về 0 khi kết thúc đăng ký cuối cùng hoặc khởi động lại máy quét. Các phiên bản cũ không có hai trường này.
+
 <a id="test-one"></a>
 
 ### `POST /v1/admin/nodes/{id}/test`

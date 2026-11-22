@@ -394,6 +394,8 @@ admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protoco
 
 Returns one row per configured network. Reading this endpoint makes no RPC calls. `target_height` includes the configured confirmation depth. `cursor_height` is the last contiguous completed height. `lag_ms` is a lower bound on how long an observed eligible height has been waiting for that cursor. Samples are held in memory for the current watch period, at most 361 spaced at least five seconds apart. A restart starts a new observation window. Status is `warning` above 300,000 ms and `ok` otherwise. `idle`, `warming` and `stale` have null lag. A head becomes stale after five minutes or twice the poll interval, whichever is longer.
 
+`scan_success_count` and `scan_failure_count` count scan ranges completed or failed in the current uninterrupted watch period. Each range has one outcome after provider failover. Retrying a failed range later adds a new outcome. Head polls, node health probes, idle time and canceled work contribute no samples. Both counts start at zero and reset after the final watch ends or the scanner restarts. Older scanners omit both fields.
+
 <a id="test-one"></a>
 
 ### `POST /v1/admin/nodes/{id}/test`

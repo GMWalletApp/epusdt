@@ -9,11 +9,13 @@ import (
 // Each uninterrupted period with at least one watch owns its RPC connections.
 // Canceling the period also invalidates a late read from that generation.
 type demandPeriod struct {
-	started time.Time
-	heads   headHistory
-	active  context.Context
-	stop    context.CancelFunc
-	changed chan struct{}
+	started          time.Time
+	heads            headHistory
+	scanSuccessCount uint64
+	scanFailureCount uint64
+	active           context.Context
+	stop             context.CancelFunc
+	changed          chan struct{}
 }
 
 func (s *Store) periodLocked(network string) *demandPeriod {
@@ -30,6 +32,7 @@ func (s *Store) setDemandLocked(network string, active bool) {
 		return
 	}
 	p.heads = headHistory{}
+	p.scanSuccessCount, p.scanFailureCount = 0, 0
 	if active {
 		p.started = time.Now()
 		p.active, p.stop = context.WithCancel(context.Background())

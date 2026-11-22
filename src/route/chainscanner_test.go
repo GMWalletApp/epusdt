@@ -66,9 +66,16 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	if w.Code == 200 {
 		t.Fatal("admin route accessible without JWT")
 	}
-	var progress []struct{ Network, Status string }
+	var progress []struct {
+		Network, Status string
+		Success         *uint64 `json:"scan_success_count"`
+		Failure         *uint64 `json:"scan_failure_count"`
+	}
 	if err := json.Unmarshal([]byte(call("GET", "/admin/progress", "", 200)), &progress); err != nil || len(progress) != 1 || progress[0].Network != "solana" || progress[0].Status != "idle" {
 		t.Fatalf("scanner progress: %+v, %v", progress, err)
+	}
+	if p := progress[0]; p.Success == nil || p.Failure == nil || *p.Success != 0 || *p.Failure != 0 {
+		t.Fatalf("idle scanner counters: %+v", p)
 	}
 	const host = "provider.example"
 	for i, endpoint := range []string{"/admin/nodes", "/admin/nodes/fallback"} {

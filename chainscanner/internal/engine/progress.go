@@ -63,6 +63,10 @@ type ScanProgress struct {
 	Target  *int64 `json:"target_height"`
 	Cursor  *int64 `json:"cursor_height"`
 	LagMS   *int64 `json:"lag_ms"`
+	// ScanSuccessCount counts committed scan ranges in the current watch period.
+	ScanSuccessCount uint64 `json:"scan_success_count"`
+	// ScanFailureCount counts terminal range failures after provider failover.
+	ScanFailureCount uint64 `json:"scan_failure_count"`
 }
 
 func (h *headHistory) progress(network string, cursor int64, now time.Time, staleAfter time.Duration) ScanProgress {
@@ -115,6 +119,7 @@ func (s *Store) ScanProgress(ctx context.Context) ([]ScanProgress, error) {
 			}
 			staleAfter := max(lagWarning, 2*time.Duration(cfg.IntervalSeconds)*time.Second)
 			row = p.heads.progress(network, cursor, now, staleAfter)
+			row.ScanSuccessCount, row.ScanFailureCount = p.scanSuccessCount, p.scanFailureCount
 			if row.Status == "warming" && p.heads.last.at.IsZero() && now.Sub(p.started) > staleAfter {
 				row.Status = "stale"
 			}

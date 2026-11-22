@@ -394,6 +394,8 @@ admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protoco
 
 每条已配置网络返回一行。查看进度只读现有数据。`target_height` 是满足确认深度的目标高度，`cursor_height` 是连续扫完的高度。`lag_ms` 表示扫描器首次观测到尚未连续扫完的目标后，至少经过了多少毫秒。每个监听周期最多保留 361 个间隔至少 5 秒的样本，重启后重新观测。超过 300,000 毫秒为 `warning`，否则为 `ok`。无订阅 `idle`、等待样本 `warming`、链头过期 `stale` 时延迟为 null。链头过期阈值取 5 分钟和两个轮询周期中的较长者。
 
+`scan_success_count` 和 `scan_failure_count` 分别表示本次连续监听期间成功和失败的扫块区段次数。节点切换重试后每个区段只计一次结果，后续重新调度补扫会再计一次。高度查询、节点健康检查、空闲和取消均不计入。两个计数从零开始，在最后一个订阅结束或服务重启后归零。旧版服务省略这两个字段。
+
 <a id="test-one"></a>
 
 ### `POST /v1/admin/nodes/{id}/test`
