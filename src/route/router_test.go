@@ -24,6 +24,7 @@ import (
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/model/service"
 	"github.com/GMWalletApp/epusdt/util/constant"
+	apihttp "github.com/GMWalletApp/epusdt/util/http"
 	"github.com/GMWalletApp/epusdt/util/http_client"
 	"github.com/GMWalletApp/epusdt/util/log"
 	"github.com/GMWalletApp/epusdt/util/sign"
@@ -508,13 +509,7 @@ func TestCreateOrderGmpayV1PaymentTypeEpayUsesHMACSHA256(t *testing.T) {
 }
 
 func useRspErrorHTTPStatuses(e *echo.Echo) {
-	e.HTTPErrorHandler = func(err error, ctx echo.Context) {
-		if rspErr, ok := err.(*constant.RspError); ok {
-			_ = ctx.NoContent(rspErr.HttpStatus())
-			return
-		}
-		e.DefaultHTTPErrorHandler(err, ctx)
-	}
+	e.HTTPErrorHandler = apihttp.HandleError
 }
 
 // TestCreateOrderGmpayV1FormData verifies that the GMPAY create-transaction endpoint

@@ -15,7 +15,6 @@ import (
 	"github.com/GMWalletApp/epusdt/middleware"
 	"github.com/GMWalletApp/epusdt/route"
 	"github.com/GMWalletApp/epusdt/task"
-	"github.com/GMWalletApp/epusdt/util/constant"
 	luluHttp "github.com/GMWalletApp/epusdt/util/http"
 	"github.com/GMWalletApp/epusdt/util/log"
 	"github.com/labstack/echo/v4"
@@ -58,7 +57,7 @@ func HttpServerStart(frontend http.FileSystem) {
 	var err error
 	e := echo.New()
 	e.HideBanner = true
-	e.HTTPErrorHandler = customHTTPErrorHandler
+	e.HTTPErrorHandler = luluHttp.HandleError
 
 	MiddlewareRegister(e)
 	scanner, stopTasks := task.Start()
@@ -114,38 +113,4 @@ func MiddlewareRegister(e *echo.Echo) {
 		e.Use(echoMiddleware.Logger())
 	}
 	e.Use(middleware.RequestUUID())
-}
-
-func customHTTPErrorHandler(err error, e echo.Context) {
-	code := http.StatusInternalServerError
-	msg := "server error"
-	resp := &luluHttp.Response{
-		StatusCode: code,
-		Message:    msg,
-		RequestID:  e.Request().Header.Get(echo.HeaderXRequestID),
-	}
-	// echo.HTTPError carries a real HTTP status (401 for auth failures,
-	// 404 for missing routes, etc.). Propagate it instead of flattening
-	// everything to 200 — clients rely on the status code.
-	if he, ok := err.(*echo.HTTPError); ok {
-		resp.StatusCode = he.Code
-		if s, ok := he.Message.(string); ok {
-			resp.Message = s
-		} else if he.Message != nil {
-			resp.Message = http.StatusText(he.Code)
-		}
-		_ = e.JSON(he.Code, resp)
-		return
-	}
-	// Internal RspError: propagate Code as both the JSON status_code and
-	// the real HTTP status when it maps to one (400/401/...); business
-	// codes (>=1000) map to HTTP 400 so clients get a proper 4xx while
-	// still reading the granular code from the body.
-	if he, ok := err.(*constant.RspError); ok {
-		resp.StatusCode = he.Code
-		resp.Message = he.Msg
-		_ = e.JSON(he.HttpStatus(), resp)
-		return
-	}
-	_ = e.JSON(http.StatusInternalServerError, resp)
 }

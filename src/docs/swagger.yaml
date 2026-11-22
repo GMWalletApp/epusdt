@@ -4078,10 +4078,8 @@ paths:
       responses:
         "302":
           description: Redirect to checkout counter
-        "400":
-          description: 'Stable errno in status_code: 10009 invalid params, 10041 invalid
-            notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported
-            asset, 10003 no wallet, 10005 no amount channel'
+        "401":
+          description: Invalid merchant signature (status_code=401)
           schema:
             $ref: '#/definitions/response.ApiResponse'
       summary: Create transaction and redirect (EPAY compat)
@@ -4179,10 +4177,8 @@ paths:
       responses:
         "302":
           description: Redirect to checkout counter
-        "400":
-          description: 'Stable errno in status_code: 10009 invalid params, 10041 invalid
-            notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported
-            asset, 10003 no wallet, 10005 no amount channel'
+        "401":
+          description: Invalid merchant signature (status_code=401)
           schema:
             $ref: '#/definitions/response.ApiResponse'
       summary: Create transaction and redirect (EPAY compat)
@@ -4278,6 +4274,14 @@ paths:
         in: formData
         name: payment_type
         type: string
+      - description: Signed GMPay JSON callback version. Version 2 includes the payment
+          network.
+        enum:
+        - 1
+        - 2
+        in: formData
+        name: callback_version
+        type: integer
       produces:
       - application/json
       responses:
@@ -4295,6 +4299,10 @@ paths:
             invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014
             chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount
             channel'
+          schema:
+            $ref: '#/definitions/response.ApiResponse'
+        "401":
+          description: Invalid merchant signature (status_code=401)
           schema:
             $ref: '#/definitions/response.ApiResponse'
       summary: Create transaction

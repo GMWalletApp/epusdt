@@ -59,20 +59,39 @@ func (r *Resp) SucJsonPage(e echo.Context, data interface{}, pagination page.Pag
 	return r.SucJson(e, pageDate, message...)
 }
 
-// FailJson 失败json —  Propagates semantic HTTP status codes to the
-// wire. RspError.Code in the 4xx/5xx range is used directly; business
-// codes (>=1000) map to HTTP 400 with the specific code still visible
-// in the body's status_code field.
-func (r *Resp) FailJson(e echo.Context, err error) error {
-	rr := new(Response)
-	httpStatus := http.StatusBadRequest
-	var rspErr *constant.RspError
-	if errors.As(err, &rspErr) {
-		rr.StatusCode, rr.Message = rspErr.Render()
-		httpStatus = rspErr.HttpStatus()
-	} else {
-		rr.StatusCode, rr.Message = constant.ResolveErrno(err)
+// FailJson retains the v1 controller fallback for unclassified service errors.
+func (r *Resp) FailJson(ctx echo.Context, err error) error {
+	return writeError(ctx, err, constant.SystemErr.(*constant.RspError))
+}
+
+// HandleError formats errors returned by routes and middleware, including wrapped
+// errors. A handler that already wrote its response owns its body and headers.
+func HandleError(err error, ctx echo.Context) {
+	if writeErr := writeError(ctx, err, constant.InternalServerErr.(*constant.RspError)); writeErr != nil {
+		ctx.Logger().Error(writeErr)
 	}
-	rr.RequestID = e.Request().Header.Get(echo.HeaderXRequestID)
-	return r.Json(e, httpStatus, &rr)
+}
+
+func writeError(ctx echo.Context, err error, fallback *constant.RspError) error {
+	if ctx.Response().Committed {
+		return nil
+	}
+	status := fallback.HttpStatus()
+	body := Response{StatusCode: fallback.Code, Message: fallback.Msg,
+		RequestID: ctx.Request().Header.Get(echo.HeaderXRequestID)}
+	var framework *echo.HTTPError
+	var business *constant.RspError
+	switch {
+	case errors.As(err, &framework) && framework != nil:
+		status = framework.Code
+		body.StatusCode = status
+		body.Message = http.StatusText(status)
+		if msg, ok := framework.Message.(string); ok && status < 500 {
+			body.Message = msg
+		}
+	case errors.As(err, &business) && business != nil:
+		status = business.HttpStatus()
+		body.StatusCode, body.Message = business.Render()
+	}
+	return ctx.JSON(status, body)
 }

@@ -615,6 +615,8 @@ Epusdt 会按配置的 OkPay shop token 验证 OkPay 签名，成功后将对应
 
 ## status_code 返回状态码及含义
 
+按 HTTP 状态处理请求结果，按 JSON 中的数字 `status_code` 区分业务原因；排查问题时保留 `request_id`。v1 已分配的业务码含义固定。[机器可读的错误码清单](../src/docs/error-codes.json)
+
 | 状态码 | HTTP 状态 | 说明 |
 | --- | --- | --- |
 | `200` | 200 | 成功 |

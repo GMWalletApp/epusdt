@@ -3819,8 +3819,8 @@
                     "302": {
                         "description": "Redirect to checkout counter"
                     },
-                    "400": {
-                        "description": "Stable errno in status_code: 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel",
+                    "401": {
+                        "description": "Invalid merchant signature (status_code=401)",
                         "schema": {
                             "$ref": "#/definitions/response.ApiResponse"
                         }
@@ -3958,8 +3958,8 @@
                     "302": {
                         "description": "Redirect to checkout counter"
                     },
-                    "400": {
-                        "description": "Stable errno in status_code: 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel",
+                    "401": {
+                        "description": "Invalid merchant signature (status_code=401)",
                         "schema": {
                             "$ref": "#/definitions/response.ApiResponse"
                         }
@@ -4095,6 +4095,16 @@
                         "description": "Optional GMPay compatibility flag; include in signature when sent",
                         "name": "payment_type",
                         "in": "formData"
+                    },
+                    {
+                        "enum": [
+                            1,
+                            2
+                        ],
+                        "type": "integer",
+                        "description": "Signed GMPay JSON callback version. Version 2 includes the payment network.",
+                        "name": "callback_version",
+                        "in": "formData"
                     }
                 ],
                 "responses": {
@@ -4118,6 +4128,12 @@
                     },
                     "400": {
                         "description": "Stable errno in status_code: 10002 order ID conflict, 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel",
+                        "schema": {
+                            "$ref": "#/definitions/response.ApiResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid merchant signature (status_code=401)",
                         "schema": {
                             "$ref": "#/definitions/response.ApiResponse"
                         }

@@ -471,6 +471,8 @@ fail
 
 ## Application error codes
 
+Use the HTTP status for transport handling and the numeric `status_code` for business logic. Keep the `request_id` for support. Assigned business codes retain their meaning across v1 releases. [Machine-readable error catalog](../src/docs/error-codes.json)
+
 | Code | HTTP | Meaning |
 | --- | --- | --- |
 | `200` | 200 | Success |

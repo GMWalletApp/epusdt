@@ -50,8 +50,10 @@ func apiKeyFromContext(ctx echo.Context) *mdb.ApiKey {
 // @Param        redirect_url formData string false "Redirect URL"
 // @Param        name formData string false "Order name"
 // @Param        payment_type formData string false "Optional GMPay compatibility flag; include in signature when sent"
+// @Param        callback_version formData int false "Signed GMPay JSON callback version. Version 2 includes the payment network." Enums(1,2)
 // @Success      200 {object} response.ApiResponse{data=response.CreateTransactionResponse}
 // @Failure      400 {object} response.ApiResponse "Stable errno in status_code: 10002 order ID conflict, 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel"
+// @Failure      401 {object} response.ApiResponse "Invalid merchant signature (status_code=401)"
 // @Router       /payments/gmpay/v1/order/create-transaction [post]
 func (c *BaseCommController) CreateTransaction(ctx echo.Context) (err error) {
 	req := new(request.CreateTransactionRequest)
@@ -135,7 +137,7 @@ func (c *BaseCommController) SwitchNetwork(ctx echo.Context) (err error) {
 // @Param        sign formData string true "MD5 signature"
 // @Param        sign_type formData string false "Signature type (MD5)"
 // @Success      302 "Redirect to checkout counter"
-// @Failure      400 {object} response.ApiResponse "Stable errno in status_code: 10009 invalid params, 10041 invalid notify_url, 10004 invalid amount, 10014 chain disabled, 10016 unsupported asset, 10003 no wallet, 10005 no amount channel"
+// @Failure      401 {object} response.ApiResponse "Invalid merchant signature (status_code=401)"
 // @Router       /payments/epay/v1/order/create-transaction/submit.php [post]
 // @Router       /payments/epay/v1/order/create-transaction/submit.php [get]
 func (c *BaseCommController) CreateTransactionAndRedirect(ctx echo.Context) (err error) {

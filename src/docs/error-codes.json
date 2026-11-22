@@ -1,0 +1,198 @@
+{
+  "400": {
+    "http_status": 400,
+    "message": "system error"
+  },
+  "401": {
+    "http_status": 401,
+    "message": "signature verification failed"
+  },
+  "500": {
+    "http_status": 500,
+    "message": "server error"
+  },
+  "10001": {
+    "http_status": 400,
+    "message": "wallet address already exists"
+  },
+  "10002": {
+    "http_status": 400,
+    "message": "order already exists"
+  },
+  "10003": {
+    "http_status": 400,
+    "message": "no available wallet address"
+  },
+  "10004": {
+    "http_status": 400,
+    "message": "invalid payment amount"
+  },
+  "10005": {
+    "http_status": 400,
+    "message": "no available amount channel"
+  },
+  "10006": {
+    "http_status": 400,
+    "message": "rate calculation failed"
+  },
+  "10007": {
+    "http_status": 400,
+    "message": "block transaction already processed"
+  },
+  "10008": {
+    "http_status": 400,
+    "message": "order does not exist"
+  },
+  "10009": {
+    "http_status": 400,
+    "message": "failed to parse request params"
+  },
+  "10010": {
+    "http_status": 400,
+    "message": "order status already changed"
+  },
+  "10011": {
+    "http_status": 400,
+    "message": "exceeded maximum sub-order limit"
+  },
+  "10012": {
+    "http_status": 400,
+    "message": "cannot switch network on a sub-order"
+  },
+  "10013": {
+    "http_status": 400,
+    "message": "order is not awaiting payment"
+  },
+  "10014": {
+    "http_status": 400,
+    "message": "chain is not enabled"
+  },
+  "10016": {
+    "http_status": 400,
+    "message": "supported asset not found"
+  },
+  "10017": {
+    "http_status": 400,
+    "message": "payment provider is not enabled"
+  },
+  "10018": {
+    "http_status": 400,
+    "message": "payment provider configuration is incomplete"
+  },
+  "10019": {
+    "http_status": 400,
+    "message": "payment provider does not support this token or network"
+  },
+  "10020": {
+    "http_status": 400,
+    "message": "invalid rpc node purpose"
+  },
+  "10021": {
+    "http_status": 400,
+    "message": "invalid rpc node url"
+  },
+  "10022": {
+    "http_status": 400,
+    "message": "rpc node http url required"
+  },
+  "10023": {
+    "http_status": 400,
+    "message": "rpc node websocket url required"
+  },
+  "10024": {
+    "http_status": 400,
+    "message": "invalid rpc node type"
+  },
+  "10025": {
+    "http_status": 400,
+    "message": "invalid username or password"
+  },
+  "10026": {
+    "http_status": 400,
+    "message": "admin user disabled"
+  },
+  "10027": {
+    "http_status": 400,
+    "message": "admin unauthorized"
+  },
+  "10028": {
+    "http_status": 400,
+    "message": "admin user not found"
+  },
+  "10029": {
+    "http_status": 400,
+    "message": "old password incorrect"
+  },
+  "10030": {
+    "http_status": 400,
+    "message": "wallet not found"
+  },
+  "10031": {
+    "http_status": 400,
+    "message": "api key not found"
+  },
+  "10032": {
+    "http_status": 400,
+    "message": "rpc node not found"
+  },
+  "10033": {
+    "http_status": 400,
+    "message": "order callback not applicable"
+  },
+  "10034": {
+    "http_status": 400,
+    "message": "order notify url empty"
+  },
+  "10035": {
+    "http_status": 400,
+    "message": "resend callback failed"
+  },
+  "10036": {
+    "http_status": 400,
+    "message": "invalid notification config"
+  },
+  "10037": {
+    "http_status": 400,
+    "message": "invalid notification events"
+  },
+  "10038": {
+    "http_status": 400,
+    "message": "manual payment verification failed"
+  },
+  "10039": {
+    "http_status": 400,
+    "message": "manual payment only supports on-chain orders"
+  },
+  "10040": {
+    "http_status": 400,
+    "message": "initial admin password unavailable, check from logs"
+  },
+  "10041": {
+    "http_status": 400,
+    "message": "invalid notify url"
+  },
+  "10042": {
+    "http_status": 400,
+    "message": "payment provider order creation failed"
+  },
+  "10043": {
+    "http_status": 400,
+    "message": "invalid setting item"
+  },
+  "10044": {
+    "http_status": 400,
+    "message": "invalid order redirect url"
+  },
+  "10045": {
+    "http_status": 400,
+    "message": "order api key unavailable"
+  },
+  "10046": {
+    "http_status": 400,
+    "message": "failed to build epay return signature"
+  },
+  "10049": {
+    "http_status": 400,
+    "message": "invalid receiving address for this network"
+  }
+}
