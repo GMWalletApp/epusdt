@@ -63,6 +63,44 @@ func TestValidateDownloadURL(t *testing.T) {
 	}
 }
 
+func TestParseSystemdUnit(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		cgroup      string
+		wantUnit    string
+		wantUserMgr bool
+	}{
+		{
+			name:     "system service",
+			cgroup:   "0::/system.slice/epusdt.service\n",
+			wantUnit: "epusdt.service",
+		},
+		{
+			name:        "user service uses leaf unit",
+			cgroup:      "0::/user.slice/user-1000.slice/user@1000.service/app.slice/epusdt-update.service\n",
+			wantUnit:    "epusdt-update.service",
+			wantUserMgr: true,
+		},
+		{
+			name:     "no service",
+			cgroup:   "0::/user.slice/user-1000.slice/session-1.scope\n",
+			wantUnit: "",
+		},
+		{
+			name:     "first line without service then system service",
+			cgroup:   "0::/user.slice/user-1000.slice/session-1.scope\n1::/system.slice/epusdt.service\n",
+			wantUnit: "epusdt.service",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			unit, userManager := parseSystemdUnit(tt.cgroup)
+			if unit != tt.wantUnit || userManager != tt.wantUserMgr {
+				t.Fatalf("parseSystemdUnit(%q) = (%q, %v), want (%q, %v)", tt.cgroup, unit, userManager, tt.wantUnit, tt.wantUserMgr)
+			}
+		})
+	}
+}
+
 func TestExtractBinaryFromArchive(t *testing.T) {
 	dir := t.TempDir()
 	archivePath := filepath.Join(dir, "epusdt.tar.gz")
