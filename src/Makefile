@@ -2,7 +2,7 @@ APP := epusdt
 TARGET_DIR := bin
 BUILD_TAG ?= 0.0.0-dev
 VERSION_PKG := github.com/GMWalletApp/epusdt/config
-LDFLAGS := -s -w -X $(VERSION_PKG).BuildVersion=$(BUILD_TAG)
+LDFLAGS := -s -w -X $(VERSION_PKG).BuildVersion=$(BUILD_TAG) -X $(VERSION_PKG).BuildType=source
 
 .PHONY: build release build-all swagger \
 	linux-amd64 linux-arm64 linux-armv7 \
@@ -12,7 +12,12 @@ LDFLAGS := -s -w -X $(VERSION_PKG).BuildVersion=$(BUILD_TAG)
 build:
 	go build --trimpath -ldflags="$(LDFLAGS)" -o $(TARGET_DIR)/$(APP) .
 
-release: build
+release:
+	@if ! printf '%s\n' "$(BUILD_TAG)" | grep -Eq '^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$$'; then \
+		echo "BUILD_TAG must be a stable semantic version such as v2.1.0" >&2; \
+		exit 1; \
+	fi
+	go build --trimpath -ldflags="-s -w -X $(VERSION_PKG).BuildVersion=$(BUILD_TAG) -X $(VERSION_PKG).BuildType=release" -o $(TARGET_DIR)/$(APP) .
 
 linux-amd64:
 	GOOS=linux GOARCH=amd64 go build --trimpath -ldflags="$(LDFLAGS)" -o $(TARGET_DIR)/$(APP)-linux-amd64 .

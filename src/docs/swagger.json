@@ -515,7 +515,19 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/response.ApiResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.ApiResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/selfupdate.Capability"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     }
                 }
@@ -3047,6 +3059,214 @@
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.ApiResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/system/update/capability": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin System"
+                ],
+                "summary": "Get update capability",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.ApiResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/selfupdate.State"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/system/update/start": {
+            "post": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin System"
+                ],
+                "summary": "Start system update",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.ApiResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/selfupdate.State"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/system/update/status": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin System"
+                ],
+                "summary": "Get update status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.ApiResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/system/version/current": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "description": "Report the running build version without contacting GitHub.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin System"
+                ],
+                "summary": "Confirm the running system version",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Version expected after update",
+                        "name": "target_version",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.ApiResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/admin.CurrentVersionResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/system/version/check": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "description": "Compare the running build version with the latest stable GitHub Release.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin System"
+                ],
+                "summary": "Check for a stable release",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.ApiResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/version.CheckResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ApiResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ApiResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/response.ApiResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/response.ApiResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
                         "schema": {
                             "$ref": "#/definitions/response.ApiResponse"
                         }
@@ -6520,28 +6740,89 @@
                 }
             }
         },
+        "admin.CurrentVersionResult": {
+            "type": "object",
+            "properties": {
+                "confirmed": {
+                    "type": "boolean"
+                },
+                "current_version": {
+                    "type": "string"
+                },
+                "target_version": {
+                    "type": "string"
+                }
+            }
+        },
         "scanneradmin.ConnectionInfo": {
             "type": "object",
             "properties": {
-                "embedded": {
-                    "type": "boolean"
-                },
-                "migration": {
-                    "type": "boolean"
-                },
-                "node_settings": {
-                    "type": "boolean"
-                },
+                "embedded": {"type": "boolean"},
+                "migration": {"type": "boolean"},
+                "node_settings": {"type": "boolean"},
                 "protocols": {
                     "type": "object",
                     "additionalProperties": {
                         "type": "array",
-                        "items": {
-                            "type": "string"
-                        }
+                        "items": {"type": "string"}
                     }
                 },
-                "target": {
+                "target": {"type": "string"}
+            }
+        },
+        "selfupdate.Capability": {
+            "type": "object",
+            "properties": {
+                "asset_name": {"type": "string"},
+                "block_reason": {"type": "string"},
+                "build_type": {"type": "string"},
+                "can_restart": {"type": "boolean"},
+                "can_update": {"type": "boolean"},
+                "deployment": {"type": "string"},
+                "exec_path": {"type": "string"},
+                "platform": {"type": "string"},
+                "supervisor": {"type": "string"}
+            }
+        },
+        "selfupdate.State": {
+            "type": "object",
+            "properties": {
+                "error": {"type": "string"},
+                "finished_at": {"type": "string"},
+                "percent": {"type": "integer"},
+                "restart_required": {"type": "boolean"},
+                "stage": {"type": "string"},
+                "started_at": {"type": "string"},
+                "status": {"type": "string"},
+                "target_version": {"type": "string"},
+                "timeout_seconds": {"type": "integer"}
+            }
+        },
+        "version.CheckResult": {
+            "type": "object",
+            "properties": {
+                "current_version": {
+                    "type": "string"
+                },
+                "has_update": {
+                    "type": "boolean"
+                },
+                "latest_version": {
+                    "type": "string"
+                },
+                "published_at": {
+                    "type": "string"
+                },
+                "release_name": {
+                    "type": "string"
+                },
+                "release_notes": {
+                    "type": "string"
+                },
+                "release_url": {
+                    "type": "string"
+                },
+                "source": {
                     "type": "string"
                 }
             }

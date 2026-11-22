@@ -54,6 +54,12 @@ var Errno = map[int]string{
 	10045: "order api key unavailable",
 	10046: "failed to build epay return signature",
 	10049: "invalid receiving address for this network",
+	404:   "no stable release available",
+	409:   "update already in progress",
+	429:   "GitHub API rate limit exceeded",
+	502:   "failed to check GitHub releases",
+	504:   "GitHub release check timed out",
+	422:   "one-click update is not supported",
 }
 
 var (
@@ -106,6 +112,13 @@ var (
 	OrderApiKeyUnavailableErr  = Err(10045)
 	EPayReturnSignatureErr     = Err(10046)
 	InvalidReceivingAddress    = Err(10049)
+	UpdateNoReleaseErr         = Err(404)
+	UpdateInProgressErr        = Err(409)
+	UpdateNotSupportedErr      = Err(422)
+	UpdateFailedErr            = Err(500)
+	UpdateRateLimitedErr       = Err(429)
+	UpdateCheckFailedErr       = Err(502)
+	UpdateCheckTimeoutErr      = Err(504)
 )
 
 type RspError struct {

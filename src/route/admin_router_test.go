@@ -233,6 +233,10 @@ func TestAdminProtectedRoute_NoToken(t *testing.T) {
 	e := setupTestEnv(t)
 	protectedRoutes := []string{
 		"/admin/api/v1/auth/me",
+		"/admin/api/v1/system/version/check",
+		"/admin/api/v1/system/version/current",
+		"/admin/api/v1/system/update/capability",
+		"/admin/api/v1/system/update/status",
 		"/admin/api/v1/api-keys",
 		"/admin/api/v1/chains",
 		"/admin/api/v1/wallets",
@@ -254,6 +258,10 @@ func TestAdminProtectedRoute_NoToken(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/admin/api/v1/settings/rate/refresh", strings.NewReader(`{}`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assertUnauthorized(t, rec)
+	req = httptest.NewRequest(http.MethodPost, "/admin/api/v1/system/update/start", nil)
+	rec = httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 	assertUnauthorized(t, rec)
 }

@@ -85,7 +85,84 @@ jobs:
 
           target_path="$GITHUB_WORKSPACE/$WWW_TARGET_DIR"
           mkdir -p "$target_path"
+
+          # Keep the backend-owned update checker while the private frontend
+          # build is synchronized. The public backend repository has no
+          # frontend source tree, so this small overlay must survive rsync
+          # --delete and remain part of the generated distribution.
+          overlay_path="$RUNNER_TEMP/epusdt-www-overlay"
+          mkdir -p "$overlay_path"
+          cp "$target_path/version-check.js" "$overlay_path/version-check.js"
+
           rsync -a --delete "$FRONTEND_BUILD_DIR"/ "$target_path"/
+
+          cp "$overlay_path/version-check.js" "$target_path/version-check.js"
+          python3 - "$target_path/index.html" <<'UPDATE_INDEX'
+          from pathlib import Path
+          import sys
+
+          index_path = Path(sys.argv[1])
+          content = index_path.read_text()
+          script_tag = '<script src="/version-check.js?v=2" defer></script>'
+          previous_script_tag = '<script src="/version-check.js" defer></script>'
+          content = content.replace(previous_script_tag, script_tag)
+          if script_tag not in content:
+              marker = "</body>"
+              if marker not in content:
+                  raise SystemExit("frontend index.html has no </body> marker")
+              content = content.replace(marker, f"\t\t{script_tag}\n{marker}", 1)
+              index_path.write_text(content)
+
+          UPDATE_INDEX
+
+          # The bundled frontend used to query GitHub directly for the
+          # sidebar badge. Disable that legacy query so all release checks go
+          # through the authenticated backend endpoint above.
+          python3 - "$target_path/assets" <<'UPDATE_ASSETS'
+          from hashlib import sha256
+          from pathlib import Path
+          import sys
+
+          assets_path = Path(sys.argv[1])
+          old = 'queryFn:async()=>{let e=await fetch(ke,{headers:{Accept:`application/vnd.github+json`}});if(e.status===404)return null;if(!e.ok)throw Error(`Failed to fetch latest release: ${e.status}`);return e.json()},retry:!1,staleTime:1e3*60*30'
+          new = 'enabled:!1,queryFn:async()=>null,retry:!1,staleTime:1e3*60*30'
+          old_url = ',ke=`https://api.github.com/repos/GMWalletApp/epusdt/releases/latest`,Z=`v1.0.1`'
+          new_url = ',Z=`v1.0.1`'
+          old_state = ',n=r({queryKey:[`epusdt`,`latest-release`],enabled:!1,queryFn:async()=>null,retry:!1,staleTime:1e3*60*30}),i=n.data?.tag_name,a=n.data?.html_url,o=e.data?.data?.version||Z,s=typeof i==`string`&&typeof a==`string`&&je(i,o)'
+          new_state = ',o=e.data?.data?.version||Z'
+          old_update_link = 's?(0,Y.jsx)(`a`,{className:`shrink-0 font-medium text-primary leading-none hover:text-primary/80`,href:a,rel:`noreferrer`,target:`_blank`,children:`更新`}):null'
+          direct_release_url = 'https://api.github.com/repos/GMWalletApp/epusdt/releases/latest'
+          changed_assets = []
+          for asset in assets_path.glob("*.js"):
+              content = asset.read_text()
+              updated = content.replace(old, new, 1).replace(old_url, new_url, 1)
+              updated = updated.replace(old_state, new_state, 1)
+              updated = updated.replace(old_update_link, "null", 1)
+              helpers_start = updated.find("function $(e){")
+              if helpers_start >= 0:
+                  helpers_end = updated.find("function Me()", helpers_start)
+                  if helpers_end < 0:
+                      raise SystemExit(f"legacy release helpers have no footer component in {asset}")
+                  updated = updated[:helpers_start] + updated[helpers_end:]
+              updated = updated.replace(",m as r,", ",", 1).replace(",h as r,", ",", 1)
+              if updated != content:
+                  asset.write_text(updated)
+                  changed_assets.append(asset)
+          remaining = [path for path in assets_path.glob("*.js") if direct_release_url in path.read_text() or old_update_link in path.read_text()]
+          if remaining:
+              raise SystemExit(f"frontend still contains the legacy GitHub update entry: {remaining}")
+          sw_path = assets_path.parent / "sw.js"
+          sw_content = sw_path.read_text()
+          for asset in changed_assets:
+              entry = f'url:"assets/{asset.name}",revision:null'
+              revision = sha256(asset.read_bytes()).hexdigest()
+              revised_entry = f'url:"assets/{asset.name}",revision:"{revision}"'
+              if entry in sw_content:
+                  sw_content = sw_content.replace(entry, revised_entry, 1)
+              elif revised_entry not in sw_content:
+                  raise SystemExit(f"service worker does not precache updated asset {asset.name}")
+          sw_path.write_text(sw_content)
+          UPDATE_ASSETS
 
       - name: Commit And Push
         run: |

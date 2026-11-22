@@ -14,7 +14,7 @@ ARG BUILD_DATE=unknown
 WORKDIR /app/src
 RUN go mod download
 RUN go build -trimpath \
-  -ldflags="-s -w -X github.com/GMWalletApp/epusdt/config.BuildVersion=${BUILD_VERSION} -X github.com/GMWalletApp/epusdt/config.BuildCommit=${BUILD_COMMIT} -X github.com/GMWalletApp/epusdt/config.BuildDate=${BUILD_DATE}" \
+  -ldflags="-s -w -X github.com/GMWalletApp/epusdt/config.BuildVersion=${BUILD_VERSION} -X github.com/GMWalletApp/epusdt/config.BuildCommit=${BUILD_COMMIT} -X github.com/GMWalletApp/epusdt/config.BuildDate=${BUILD_DATE} -X github.com/GMWalletApp/epusdt/config.BuildType=release" \
   -o /app/epusdt .
 
 WORKDIR /app/chainscanner
