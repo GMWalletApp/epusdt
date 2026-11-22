@@ -20,6 +20,15 @@ func GetCheckoutCounterByTradeId(tradeId string) (*response.CheckoutCounterRespo
 	if orderInfo.ID <= 0 {
 		return nil, ErrOrder
 	}
+	if orderInfo.ParentTradeId == "" && orderInfo.Status == mdb.StatusWaitPay {
+		child, err := data.SelectedCheckoutChild(orderInfo.TradeId)
+		if err != nil {
+			return nil, err
+		}
+		if child.ID != 0 {
+			orderInfo = child
+		}
+	}
 	resp := buildCheckoutResponse(orderInfo)
 	if orderInfo.PayProvider == mdb.PaymentProviderOkPay || orderInfo.PayProvider == mdb.PaymentProviderXLayer {
 		providerRow, rowErr := data.GetProviderOrderByTradeIDAndProvider(orderInfo.TradeId, orderInfo.PayProvider)

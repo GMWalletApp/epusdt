@@ -614,6 +614,27 @@ func TestCreateOrderGmpayV1PlaceholderWithoutTokenNetwork(t *testing.T) {
 	}
 }
 
+func TestGmpayCreationStoresSignedCallbackVersion(t *testing.T) {
+	e := setupTestEnv(t)
+	const path = "/payments/gmpay/v1/order/create-transaction"
+	body := map[string]interface{}{"order_id": "callback-format", "amount": 1.0, "currency": "cny", "notify_url": "https://93.184.216.34/notify", "callback_version": 2}
+	rec := doPost(e, path, signBody(body))
+	if rec.Code != http.StatusOK {
+		t.Fatal(rec.Body.String())
+	}
+	id := parseResp(t, rec)["data"].(map[string]interface{})["trade_id"].(string)
+	row, err := data.GetOrderInfoByTradeId(id)
+	if err != nil || row.CallbackVersion != 2 {
+		t.Fatal("callback version not stored", err)
+	}
+	body["order_id"] = "unsupported-format"
+	body["callback_version"] = 3
+	rec = doPost(e, path, signBody(body))
+	if rec.Code == http.StatusOK {
+		t.Fatal("unsupported callback version accepted")
+	}
+}
+
 func TestCreateOrderGmpayV1RejectsPartialTokenNetwork(t *testing.T) {
 	e := setupTestEnv(t)
 
@@ -761,6 +782,7 @@ func TestGMPaySignedReplayAfterCheckoutSelection(t *testing.T) {
 		errno  int
 	}{
 		{"other merchant", func(m map[string]interface{}) { m["pid"] = "1"; signBody(m) }, 10002},
+		{"different callback contract", func(m map[string]interface{}) { m["callback_version"] = 2; signBody(m) }, 10002},
 		{"different amount at same precision", func(m map[string]interface{}) { m["amount"] = 1.233; signBody(m) }, 10002},
 		{"checkout target submitted as original target", func(m map[string]interface{}) { m["token"] = "USDT"; m["network"] = "tron"; signBody(m) }, 10002},
 	} {

@@ -5876,6 +5876,14 @@
                     "type": "number",
                     "example": 100
                 },
+                "callback_version": {
+                    "description": "CallbackVersion 2 opts a GMPay merchant into the signed network field.",
+                    "type": "integer",
+                    "enum": [
+                        1,
+                        2
+                    ]
+                },
                 "currency": {
                     "description": "法币 如：cny",
                     "type": "string",

@@ -1281,6 +1281,13 @@ definitions:
       amount:
         example: 100
         type: number
+      callback_version:
+        description: CallbackVersion 2 opts a GMPay merchant into the signed network
+          field.
+        enum:
+        - 1
+        - 2
+        type: integer
       currency:
         description: 法币 如：cny
         example: cny

@@ -542,6 +542,50 @@ func TestSendOrderCallbackGmpayUsesApiKeySecretByPid(t *testing.T) {
 	}
 }
 
+func TestGmpaySettledChildCallbackVersions(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+	key := &mdb.ApiKey{Name: "merchant", Pid: "9009", SecretKey: "merchant-test-key", Status: mdb.ApiKeyStatusEnable}
+	if err := dao.Mdb.Create(key).Error; err != nil {
+		t.Fatal(err)
+	}
+	var received map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received = nil
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Error(err)
+		}
+		io.WriteString(w, "ok")
+	}))
+	defer server.Close()
+	order := &mdb.Orders{TradeId: "root", OrderId: "merchant-order", Amount: 10, ActualAmount: 9, Token: "TRX", Network: "tron", ReceiveAddress: "parent-wallet", NotifyUrl: server.URL, Status: mdb.StatusPaySuccess, ApiKeyID: key.ID}
+	child := &mdb.Orders{TradeId: "child", OrderId: "child", ParentTradeId: order.TradeId, ActualAmount: 3.75, Token: "USDC", Network: "ethereum", ReceiveAddress: "child-wallet", BlockTransactionId: "paid-tx", Status: mdb.StatusPaySuccess}
+	if err := dao.Mdb.Create(child).Error; err != nil {
+		t.Fatal(err)
+	}
+	order.PayBySubId = child.ID
+	for _, version := range []int{0, 1, 2} {
+		order.CallbackVersion = version
+		if err := sendOrderCallback(order); err != nil {
+			t.Fatal(err)
+		}
+		if received["order_id"] != order.OrderId || received["trade_id"] != order.TradeId || received["token"] != child.Token || received["receive_address"] != child.ReceiveAddress || received["block_transaction_id"] != child.BlockTransactionId || received["actual_amount"] != child.ActualAmount {
+			t.Fatal(received)
+		}
+		if network, ok := received["network"]; ok != (version == 2) || ok && network != child.Network {
+			t.Fatal("network version", received)
+		}
+		want, err := sign.GetHMACSHA256(received, key.SecretKey)
+		if err != nil || received["signature"] != want {
+			t.Fatal("signature mismatch", err)
+		}
+	}
+	order.PayBySubId++
+	if err := sendOrderCallback(order); err == nil {
+		t.Fatal("missing settlement child did not defer callback")
+	}
+}
+
 func TestSendOrderCallbackEpayUsesApiKeySecretByPid(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()

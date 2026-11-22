@@ -206,14 +206,7 @@ func TestProviderSwitchRenewsExistingOnChainReservation(t *testing.T) {
 	defer cleanup()
 	order := seedRenewalOrder(t)
 	if err := dao.Mdb.Transaction(func(tx *gorm.DB) error {
-		updated, err := MarkProviderSwitchParentSelectedWithTransaction(tx, order.TradeId)
-		if err != nil {
-			return err
-		}
-		if !updated {
-			return constant.OrderStatusConflict
-		}
-		return nil
+		return SelectCheckoutOrder(tx, order.TradeId, order, true)
 	}); err != nil {
 		t.Fatal(err)
 	}

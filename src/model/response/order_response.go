@@ -9,13 +9,14 @@ type CreateTransactionResponse struct {
 	ActualAmount   float64 `json:"actual_amount" example:"14.2857"`                                                 //  订单实际需要支付的金额，按 system.amount_precision 保留小数
 	ReceiveAddress string  `json:"receive_address" example:"TTestTronAddress001"`                                   //  收款钱包地址
 	Token          string  `json:"token" example:"USDT"`                                                            // 所属币种 TRX USDT......
-	Status         int     `json:"status" enums:"1,2,3,4,5,6" example:"1"`                                              // 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
+	Status         int     `json:"status" enums:"1,2,3,4,5,6" example:"1"`                                          // 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
 	ExpirationTime int64   `json:"expiration_time" example:"1713264600"`                                            // 过期时间 时间戳
 	PaymentUrl     string  `json:"payment_url" example:"https://pay.example.com/checkout/3nQ9pL2xV7sK1mR8cT4yB_aZ"` // 收银台地址
 }
 
 // OrderNotifyResponse 订单异步回调结构体
 type OrderNotifyResponse struct {
+	Network            string  `json:"network,omitempty" example:"ethereum"`                                                 // Included in GMPay callback version 2.
 	Pid                string  `json:"pid" example:"1000"`                                                                   //  签名使用的商户 PID，商户据此查本地 secret 验签
 	TradeId            string  `json:"trade_id" example:"3nQ9pL2xV7sK1mR8cT4yB_aZ"`                                          //  epusdt订单号
 	OrderId            string  `json:"order_id" example:"ORD20260416001"`                                                    //  客户交易id

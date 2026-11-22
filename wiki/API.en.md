@@ -138,6 +138,7 @@ function epaySign(array $params, string $secretKey): string
 | `notify_url` | string | Yes | Asynchronous success callback URL. |
 | `redirect_url` | string | No | Browser return URL. |
 | `name` | string | No | Product or order name. |
+| `callback_version` | integer | No | GMPay JSON format, default 1. Set to 2 and sign this field to receive the signed payment network. |
 | `payment_type` | string | No | Defaults to GMPay. EPay (case-insensitive) selects EPay callback format and requires a numeric PID. Include any nonempty value in the signature. |
 | `signature` | string | Yes | 64-character lowercase HMAC-SHA256 signature. |
 
@@ -404,7 +405,7 @@ EPUSDT notifies the order’s `notify_url` after successful payment. Verify the 
 
 ### GMPay
 
-GMPay sends JSON via POST. Look up the local merchant key by `pid` and verify the HMAC using the same canonicalization as order creation. The body omits `payment_type`.
+GMPay sends JSON via POST. Look up the local merchant key by `pid` and verify the HMAC using the same canonicalization as order creation. The body omits `payment_type`. With `callback_version=2`, the body includes `network` in the HMAC. For a switched order, the merchant order ID and trade ID identify the parent. The token, amount received, receiving address and transaction ID describe the settled payment.
 
 ```json
 {

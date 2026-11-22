@@ -220,17 +220,29 @@ func sendOrderCallback(order *mdb.Orders) error {
 
 	default:
 
+		settled := order
+		if order.PayBySubId != 0 {
+			var child mdb.Orders
+			if err := dao.Mdb.Where("id = ? AND parent_trade_id = ? AND status = ?", order.PayBySubId, order.TradeId, mdb.StatusPaySuccess).
+				Take(&child).Error; err != nil {
+				return err
+			}
+			settled = &child
+		}
 		client := http_client.GetHttpClient()
 		orderResp := response.OrderNotifyResponse{
 			Pid:                apiKeyRow.Pid,
 			TradeId:            order.TradeId,
 			OrderId:            order.OrderId,
 			Amount:             order.Amount,
-			ActualAmount:       order.ActualAmount,
-			ReceiveAddress:     order.ReceiveAddress,
-			Token:              order.Token,
-			BlockTransactionId: order.BlockTransactionId,
+			ActualAmount:       settled.ActualAmount,
+			ReceiveAddress:     settled.ReceiveAddress,
+			Token:              settled.Token,
+			BlockTransactionId: settled.BlockTransactionId,
 			Status:             mdb.StatusPaySuccess,
+		}
+		if order.CallbackVersion == 2 {
+			orderResp.Network = settled.Network
 		}
 		signature, err := sign.GetHMACSHA256(orderResp, apiKeyRow.SecretKey)
 		if err != nil {

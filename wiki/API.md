@@ -184,6 +184,7 @@ function epaySign(array $params, string $secretKey): string
 | `notify_url` | string | 是 | 支付成功异步回调地址。 |
 | `redirect_url` | string | 否 | 支付完成后的同步跳转地址。 |
 | `name` | string | 否 | 商品/订单名称。 |
+| `callback_version` | integer | 否 | GMPay JSON 回调版本，默认 1。创建订单时传 2 并将该参数计入签名，可收到含实际支付网络的签名回调。 |
 | `payment_type` | string | 否 | GMPay 兼容字段，不要求必须传；如果传了非空值，必须参与 GMPay `signature` 计算。普通 GMPay 不传时后台会存为 `Gmpay`；传 `Epay`（大小写不敏感）会统一存为 `Epay` 并使用 EPay 回调格式，且 PID 必须是数字。 |
 | `signature` | string | 是 | 64 位小写十六进制 GMPay HMAC-SHA256 签名。 |
 
@@ -536,7 +537,7 @@ EPay 接口解析 `type/token/network/currency` 的规则：
 
 ### GMPay 回调
 
-普通 GMPay 订单使用 POST JSON 回调。
+普通 GMPay 订单使用 POST JSON 回调。选择 `callback_version=2` 时，回调新增参与 HMAC 验签的 `network`。切网后的回调保留父订单交易号和商户订单号，代币、实付金额、收款地址和交易哈希取自实际入账的订单。
 
 ```json
 {

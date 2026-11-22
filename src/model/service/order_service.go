@@ -127,6 +127,9 @@ func gmpayCreateRequestHash(order *mdb.Orders, requestedAmount float64) string {
 		order.OrderId, order.Currency, strconv.FormatFloat(requestedAmount, 'g', -1, 64),
 		order.Token, order.Network, order.NotifyUrl, order.RedirectUrl, order.Name,
 	}
+	if order.CallbackVersion == 2 {
+		fields = append(fields, "callback_version=2")
+	}
 	payload, _ := json.Marshal(fields) // An array of strings always encodes.
 	return fmt.Sprintf("%x", sha256.Sum256(payload))
 }
@@ -198,6 +201,13 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 	if strings.EqualFold(req.PaymentType, mdb.PaymentTypeEpay) {
 		paymentType = mdb.PaymentTypeEpay
 	}
+	callbackVersion := req.CallbackVersion
+	if callbackVersion == 0 {
+		callbackVersion = 1
+	}
+	if callbackVersion != 1 && (callbackVersion != 2 || paymentType != mdb.PaymentTypeGmpay) {
+		return nil, constant.ParamsMarshalErr
+	}
 	epayType := ""
 	if paymentType == mdb.PaymentTypeEpay {
 		epayType = strings.TrimSpace(req.EpayType)
@@ -211,18 +221,19 @@ func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey
 	amountPrecision := data.GetAmountPrecision()
 	payAmount := math.MustParsePrecFloat64(req.Amount, amountPrecision)
 	order := &mdb.Orders{
-		OrderId:     req.OrderId,
-		Amount:      payAmount,
-		Currency:    currency,
-		Token:       token,
-		Network:     network,
-		NotifyUrl:   notifyURL,
-		RedirectUrl: redirectURL,
-		Name:        name,
-		EpayType:    epayType,
-		PaymentType: paymentType,
-		PayProvider: mdb.PaymentProviderOnChain,
-		ApiKeyID:    apiKeyID(apiKey),
+		OrderId:         req.OrderId,
+		Amount:          payAmount,
+		Currency:        currency,
+		Token:           token,
+		Network:         network,
+		NotifyUrl:       notifyURL,
+		RedirectUrl:     redirectURL,
+		Name:            name,
+		EpayType:        epayType,
+		PaymentType:     paymentType,
+		CallbackVersion: callbackVersion,
+		PayProvider:     mdb.PaymentProviderOnChain,
+		ApiKeyID:        apiKeyID(apiKey),
 	}
 	order.CreateRequestHash = gmpayCreateRequestHash(order, req.Amount)
 	if paymentType == mdb.PaymentTypeEpay && apiKeyID(apiKey) != 0 {
@@ -654,8 +665,9 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 
 	// 2. Same token+network as parent → mark selected and return
 	if strings.EqualFold(parent.Token, token) && strings.EqualFold(parent.Network, network) {
-		_ = data.MarkOrderSelected(parent.TradeId)
-		parent.IsSelected = true
+		if err := data.SelectCheckoutOrder(dao.Mdb, parent.TradeId, parent, false); err != nil {
+			return nil, err
+		}
 		return buildCheckoutResponse(parent), nil
 	}
 
@@ -665,12 +677,9 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 		return nil, err
 	}
 	if existing.ID > 0 {
-		if err = data.RefreshOrderExpiration(parent.TradeId); err != nil {
+		if err := data.SelectCheckoutOrder(dao.Mdb, parent.TradeId, existing, true); err != nil {
 			return nil, err
 		}
-		_ = data.MarkOrderSelected(parent.TradeId)
-		_ = data.MarkOrderSelected(existing.TradeId)
-		existing.IsSelected = true
 		return buildCheckoutResponse(existing), nil
 	}
 
@@ -736,7 +745,6 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 		Token:           token,
 		Network:         network,
 		Status:          mdb.StatusWaitPay,
-		IsSelected:      true,
 		NotifyUrl:       "",
 		RedirectUrl:     parent.RedirectUrl,
 		Name:            parent.Name,
@@ -751,7 +759,7 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 		_ = data.UnLockTransactionByTradeId(subTradeID)
 		return nil, err
 	}
-	if err = data.RefreshOrderExpirationWithTransaction(tx, parent.TradeId); err != nil {
+	if err = data.SelectCheckoutOrder(tx, parent.TradeId, subOrder, true); err != nil {
 		tx.Rollback()
 		_ = data.UnLockTransactionByTradeId(subTradeID)
 		return nil, err
@@ -761,9 +769,6 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 		_ = data.UnLockTransactionByTradeId(subTradeID)
 		return nil, err
 	}
-
-	// Parent expiration and its reservation were refreshed before the commit.
-	_ = data.MarkOrderSelected(parent.TradeId)
 
 	return buildCheckoutResponse(subOrder), nil
 }
@@ -944,15 +949,10 @@ func switchToOkPay(parent *mdb.Orders, token string) (*response.CheckoutCounterR
 		if providerRow.ID == 0 || strings.TrimSpace(providerRow.PayURL) == "" {
 			return nil, constant.SystemErr
 		}
-		if err = data.RefreshOrderExpiration(parent.TradeId); err != nil {
+		if err := data.SelectCheckoutOrder(dao.Mdb, parent.TradeId, parent, true); err != nil {
 			return nil, err
 		}
-		_ = data.MarkOrderSelected(parent.TradeId)
-		order, err := data.GetOrderInfoByTradeId(parent.TradeId)
-		if err != nil {
-			return nil, err
-		}
-		resp := buildCheckoutResponse(order)
+		resp := buildCheckoutResponse(parent)
 		resp.PaymentUrl = providerRow.PayURL
 		return resp, nil
 	}
@@ -969,15 +969,9 @@ func switchToOkPay(parent *mdb.Orders, token string) (*response.CheckoutCounterR
 		if providerRow.ID == 0 || strings.TrimSpace(providerRow.PayURL) == "" {
 			return nil, constant.SystemErr
 		}
-		updated, markErr := data.MarkProviderSwitchParentSelectedWithTransaction(dao.Mdb, parent.TradeId)
-		if markErr != nil {
-			return nil, markErr
+		if err := data.SelectCheckoutOrder(dao.Mdb, parent.TradeId, existing, true); err != nil {
+			return nil, err
 		}
-		if !updated {
-			return nil, constant.OrderStatusConflict
-		}
-		_ = data.MarkOrderSelected(existing.TradeId)
-		existing.IsSelected = true
 		resp := buildCheckoutResponse(existing)
 		resp.PaymentUrl = providerRow.PayURL
 		return resp, nil
@@ -1023,7 +1017,6 @@ func switchToOkPay(parent *mdb.Orders, token string) (*response.CheckoutCounterR
 		Token:           token,
 		Network:         mdb.NetworkTron,
 		Status:          mdb.StatusWaitPay,
-		IsSelected:      true,
 		NotifyUrl:       "",
 		RedirectUrl:     parent.RedirectUrl,
 		Name:            parent.Name,
@@ -1069,18 +1062,11 @@ func switchToOkPay(parent *mdb.Orders, token string) (*response.CheckoutCounterR
 		_ = data.ExpireOrderByTradeID(subTradeID)
 		return nil, err
 	}
-	updated, err := data.MarkProviderSwitchParentSelectedWithTransaction(finalizeTx, parent.TradeId)
-	if err != nil {
+	if err = data.SelectCheckoutOrder(finalizeTx, parent.TradeId, subOrder, true); err != nil {
 		finalizeTx.Rollback()
 		_ = data.MarkProviderOrderFailed(subTradeID, mdb.PaymentProviderOkPay)
 		_ = data.ExpireOrderByTradeID(subTradeID)
 		return nil, err
-	}
-	if !updated {
-		finalizeTx.Rollback()
-		_ = data.MarkProviderOrderFailed(subTradeID, mdb.PaymentProviderOkPay)
-		_ = data.ExpireOrderByTradeID(subTradeID)
-		return nil, constant.OrderStatusConflict
 	}
 	if err = finalizeTx.Commit().Error; err != nil {
 		finalizeTx.Rollback()
@@ -1213,13 +1199,10 @@ func switchToXLayer(parent *mdb.Orders, token string) (*response.CheckoutCounter
 		if providerRow.ID == 0 || strings.TrimSpace(providerRow.PayURL) == "" {
 			return nil, constant.SystemErr
 		}
-		_ = data.MarkOrderSelected(parent.TradeId)
-		_ = data.RefreshOrderExpiration(parent.TradeId)
-		order, err := data.GetOrderInfoByTradeId(parent.TradeId)
-		if err != nil {
+		if err := data.SelectCheckoutOrder(dao.Mdb, parent.TradeId, parent, true); err != nil {
 			return nil, err
 		}
-		resp := buildCheckoutResponse(order)
+		resp := buildCheckoutResponse(parent)
 		resp.PaymentUrl = providerRow.PayURL
 		return resp, nil
 	}
@@ -1236,15 +1219,9 @@ func switchToXLayer(parent *mdb.Orders, token string) (*response.CheckoutCounter
 		if providerRow.ID == 0 || strings.TrimSpace(providerRow.PayURL) == "" {
 			return nil, constant.SystemErr
 		}
-		updated, markErr := data.MarkProviderSwitchParentSelectedWithTransaction(dao.Mdb, parent.TradeId)
-		if markErr != nil {
-			return nil, markErr
+		if err := data.SelectCheckoutOrder(dao.Mdb, parent.TradeId, existing, true); err != nil {
+			return nil, err
 		}
-		if !updated {
-			return nil, constant.OrderStatusConflict
-		}
-		_ = data.MarkOrderSelected(existing.TradeId)
-		existing.IsSelected = true
 		resp := buildCheckoutResponse(existing)
 		resp.PaymentUrl = providerRow.PayURL
 		return resp, nil
@@ -1292,7 +1269,6 @@ func switchToXLayer(parent *mdb.Orders, token string) (*response.CheckoutCounter
 		Token:           normalizeXLayerToken(token),
 		Network:         mdb.PaymentProviderXLayer,
 		Status:          mdb.StatusWaitPay,
-		IsSelected:      true,
 		NotifyUrl:       "",
 		RedirectUrl:     parent.RedirectUrl,
 		Name:            parent.Name,
@@ -1339,14 +1315,7 @@ func switchToXLayer(parent *mdb.Orders, token string) (*response.CheckoutCounter
 		_ = data.ExpireOrderByTradeID(subTradeID)
 		return nil, err
 	}
-	updated, err := data.MarkProviderSwitchParentSelectedWithTransaction(finalizeTx, parent.TradeId)
-	if err != nil {
-		finalizeTx.Rollback()
-		_ = data.MarkProviderOrderFailed(subTradeID, mdb.PaymentProviderXLayer)
-		_ = data.ExpireOrderByTradeID(subTradeID)
-		return nil, err
-	}
-	if !updated {
+	if err = data.SelectCheckoutOrder(finalizeTx, parent.TradeId, subOrder, true); err != nil {
 		finalizeTx.Rollback()
 		_ = data.MarkProviderOrderFailed(subTradeID, mdb.PaymentProviderXLayer)
 		_ = data.ExpireOrderByTradeID(subTradeID)

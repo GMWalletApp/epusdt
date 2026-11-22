@@ -157,31 +157,49 @@ func TestSwitchNetworkReusingChildRenewsParentReservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := dao.Mdb.Model(&mdb.Orders{}).Where("trade_id = ?", parent.TradeId).
-		UpdateColumn("created_at", time.Now().Add(-9*time.Minute)).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := dao.RuntimeDB.Model(&mdb.TransactionLock{}).Where("trade_id = ?", parent.TradeId).
-		UpdateColumn("expires_at", time.Now().Add(time.Minute)).Error; err != nil {
-		t.Fatal(err)
+	for _, id := range []string{parent.TradeId, child.TradeId} {
+		if err := dao.Mdb.Model(&mdb.Orders{}).Where("trade_id = ?", id).
+			UpdateColumn("created_at", time.Now().Add(-9*time.Minute)).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := dao.RuntimeDB.Model(&mdb.TransactionLock{}).Where("trade_id = ?", id).
+			UpdateColumn("expires_at", time.Now().Add(time.Minute)).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	reused, err := SwitchNetwork(req)
-	if err != nil {
+	if err != nil || reused.TradeId != child.TradeId {
+		t.Fatalf("reuse: %+v, %v", reused, err)
+	}
+	for _, id := range []string{parent.TradeId, child.TradeId} {
+		var lock mdb.TransactionLock
+		if err := dao.RuntimeDB.Where("trade_id = ?", id).Take(&lock).Error; err != nil {
+			t.Fatal(err)
+		}
+		row, err := data.GetOrderInfoByTradeId(id)
+		if err != nil || row.IsSelected != (id == child.TradeId) || row.CreatedAt.StdTime().Before(time.Now().Add(-time.Minute)) || lock.ExpiresAt.Before(row.CreatedAt.StdTime().Add(10*time.Minute)) {
+			t.Fatalf("inconsistent selection or reservation for %s: %v", id, err)
+		}
+	}
+	// A historical database may have both records marked selected.
+	if err := dao.Mdb.Model(&mdb.Orders{}).Where("trade_id = ?", parent.TradeId).Update("is_selected", true).Error; err != nil {
 		t.Fatal(err)
 	}
-	if reused.TradeId != child.TradeId {
-		t.Fatal("switch created another child instead of reusing it")
+	resumed, err := GetCheckoutCounterByTradeId(parent.TradeId)
+	if err != nil || resumed.TradeId != child.TradeId || resumed.ExpirationTime != reused.ExpirationTime {
+		t.Fatalf("resume child: %+v, %v", resumed, err)
 	}
-	var lock mdb.TransactionLock
-	if err := dao.RuntimeDB.Where("trade_id = ?", parent.TradeId).Take(&lock).Error; err != nil {
+	req.Network = mdb.NetworkTron
+	if _, err := SwitchNetwork(req); err != nil {
 		t.Fatal(err)
 	}
-	refreshed, err := data.GetOrderInfoByTradeId(parent.TradeId)
-	if err != nil {
-		t.Fatal(err)
+	resumed, err = GetCheckoutCounterByTradeId(parent.TradeId)
+	if err != nil || resumed.TradeId != parent.TradeId || !resumed.IsSelected {
+		t.Fatalf("resume parent: %+v, %v", resumed, err)
 	}
-	if lock.ExpiresAt.Before(refreshed.CreatedAt.StdTime().Add(10 * time.Minute)) {
-		t.Fatal("reusing a child extended the parent without its reservation")
+	unselected, err := data.GetOrderInfoByTradeId(child.TradeId)
+	if err != nil || unselected.IsSelected {
+		t.Fatal("stale child selection", err)
 	}
 }
 
