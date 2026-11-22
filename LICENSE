@@ -1,4 +1,4 @@
-GM Wallet Community License 2.1
+GM Wallet Community License 2.2
 
 This license is derived from the GNU Affero General Public License,
 version 3 (AGPLv3), and adds conditions on its scope and use, including
@@ -17,7 +17,7 @@ in source releases and forks; retain the Original Project URL.
 
 0. Definitions.
 
-  "This License" refers to the GM Wallet Community License, version 2.1.
+  "This License" refers to the GM Wallet Community License, version 2.2.
 
   "Copyright" also means copyright-like laws that apply to other kinds of
 works, such as semiconductor masks.
@@ -165,7 +165,7 @@ keep intact all notices stating that this License and any
 non-permissive terms added in accord with section 7 apply to the code;
 keep intact all notices of the absence of any warranty; and give all
 recipients a copy of this License and its accompanying Contributor Terms
-2.1 along with the Program.
+2.2 along with the Program.
 
   You may charge any price or no price for each copy that you convey,
 and you may offer support or warranty protection for a fee.
@@ -540,14 +540,15 @@ to collect a royalty for further conveying from those to whom you convey
 the Program, the only way you could satisfy both those terms and this
 License would be to refrain entirely from conveying the Program.
 
-13. Public source for modified versions and remote users.
+13. Public source, upstream submission and remote users.
 
 No later than the first time you release, deliver to another party, or
 deploy a modified version for operational use, publish its complete,
 machine-readable Corresponding Source under this License. Each subsequent
 modified version has the same obligation, including changes to a prior
 fork. Operational use includes internal production, a private or public
-network service, a hosted API and an on-chain deployment. A downloadable
+network service, software as a service (SaaS), a hosted API and an
+on-chain deployment. A downloadable
 binary, container, patch or source-only release counts as delivery.
 Private local development and testing under section 2 remains permitted.
 
@@ -561,6 +562,28 @@ release, delivery or deployment. The source must be available throughout
 the period you distribute or operate that version and for at least three
 years after your last release, delivery or operational use of it. Any
 longer obligation under section 6 continues to apply.
+
+By the same release, delivery or deployment deadline, also submit the
+exact modified revision to the original project identified by the Original
+Project URL. Push the revision to a dedicated branch in that repository
+if authorized, or open or update a pull request against that repository
+from a branch containing the changes. Alternatively, publish the changes
+on a dedicated branch of a public fork and submit the branch URL and
+immutable commit ID to the original project's issue tracker. If that
+repository cannot accept your pull request or issue, send the public
+branch URL and immutable commit ID to info@gmwallet.app. Identify the
+release or deployment and where its complete Corresponding Source can be
+obtained. Keep the public source available for the period specified above.
+
+Each distinct modified revision, including each SaaS update, must be
+submitted. An existing branch or pull request may be updated to identify
+successive revisions. Redeploying a previously submitted, identical
+revision requires no duplicate submission. Submission is complete when
+you have taken one of the steps above for the exact revision. GM Wallet
+may merge, decline, close or leave it unreviewed. No acknowledgement or
+merge is required, and closure does not require resubmission of the same
+revision. Publication of source and submission upstream are separate
+obligations. Section 18 governs express commercial exceptions.
 
 Prominently offer all users interacting with a modified version remotely,
 including users of a private service, free access to its Corresponding
@@ -646,7 +669,8 @@ license before further licensed use.
 
 A written commercial agreement with GM Wallet may replace this License
 for the rights and versions it expressly covers, or vary specified duties,
-including publication of source, attribution or grant-back. For
+including publication of source, upstream submission, attribution or
+grant-back. For
 supplemental agreements the unvaried terms continue to apply. Payment or
 a request alone grants no exception. Existing grants to other recipients
 and third-party rights remain effective. GM Wallet can license only those
@@ -669,8 +693,8 @@ non-exclusive, irrevocable, royalty-free, fully paid-up, transferable and
 sublicensable license for the duration of the applicable rights to use,
 copy, modify, create derivative works, perform, display, distribute,
 commercialize and relicense those modifications under community or
-proprietary commercial terms. This is a direct grant, including for forks
-never submitted upstream. It includes a sublicensable patent license to
+proprietary commercial terms. This grant takes effect at the section 13 trigger regardless of whether
+the modifier complies with the separate upstream submission obligation. It includes a sublicensable patent license to
 the extent of your essential patent claims as defined in section 11 for
 those modifications. This grant to GM Wallet survives termination of your
 own permissions. It does not transfer ownership of an unsubmitted fork.
@@ -678,7 +702,7 @@ own permissions. It does not transfer ownership of an unsubmitted fork.
 Anyone intentionally submitting contributions to an official GMWalletApp
 repository, including commits, patches, pull requests, issues, comments,
 reviews, documentation and attachments, agrees to the Contributor Terms
-set out in the accompanying CONTRIBUTING.md (version 2.1). By submitting,
+set out in the accompanying CONTRIBUTING.md (version 2.2). By submitting,
 you agree that GM Wallet may use and commercialize your contribution.
 Under those terms, you assign the copyright you control in the original
 material you contribute to GM Wallet and grant the fallback rights
