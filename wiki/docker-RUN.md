@@ -25,6 +25,8 @@ curl -fsS http://127.0.0.1:8000/payments/gmpay/v1/config
 
 Compose 将宿主机 `./runtime/epusdt` 挂载到容器的 `/app/runtime`。其中包含应用的 `.env`、业务库、运行库和内置扫描器数据库。项目根目录的 Compose 环境文件与此处的应用配置文件分别维护。
 
+使用包含本次前端内嵌修复的镜像时，设置 `EPUSDT_READ_ONLY=true` 可将网关容器根文件系统挂载为只读。`/app/runtime` 仍需可写，以保存配置、数据库和日志。从 v2.1.1 等需要解压 `www/` 的镜像升级时，先换用新版镜像，再启用此设置。
+
 从 v2.0.0 升级时，先停止旧服务，备份配置和数据库，**在重建旧容器之前**将数据迁移到新挂载目录。保留原备份，并核对配置中的数据库文件名。[升级说明](https://github.com/GMWalletApp/epusdt/releases/tag/v2.1.0)
 
 ## 使用独立扫描器

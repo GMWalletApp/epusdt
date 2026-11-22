@@ -26,6 +26,7 @@ services:
       dockerfile: Dockerfile
     image: gmwallet/epusdt:latest
     container_name: epusdt
+    read_only: ${EPUSDT_READ_ONLY:-false}
     restart: always
     ports:
       - "${EPUSDT_PORT:-8000}:8000"

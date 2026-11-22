@@ -197,7 +197,7 @@ Restart=always
 RestartSec=3
 ```
 
-`WorkingDirectory` 固定为 `/opt/epusdt`，因为程序会在二进制同级目录释放 `www/` 静态文件。
+`WorkingDirectory` 为 `/opt/epusdt`。网关直接从可执行文件提供前端资源。
 
 ## `init-password` 的含义
 
@@ -244,7 +244,7 @@ GET /admin/api/v1/auth/init-password
 - 下载真实 GitHub Release
 - 安装 `epusdt`
 - 若传入 `upgrade-tag`，验证 `upgrade --no-restart`、默认 `upgrade`、以及 `upgrade --prompt-restart` 的 `n/回车` 分支
-- 检查 `systemd` 服务、`www/index.html`、配置文件、日志、状态输出
+- 检查 `systemd` 服务、前端 HTTP 响应、配置文件、日志、状态输出
 - 验证 `init-password` 首次成功、修改管理员密码后再次请求返回 `10040`
 
 运行前提：
