@@ -114,6 +114,8 @@ func (c *BaseCommController) GetPublicConfig(ctx echo.Context) error {
 		SupportedAssets: supports,
 		Site: response.SitePublicConfig{
 			WithdrawalReminderEnabled: data.GetSettingBool(mdb.SettingKeyBrandWithdrawalReminder, true),
+			PaymentReminderTitle:      data.GetSettingString(mdb.SettingKeyBrandReminderTitle, ""),
+			PaymentReminderBody:       data.GetSettingString(mdb.SettingKeyBrandReminderBody, ""),
 			CashierName:               data.GetBrandCashierName(),
 			LogoURL:                   data.GetBrandLogoURL(),
 			WebsiteTitle:              data.GetBrandWebsiteTitle(),

@@ -1646,6 +1646,14 @@ definitions:
       logo_url:
         example: https://cdn.example.com/logo.png
         type: string
+      payment_reminder_body:
+        description: Optional plain text. {amount} inserts the formatted payment amount
+          and token.
+        type: string
+      payment_reminder_title:
+        description: Optional on-chain payment reminder title. Empty uses the checkout
+          language.
+        type: string
       support_link:
         example: https://example.com/support
         type: string
@@ -3181,7 +3189,7 @@ paths:
         okpay group keys: okpay.enabled, okpay.shop_id, okpay.shop_token, okpay.api_url, okpay.callback_url, okpay.return_url, okpay.timeout_seconds, okpay.allow_tokens.
         xlayer group keys: xlayer.enabled, xlayer.api_key, xlayer.api_secret, xlayer.passphrase, xlayer.to_address, xlayer.return_url, xlayer.timeout_seconds, xlayer.allow_tokens. The Onchain OS Payment base URL is fixed to https://web3.okx.com in code; any leftover xlayer.api_url row is ignored.
         rate group keys: rate.mode (fixed|auto, default fixed), rate.cache_ttl_seconds (10-86400, default 300), rate.forced_rate_list (JSON map, e.g. {"cny":{"usdt":0.14635,"ton":0.5}}; base/coin keys are normalized to lowercase; empty is restored to the built-in CNY USDT/USDC default), rate.api_url (optional; non-empty value must be a public http/https URL), rate.adjust_percent, rate.okx_c2c_enabled.
-        brand group keys: brand.checkout_name, brand.logo_url, brand.site_title, brand.success_copy, brand.support_url, brand.background_color, brand.background_image_url, brand.withdrawal_reminder_enabled. Legacy aliases brand.site_name, brand.page_title and brand.pay_success_text are also supported.
+        brand group keys: brand.checkout_name, brand.logo_url, brand.site_title, brand.success_copy, brand.support_url, brand.background_color, brand.background_image_url, brand.withdrawal_reminder_enabled, brand.payment_reminder_title, brand.payment_reminder_body. Legacy aliases brand.site_name, brand.page_title and brand.pay_success_text are also supported.
         system group keys: system.order_expiration_time, system.amount_precision (int, 2-6, default 2), system.log_level (debug|info|warn|error, default error).
       parameters:
       - description: Settings payload

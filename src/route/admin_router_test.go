@@ -2304,6 +2304,38 @@ func TestAdminSettings_WithdrawalReminder(t *testing.T) {
 	checkConfig(true)
 }
 
+func TestAdminSettings_PaymentReminderCopy(t *testing.T) {
+	e, token := setupAdminTestEnv(t)
+	for _, field := range []string{"payment_reminder_title", "payment_reminder_body"} {
+		for _, tc := range []struct {
+			group string
+			input interface{}
+			ok    bool
+			want  string
+		}{
+			{"brand", "  转账说明\n请核对 {amount}  ", true, "转账说明\n请核对 {amount}"},
+			{"system", "wrong group", false, "转账说明\n请核对 {amount}"},
+			{"brand", false, false, "转账说明\n请核对 {amount}"},
+			{"brand", "  ", true, ""},
+		} {
+			item := map[string]interface{}{"group": tc.group, "key": "brand." + field, "type": "string", "value": tc.input}
+			rec := doPutAdmin(e, "/admin/api/v1/settings", map[string]interface{}{"items": []interface{}{item}}, token)
+			row := assertOK(t, rec)["data"].([]interface{})[0].(map[string]interface{})
+			if row["ok"] != tc.ok {
+				t.Fatalf("%s save %v: %v", field, tc.input, row)
+			}
+			if err := data.ReloadSettings(); err != nil {
+				t.Fatal(err)
+			}
+			pub := assertOK(t, doGet(e, "/payments/gmpay/v1/config"))
+			site := pub["data"].(map[string]interface{})["site"].(map[string]interface{})
+			if site[field] != tc.want {
+				t.Fatalf("%s = %v, want %q", field, site[field], tc.want)
+			}
+		}
+	}
+}
+
 func TestAdminSettings_UpsertBrandReflectsInConfig(t *testing.T) {
 	e, token := setupAdminTestEnv(t)
 
