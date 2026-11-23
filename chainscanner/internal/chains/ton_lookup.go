@@ -45,7 +45,7 @@ func LocateTON(ctx context.Context, n Network, hash string) (TONLocation, error)
 	}
 	a, err := address.ParseRawAddr(h.Account)
 	if err != nil || len(a.Data()) != 32 {
-		return TONLocation{}, errTxData
+		return TONLocation{}, ErrTransactionData
 	}
 	lt, err := strconv.ParseUint(h.Lt, 10, 64)
 	if err != nil {
@@ -53,7 +53,7 @@ func LocateTON(ctx context.Context, n Network, hash string) (TONLocation, error)
 	}
 	sh, err := strconv.ParseUint(h.Block.Shard, 16, 64)
 	if err != nil || lt == 0 || sh == 0 || h.Master == 0 || h.Block.Seqno == 0 || h.Block.Workchain == nil || *h.Block.Workchain != a.Workchain() || !tlb.ShardID(sh).ContainsAddress(a) {
-		return TONLocation{}, errTxData
+		return TONLocation{}, ErrTransactionData
 	}
 	return TONLocation{a, lt, h.Master, h.Block.Seqno, int64(sh)}, nil
 }
@@ -77,7 +77,7 @@ func TONVoter(n Network) (host, identity string, ok bool) {
 
 func VerifyTON(ctx context.Context, n Network, hash string, loc TONLocation) (json.RawMessage, error) {
 	if _, _, ok := TONVoter(n); !ok {
-		return nil, errTxData
+		return nil, ErrTransactionData
 	}
 	src, err := newTON(ctx, n)
 	if err != nil {
@@ -93,7 +93,7 @@ func verifyLocatedTON(ctx context.Context, api ton.APIClientWrapped, hash string
 		return nil, err
 	}
 	if master.SeqNo != loc.master || master.Workchain != -1 || master.Shard != -1<<63 || len(master.RootHash) != 32 {
-		return nil, errTxData
+		return nil, ErrTransactionData
 	}
 	block := master
 	if loc.account.Workchain() != -1 {
@@ -103,7 +103,7 @@ func verifyLocatedTON(ctx context.Context, api ton.APIClientWrapped, hash string
 		}
 	}
 	if block.Workchain != loc.account.Workchain() || block.Shard != loc.shard || block.SeqNo != loc.seq {
-		return nil, errTxData
+		return nil, ErrTransactionData
 	}
 	// GetTransaction checks the Merkle proof against this block's root.
 	tx, err := api.GetTransaction(ctx, block, loc.account, loc.lt)
@@ -111,14 +111,14 @@ func verifyLocatedTON(ctx context.Context, api ton.APIClientWrapped, hash string
 		return nil, err
 	}
 	if hex.EncodeToString(tx.Hash) != hash || tx.LT != loc.lt || !bytes.Equal(tx.AccountAddr, loc.account.Data()) {
-		return nil, errTxData
+		return nil, ErrTransactionData
 	}
 	c, err := tlb.ToCell(tx)
 	if err != nil {
 		return nil, err
 	}
 	if !bytes.Equal(c.Hash(), tx.Hash) {
-		return nil, errTxData
+		return nil, ErrTransactionData
 	}
 	return json.Marshal(map[string]any{"account": loc.account.StringRaw(), "lt": strconv.FormatUint(tx.LT, 10), "hash": tx.Hash, "now": tx.Now, "mc_block_seqno": master.SeqNo, "mc_block_root_hash": master.RootHash, "block_root_hash": block.RootHash, "block_ref": map[string]any{"workchain": block.Workchain, "shard": strconv.FormatUint(uint64(block.Shard), 16), "seqno": block.SeqNo}, "transaction_boc": c.ToBOC()})
 }
@@ -140,7 +140,7 @@ func locatedShard(ctx context.Context, api ton.APIClientWrapped, master *ton.Blo
 		return nil, err
 	}
 	if prev.Workchain != -1 || prev.Shard != master.Shard || prev.SeqNo+1 != master.SeqNo {
-		return nil, errTxData
+		return nil, ErrTransactionData
 	}
 	old, err := api.GetBlockShardsInfo(ctx, prev)
 	if err != nil {
@@ -175,5 +175,5 @@ func locatedShard(ctx context.Context, api ton.APIClientWrapped, master *ton.Blo
 			return nil, err
 		}
 	}
-	return nil, errTxData
+	return nil, ErrTransactionData
 }

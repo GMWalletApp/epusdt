@@ -23,8 +23,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type StrictPair func(context.Context, string, string, string) (json.RawMessage, string, error)
-
 type StrictLookup func(context.Context, string, string) (json.RawMessage, error)
 
 // Installed during startup for subscription and manual on-chain payment checks.
@@ -87,10 +85,9 @@ func queueConfirmation(order *mdb.Orders, e scanner.Activity) error {
 	})
 }
 
-// ErrStrictRoundUnsupported marks a scanner response that may have already used both rounds.
-var ErrStrictRoundUnsupported = errors.New("scanner did not acknowledge single-round mode")
+// ErrTransactionNotFound means the scanner completed a chain lookup for this hash.
+var ErrTransactionNotFound = errors.New("transaction not found on chain")
 
-var errRoundLimit = errors.New("both strict rounds have been used")
 var errPaymentMismatch = errors.New("strict result does not match order")
 var errWaitingBlockDepth = errors.New("waiting for required block depth")
 
@@ -98,7 +95,7 @@ var errInactiveCandidate = errors.New("payment candidate no longer active")
 
 // Each worker claims one due transfer. A crash releases the claim at its deadline.
 // Failed lookups leave other orders and subsequent feed deliveries free to proceed.
-func RunPaymentConfirmations(ctx context.Context, feed scanner.Feed, lookup StrictPair) {
+func RunPaymentConfirmations(ctx context.Context, feed scanner.Feed, lookup StrictLookup) {
 	for ctx.Err() == nil {
 		worked, err := processDueConfirmation(ctx, feed, lookup)
 		if err != nil && ctx.Err() == nil {
@@ -115,7 +112,7 @@ func RunPaymentConfirmations(ctx context.Context, feed scanner.Feed, lookup Stri
 	}
 }
 
-func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup StrictPair) (bool, error) {
+func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup StrictLookup) (bool, error) {
 	db := dao.Mdb.WithContext(ctx)
 	var job mdb.PaymentConfirmation
 	now := time.Now()
@@ -133,44 +130,43 @@ func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup Stric
 	}
 	call, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	// Reserve a round before I/O. Crashes consume the reserved round. A saved
-	// quorum response can be replayed after a database or order-processing failure.
 	claimed := func() *gorm.DB {
 		return db.Model(&mdb.PaymentConfirmation{}).Where("id = ? AND retry_at = ?", job.ID, lease)
 	}
-	attempted := false
+	var lookupFailed bool
 	err = ConfirmPayment(call, feed, func(ctx context.Context, network, hash string) (json.RawMessage, error) {
 		if job.VerifiedResult != "" {
 			return json.RawMessage(job.VerifiedResult), nil
 		}
-		if job.Attempts >= 2 {
-			return nil, errRoundLimit
+		v, err := lookup(ctx, network, hash)
+		if err != nil {
+			lookupFailed = true
+			return nil, err
 		}
-		q := claimed().Where("attempts = ?", job.Attempts).Update("attempts", job.Attempts+1)
+		// Replay verified evidence after a transient settlement or storage error.
+		q := claimed().Update("verified_result", string(v))
 		if q.Error != nil {
 			return nil, q.Error
 		}
 		if q.RowsAffected != 1 {
 			return nil, errors.New("confirmation lease changed")
 		}
-		job.Attempts++
-		v, pair, readErr := lookup(ctx, network, hash, job.PreviousPair)
-		q = claimed().Updates(map[string]any{"previous_pair": pair, "verified_result": string(v)})
-		if q.Error != nil {
-			return nil, q.Error
-		}
-		if q.RowsAffected != 1 {
-			return nil, errors.New("confirmation lease changed")
-		}
-		attempted = readErr != nil
-		return v, readErr
+		return v, nil
 	}, job)
-	if job.SkipStrict && errors.Is(err, errPaymentMismatch) || errors.Is(err, ErrStrictRoundUnsupported) || errors.Is(err, errRoundLimit) || job.Attempts >= 2 && (attempted || errors.Is(err, errPaymentMismatch)) {
+	if errors.Is(err, ErrTransactionNotFound) || errors.Is(err, errPaymentMismatch) {
 		return true, markPaymentForReview(db, job, lease)
 	}
 	if err != nil && !errors.Is(err, errInactiveCandidate) {
-		if attempted || errors.Is(err, errPaymentMismatch) || errors.Is(err, errWaitingBlockDepth) {
-			if e := claimed().Updates(map[string]any{"verified_result": "", "retry_at": time.Now().Add(time.Second).UnixMilli()}).Error; e != nil {
+		if lookupFailed || errors.Is(err, errWaitingBlockDepth) {
+			delay := time.Second
+			updates := map[string]any{}
+			if lookupFailed {
+				// Back off to one minute, including for jobs created by older versions.
+				delay = min(time.Minute, time.Second<<min(max(job.Attempts, 0), 6))
+				updates["attempts"] = job.Attempts + 1
+			}
+			updates["retry_at"] = time.Now().Add(delay).UnixMilli()
+			if e := claimed().Updates(updates).Error; e != nil {
 				return false, e
 			}
 		}

@@ -1,0 +1,44 @@
+{
+  "transaction": {
+    "raw_data": {
+      "ref_block_bytes": "88ab",
+      "ref_block_hash": "5e990d124fbd1560",
+      "expiration": 1795413600000,
+      "contract": [
+        {
+          "parameter": {
+            "value": {
+              "owner_address": "41ca9ddce47b18d52210d702ffbbb2dff816c47f04",
+              "to_address": "419892a0b9ad6df0a2d55283d60f276923577082f9",
+              "amount": 800000
+            },
+            "type_url": "type.googleapis.com/protocol.TransferContract"
+          },
+          "type": "TransferContract"
+        }
+      ],
+      "timestamp": 1795413542680
+    },
+    "signature": [
+      "95fd167c2fc3aad5a36c22f9bdc41fb1aef78ccb8153707a62bef5dadd8948985adfcb7446b6325bbf59d50bf76a6c832ed50a4d8c0b4c413d6b0a1d4f01862301"
+    ],
+    "ret": [
+      {
+        "contractRet": "SUCCESS"
+      }
+    ],
+    "raw_data_hex": "0a0288ab22085e990d124fbd15604080cef5b7a0345a67080112630a2d747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e5472616e73666572436f6e747261637412320a1541ca9ddce47b18d52210d702ffbbb2dff816c47f041215419892a0b9ad6df0a2d55283d60f276923577082f91880ea3070988ef2b7a034",
+    "txID": "49e4554e65c4c29f827cdc1ecfbcbb42a8c49609058609bfcb2e4fd18735bb80"
+  },
+  "receipt": {
+    "id": "49e4554e65c4c29f827cdc1ecfbcbb42a8c49609058609bfcb2e4fd18735bb80",
+    "blockNumber": 88246463,
+    "blockTimeStamp": 1795413546000,
+    "contractResult": [
+      ""
+    ],
+    "receipt": {
+      "net_usage": 267
+    }
+  }
+}

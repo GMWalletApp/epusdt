@@ -1,0 +1,1 @@
+import{t as e}from"./general-error-qCPC30ku.js";var t=e;export{t as component};

@@ -1,0 +1,1 @@
+import{t as e}from"./forbidden-lh-9_msm.js";var t=e;export{t as component};
