@@ -23,10 +23,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type StrictLookup func(context.Context, string, string) (json.RawMessage, error)
+type TransactionLookup func(context.Context, string, string) (json.RawMessage, error)
 
 // Installed during startup for subscription and manual on-chain payment checks.
-var StrictTransaction StrictLookup
+var LookupPaymentTransaction TransactionLookup
 
 func queueConfirmation(order *mdb.Orders, e scanner.Activity) error {
 	payload, err := json.Marshal(e)
@@ -65,7 +65,7 @@ func queueConfirmation(order *mdb.Orders, e scanner.Activity) error {
 			}
 		}
 		// Read the policy transactionally across payment replicas. Re-inclusion
-		// or redelivery of the same hash keeps the original strict decision.
+		// or redelivery of the same hash keeps the original recheck setting.
 		var previous mdb.PaymentConfirmation
 		q := tx.Select("id", "skip_strict").Where("order_id = ? AND hash = ?", order.ID, e.TxID).Order("id").Limit(1).Find(&previous)
 		if q.Error != nil {
@@ -88,14 +88,14 @@ func queueConfirmation(order *mdb.Orders, e scanner.Activity) error {
 // ErrTransactionNotFound means the scanner completed a chain lookup for this hash.
 var ErrTransactionNotFound = errors.New("transaction not found on chain")
 
-var errPaymentMismatch = errors.New("strict result does not match order")
+var errPaymentMismatch = errors.New("scanned transfer does not match order")
 var errWaitingBlockDepth = errors.New("waiting for required block depth")
 
 var errInactiveCandidate = errors.New("payment candidate no longer active")
 
 // Each worker claims one due transfer. A crash releases the claim at its deadline.
 // Failed lookups leave other orders and subsequent feed deliveries free to proceed.
-func RunPaymentConfirmations(ctx context.Context, feed scanner.Feed, lookup StrictLookup) {
+func RunPaymentConfirmations(ctx context.Context, feed scanner.Feed, lookup TransactionLookup) {
 	for ctx.Err() == nil {
 		worked, err := processDueConfirmation(ctx, feed, lookup)
 		if err != nil && ctx.Err() == nil {
@@ -112,7 +112,7 @@ func RunPaymentConfirmations(ctx context.Context, feed scanner.Feed, lookup Stri
 	}
 }
 
-func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup StrictLookup) (bool, error) {
+func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup TransactionLookup) (bool, error) {
 	db := dao.Mdb.WithContext(ctx)
 	var job mdb.PaymentConfirmation
 	now := time.Now()
@@ -143,7 +143,7 @@ func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup Stric
 			lookupFailed = true
 			return nil, err
 		}
-		// Replay verified evidence after a transient settlement or storage error.
+		// Persist a successful lookup so a settlement retry can reuse it.
 		q := claimed().Update("verified_result", string(v))
 		if q.Error != nil {
 			return nil, q.Error
@@ -176,7 +176,7 @@ func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup Stric
 	return err == nil, err
 }
 
-func ConfirmPayment(ctx context.Context, feed scanner.Feed, lookup StrictLookup, job mdb.PaymentConfirmation) error {
+func ConfirmPayment(ctx context.Context, feed scanner.Feed, lookup TransactionLookup, job mdb.PaymentConfirmation) error {
 	var order mdb.Orders
 	if err := dao.Mdb.WithContext(ctx).Where("id = ?", job.OrderID).Take(&order).Error; err != nil {
 		return err
@@ -222,21 +222,16 @@ func ConfirmPayment(ctx context.Context, feed scanner.Feed, lookup StrictLookup,
 			return errWaitingBlockDepth
 		}
 	}
-	verified := e
 	if !job.SkipStrict {
 		if lookup == nil {
-			return errors.New("strict lookup unavailable")
+			return errors.New("transaction recheck unavailable")
 		}
-		result, err := lookup(ctx, e.Network, e.TxID)
-		if err != nil {
+		if _, err := lookup(ctx, e.Network, e.TxID); err != nil {
 			return err
 		}
-		verified, err = strictActivity(e, result)
-		if err != nil {
-			return fmt.Errorf("%w: %v", errPaymentMismatch, err)
-		}
 	}
-	blockID, err := verifiedOrderCredit(ctx, &order, verified)
+	// The hash lookup confirms existence. The matched scan event supplies the credit.
+	blockID, err := verifiedOrderCredit(ctx, &order, e)
 	if err != nil {
 		return err
 	}

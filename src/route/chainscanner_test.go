@@ -130,7 +130,7 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	if !strings.Contains(call("GET", "/admin/nodes?network=solana", "", 200), host) {
 		t.Fatal("node not restored")
 	}
-	// Use only the two local RPC servers for ordinary and strict transaction lookups.
+	// Use only the two local RPC servers for transaction lookups.
 	rows, err := reg.List(t.Context(), "solana")
 	if err != nil {
 		t.Fatal(err)
