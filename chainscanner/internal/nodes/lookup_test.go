@@ -165,6 +165,39 @@ func TestLookupCooldown(t *testing.T) {
 	}
 }
 
+func TestIncompleteStrictGroupCanUseRecoveredProviders(t *testing.T) {
+	var lookup transactionLookup
+	candidates := []lookupCandidate{{key: "provider-a", peerID: "peer-a", healthy: true}, {key: "provider-b", healthy: true}}
+	first, ok := lookup.lanes.tryLookup("provider-b", true)
+	if !ok {
+		t.Fatal("reserve lookup")
+	}
+	second, ok := lookup.lanes.tryLookup("provider-b", true)
+	if !ok {
+		first()
+		t.Fatal("reserve supplemental lookup")
+	}
+	used := map[string]bool{"previous-voter": true}
+	group := lookup.group(t.Context(), candidates, used, 2)
+	second()
+	first()
+	if len(group) != 0 {
+		for _, lease := range group {
+			lease.release()
+		}
+		t.Fatal("busy provider unexpectedly supplied quorum")
+	}
+	group = lookup.group(t.Context(), candidates, used, 2)
+	defer func() {
+		for _, lease := range group {
+			lease.release()
+		}
+	}()
+	if len(group) != 2 || !used["previous-voter"] {
+		t.Fatalf("recovered group has %d voters; used=%v", len(group), used)
+	}
+}
+
 func TestStrictLookupTopsUpOnlyTheMissingSlots(t *testing.T) {
 	var l transactionLookup
 	candidates := []lookupCandidate{{key: "busy", healthy: true}, {key: "idle1", healthy: true}, {key: "idle2", healthy: true}}

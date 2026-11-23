@@ -147,6 +147,7 @@ func (l *transactionLookup) take(candidates []lookupCandidate, used map[string]b
 }
 
 func (l *transactionLookup) group(ctx context.Context, candidates []lookupCandidate, used map[string]bool, count int) []lookupLease {
+	reserved := maps.Clone(used)
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	var fresh, cold, paidFresh, paidCold []lookupCandidate
@@ -176,18 +177,24 @@ func (l *transactionLookup) group(ctx context.Context, candidates []lookupCandid
 	var group []lookupLease
 	if count == strictGroupSize && len(paidFresh)+len(paidCold) > 0 {
 		// Independent fallback providers may fill both voting slots.
-		group = l.fill(idleCtx, paidFresh, paidCold, used, count, true)
+		group = l.fill(idleCtx, paidFresh, paidCold, reserved, count, true)
 	}
-	group = append(group, l.fill(idleCtx, fresh, cold, used, count-len(group), false)...)
+	group = append(group, l.fill(idleCtx, fresh, cold, reserved, count-len(group), false)...)
 	stop()
 	if count == strictGroupSize && len(group) < count {
-		group = append(group, l.fill(ctx, fresh, cold, used, count-len(group), true)...)
+		group = append(group, l.fill(ctx, fresh, cold, reserved, count-len(group), true)...)
 		if len(group) < count {
-			group = append(group, l.fill(ctx, paidFresh, paidCold, used, count-len(group), true)...)
+			group = append(group, l.fill(ctx, paidFresh, paidCold, reserved, count-len(group), true)...)
 		}
 	}
 
 	if len(group) == count {
+		for _, lease := range group {
+			used[lease.key] = true
+			if lease.peerID != "" {
+				used[lease.peerID] = true
+			}
+		}
 		return group
 	}
 	for _, lease := range group {

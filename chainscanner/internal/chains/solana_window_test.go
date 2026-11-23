@@ -15,6 +15,8 @@ func TestFinalizedSlotListRejectsInvalidResponsesAndRespectsTip(t *testing.T) {
 	var calls atomic.Int32
 	server := testutil.RPCServer(t, func(r testutil.RPCRequest) (any, error) {
 		switch r.Method {
+		case "getGenesisHash":
+			return "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d", nil
 		case "getSlot":
 			return 12, nil
 		case "getFirstAvailableBlock":
