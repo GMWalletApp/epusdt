@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	stdmath "math"
 	mathrand "math/rand/v2"
 	"strconv"
 	"strings"
@@ -193,6 +194,9 @@ func replayAfterCreateError(requested *mdb.Orders, createErr error) (*response.C
 
 // CreateTransaction creates a new payment order.
 func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey) (*response.CreateTransactionResponse, error) {
+	if req == nil || stdmath.IsNaN(req.Amount) || stdmath.IsInf(req.Amount, 0) {
+		return nil, constant.PayAmountErr
+	}
 	token := strings.ToUpper(strings.TrimSpace(req.Token))
 	currency := strings.ToUpper(strings.TrimSpace(req.Currency))
 	network := strings.ToLower(strings.TrimSpace(req.Network))
@@ -676,7 +680,7 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 	}
 
 	// 2. Same token+network as parent → mark selected and return
-	if strings.EqualFold(parent.Token, token) && strings.EqualFold(parent.Network, network) {
+	if isOnChainOrder(parent.PayProvider) && strings.EqualFold(parent.Token, token) && strings.EqualFold(parent.Network, network) {
 		if err := data.SelectCheckoutOrder(dao.Mdb, parent.TradeId, parent, false); err != nil {
 			return nil, err
 		}
@@ -684,7 +688,7 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 	}
 
 	// 3. Existing active sub-order for this token+network → return it
-	existing, err := data.GetSubOrderByTokenNetwork(parent.TradeId, token, network)
+	existing, err := data.GetSubOrderByTokenNetworkAndProvider(parent.TradeId, token, network, mdb.PaymentProviderOnChain)
 	if err != nil {
 		return nil, err
 	}

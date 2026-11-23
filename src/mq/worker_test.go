@@ -3,6 +3,7 @@ package mq
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -601,6 +602,51 @@ func TestSendOrderCallbackGmpayUsesApiKeySecretByPid(t *testing.T) {
 	}
 }
 
+func TestSendOrderCallbackDoesNotFollowRedirect(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+
+	key := &mdb.ApiKey{Name: "redirect-key", Pid: "redirect-pid", SecretKey: "redirect-secret", Status: mdb.ApiKeyStatusEnable}
+	if err := dao.Mdb.Create(key).Error; err != nil {
+		t.Fatal(err)
+	}
+	var internalRequests atomic.Int32
+	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		internalRequests.Add(1)
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer internal.Close()
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", internal.URL)
+		w.WriteHeader(http.StatusTemporaryRedirect)
+	}))
+	defer redirect.Close()
+
+	order := &mdb.Orders{
+		TradeId:            "callback-no-redirect",
+		OrderId:            "callback-no-redirect",
+		Amount:             1,
+		Currency:           "CNY",
+		ActualAmount:       1,
+		ReceiveAddress:     "wallet-no-redirect",
+		Token:              "USDT",
+		Network:            "tron",
+		Status:             mdb.StatusPaySuccess,
+		NotifyUrl:          redirect.URL,
+		BlockTransactionId: "block-no-redirect",
+		ApiKeyID:           key.ID,
+		PaymentType:        mdb.PaymentTypeGmpay,
+	}
+	order.CallbackSigningKeyID = pinTestKey(t, key.ID)
+
+	if err := sendOrderCallback(order); err == nil {
+		t.Fatal("redirect response unexpectedly acknowledged")
+	}
+	if got := internalRequests.Load(); got != 0 {
+		t.Fatalf("redirect target received %d requests, want 0", got)
+	}
+}
+
 func TestGmpaySettledChildCallbackVersions(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
@@ -922,4 +968,47 @@ func pinTestKey(t *testing.T, keyID uint64) uint64 {
 		t.Fatal(err)
 	}
 	return version
+}
+
+func TestGetPendingCallbackOrdersDueDoesNotHideFreshCallback(t *testing.T) {
+	defer testutil.SetupTestDatabases(t)()
+	now := time.Now().UTC()
+	rows := make([]mdb.Orders, 0, batchSize+1)
+	for i := 0; i < batchSize; i++ {
+		id := fmt.Sprintf("callback-backoff-%03d", i)
+		rows = append(rows, mdb.Orders{
+			TradeId:         id,
+			OrderId:         id,
+			Status:          mdb.StatusPaySuccess,
+			CallBackConfirm: mdb.CallBackConfirmNo,
+			CallbackNum:     4,
+		})
+	}
+	if err := dao.Mdb.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := dao.Mdb.Model(&mdb.Orders{}).Where("callback_num = ?", 4).UpdateColumn("updated_at", now.Add(-time.Second)).Error; err != nil {
+		t.Fatal(err)
+	}
+	fresh := &mdb.Orders{
+		TradeId:         "callback-fresh",
+		OrderId:         "callback-fresh",
+		Status:          mdb.StatusPaySuccess,
+		CallBackConfirm: mdb.CallBackConfirmNo,
+		CallbackNum:     0,
+	}
+	if err := dao.Mdb.Create(fresh).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	batch, err := data.GetPendingCallbackOrdersDue(10, batchSize, now, 30*time.Second, 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, order := range batch {
+		if order.TradeId == fresh.TradeId {
+			return
+		}
+	}
+	t.Fatalf("fresh callback was hidden by %d backoff rows", len(batch))
 }

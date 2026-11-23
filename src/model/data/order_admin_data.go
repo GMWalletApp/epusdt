@@ -135,8 +135,8 @@ func CloseOrderManually(tradeID string) (bool, error) {
 		}
 		closed = true
 		orderIDs := []uint64{order.ID}
+		var subs []mdb.Orders
 		if order.ParentTradeId == "" {
-			var subs []mdb.Orders
 			if err := tx.Where("parent_trade_id = ? AND status IN ?", order.TradeId, closable).Find(&subs).Error; err != nil {
 				return err
 			}
@@ -152,6 +152,23 @@ func CloseOrderManually(tradeID string) (bool, error) {
 				for _, s := range subs {
 					orderIDs = append(orderIDs, s.ID)
 				}
+			}
+		}
+		tradeIDs := make([]string, 0, len(orderIDs))
+		tradeIDs = append(tradeIDs, order.TradeId)
+		for _, sub := range subs {
+			tradeIDs = append(tradeIDs, sub.TradeId)
+		}
+		// Local closure also terminates hosted checkout rows. Otherwise an
+		// OkPay/XLayer payment can remain pending forever after its order is
+		// manually expired.
+		if tx.Migrator().HasTable(&mdb.ProviderOrder{}) {
+			if err := tx.Model(&mdb.ProviderOrder{}).
+				Where("trade_id IN ?", tradeIDs).
+				Where("provider NOT IN ?", []string{"", mdb.PaymentProviderOnChain}).
+				Where("status IN ?", []string{mdb.ProviderOrderStatusCreating, mdb.ProviderOrderStatusPending}).
+				Update("status", mdb.ProviderOrderStatusExpired).Error; err != nil {
+				return err
 			}
 		}
 		if !tx.Migrator().HasTable(&mdb.PaymentConfirmation{}) {

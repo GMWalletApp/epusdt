@@ -355,6 +355,59 @@ func TestCreateOrderGmpayRejectsPrivateNotifyURL(t *testing.T) {
 	}
 }
 
+func TestCreateOrderGmpayRejectsNonFiniteAmount(t *testing.T) {
+	e := setupTestEnv(t)
+	values := signGmpayFormValues(url.Values{
+		"order_id":   {"test-infinite-amount-001"},
+		"amount":     {"Inf"},
+		"token":      {"usdt"},
+		"currency":   {"cny"},
+		"network":    {"tron"},
+		"notify_url": {"https://93.184.216.34/notify"},
+	})
+
+	rec := doFormPost(e, "/payments/gmpay/v1/order/create-transaction", values)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for non-finite amount, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if got := int(resp["status_code"].(float64)); got != 10004 {
+		t.Fatalf("status_code = %d, want 10004; response=%v", got, resp)
+	}
+}
+
+func TestCreateOrderEpayRejectsNonFiniteAmount(t *testing.T) {
+	e := setupTestEnv(t)
+	for _, money := range []string{"Inf", "-Inf", "NaN"} {
+		t.Run(money, func(t *testing.T) {
+			values := signEpayValues(url.Values{
+				"pid":          {"1"},
+				"name":         {"epay-non-finite"},
+				"type":         {"alipay"},
+				"money":        {money},
+				"out_trade_no": {"test-epay-non-finite-" + money},
+				"notify_url":   {"https://93.184.216.34/notify"},
+			})
+			req := httptest.NewRequest(http.MethodGet, "/payments/epay/v1/order/create-transaction/submit.php?"+values.Encode(), nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("money=%q: expected 400, got %d: %s", money, rec.Code, rec.Body.String())
+			}
+			var resp map[string]interface{}
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			if got := int(resp["status_code"].(float64)); got != 10004 {
+				t.Fatalf("money=%q: status_code = %d, want 10004; response=%v", money, got, resp)
+			}
+		})
+	}
+}
+
 func TestPublicJSONBindErrorUsesParamsErrno(t *testing.T) {
 	e := setupTestEnv(t)
 
@@ -430,6 +483,24 @@ func signGmpayFormValues(values url.Values) url.Values {
 	sig, _ := sign.GetHMACSHA256(params, testAPIToken)
 	values.Set("signature", sig)
 	return values
+}
+
+func TestResolveEPayTypeSelectorSupportsDottedTokenSymbol(t *testing.T) {
+	setupTestEnv(t)
+	if err := dao.Mdb.Create(&mdb.ChainToken{
+		Network:         mdb.NetworkPolygon,
+		Symbol:          "USDC.e",
+		ContractAddress: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
+		Decimals:        6,
+		Enabled:         true,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	token, network, matched, err := resolveEPayTypeSelector("usdc.e.polygon")
+	if err != nil || !matched || token != "usdc.e" || network != mdb.NetworkPolygon {
+		t.Fatalf("selector result token=%q network=%q matched=%t err=%v", token, network, matched, err)
+	}
 }
 
 func TestCreateOrderGmpayV1RejectsLegacyMD5Signature(t *testing.T) {

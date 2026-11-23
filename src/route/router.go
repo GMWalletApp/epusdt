@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,13 +32,13 @@ import (
 // request token/network/default resolution.
 func resolveEPayTypeSelector(rawType string) (string, string, bool, error) {
 	rawType = strings.TrimSpace(rawType)
-	if rawType == "" || strings.Count(rawType, ".") != 1 {
+	separator := strings.LastIndex(rawType, ".")
+	if rawType == "" || separator <= 0 || separator == len(rawType)-1 {
 		return "", "", false, nil
 	}
 
-	parts := strings.SplitN(rawType, ".", 2)
-	token := strings.TrimSpace(parts[0])
-	network := strings.ToLower(strings.TrimSpace(parts[1]))
+	token := strings.TrimSpace(rawType[:separator])
+	network := strings.ToLower(strings.TrimSpace(rawType[separator+1:]))
 	if token == "" || network == "" {
 		return "", "", false, nil
 	}
@@ -216,7 +217,7 @@ func RegisterRouteWithScanner(e *echo.Echo, connection config.ScannerConnection)
 		}
 
 		amountFloat, err := strconv.ParseFloat(money, 64)
-		if err != nil {
+		if err != nil || math.IsNaN(amountFloat) || math.IsInf(amountFloat, 0) {
 			return comm.Ctrl.FailJson(ctx, constant.PayAmountErr)
 		}
 

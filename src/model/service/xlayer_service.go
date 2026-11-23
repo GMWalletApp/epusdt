@@ -338,7 +338,7 @@ func PollXLayerProviderOrders() {
 			log.Sugar.Warnf("[xlayer] load order failed trade_id=%s err=%v", row.TradeId, err)
 			continue
 		}
-		if order.ID <= 0 || order.Status != mdb.StatusWaitPay {
+		if order.ID <= 0 {
 			continue
 		}
 		result, raw, err := queryXLayerOrder(row.ProviderOrderID)
@@ -355,22 +355,32 @@ func PollXLayerProviderOrders() {
 			if blockTxID == "" {
 				blockTxID = row.ProviderOrderID
 			}
-			err = OrderProcessing(&request.OrderProcessingRequest{
-				ReceiveAddress:     toAddress,
-				Currency:           order.Currency,
-				Token:              order.Token,
-				Network:            mdb.PaymentProviderXLayer,
-				Amount:             order.ActualAmount,
-				TradeId:            order.TradeId,
-				BlockTransactionId: blockTxID,
-			})
-			processed := err == nil
-			if err != nil && err != constant.OrderBlockAlreadyProcess {
-				log.Sugar.Warnf("[xlayer] settle order failed trade_id=%s err=%v", row.TradeId, err)
-				continue
-			}
-			if processed {
-				sendPaymentNotification(order)
+			// The provider state must be reconciled even when the local order
+			// already expired before polling observed the settlement. In that
+			// case the local order remains expired, while the provider row is
+			// still moved to its terminal paid state for reconciliation.
+			if order.Status == mdb.StatusWaitPay {
+				err = OrderProcessing(&request.OrderProcessingRequest{
+					ReceiveAddress:     toAddress,
+					Currency:           order.Currency,
+					Token:              order.Token,
+					Network:            mdb.PaymentProviderXLayer,
+					Amount:             order.ActualAmount,
+					TradeId:            order.TradeId,
+					BlockTransactionId: blockTxID,
+				})
+				if err != nil && err != constant.OrderBlockAlreadyProcess && err != constant.OrderStatusConflict {
+					log.Sugar.Warnf("[xlayer] settle order failed trade_id=%s err=%v", row.TradeId, err)
+					continue
+				}
+				if err == constant.OrderStatusConflict {
+					log.Sugar.Warnf("[xlayer] settled payment conflicted with local order state trade_id=%s payment_intent_id=%s tx_hash=%s", row.TradeId, row.ProviderOrderID, blockTxID)
+				}
+				if err == nil {
+					sendPaymentNotification(order)
+				}
+			} else if order.Status != mdb.StatusPaySuccess {
+				log.Sugar.Warnf("[xlayer] provider settled after local order status=%d trade_id=%s payment_intent_id=%s tx_hash=%s", order.Status, row.TradeId, row.ProviderOrderID, blockTxID)
 			}
 			if err := data.MarkProviderOrderPaid(row.TradeId, mdb.PaymentProviderXLayer, raw); err != nil {
 				log.Sugar.Warnf("[xlayer] mark provider order paid failed trade_id=%s err=%v", row.TradeId, err)

@@ -287,6 +287,70 @@ func TestPollXLayerProviderOrdersSettlesOrder(t *testing.T) {
 	}
 }
 
+func TestPollXLayerProviderOrdersReconcilesExpiredLocalOrder(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+	seedXLayerSettings(t, "https://web3.okx.com")
+	seedXLayerRate(t)
+
+	requests := 0
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		requests++
+		payload := `{"code":0,"msg":"","data":{"merchantPaymentId":"expired-local-xlayer","paymentIntentId":"pi_expired_local","status":"settled","to":"0x68047f077ca2c71d6a6c03afaf87e438e07bdf84","txHash":"0xsettled-after-expiry","fiatAmount":"10.00","fiatCurrency":"CNY","paymentToken":{"chainId":"196","tokenSymbol":"USDC","tokenAddress":"0xb6ceceab302e2e4948951ee7843fc24e92933061","tokenDecimal":6,"tokenAmount":"1470588"}}}`
+		return &http.Response{StatusCode: http.StatusOK, Request: r, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(payload))}, nil
+	})
+	previous := http_client.ClientFactory
+	http_client.ClientFactory = func() *resty.Client {
+		return resty.NewWithClient(&http.Client{Transport: transport})
+	}
+	t.Cleanup(func() { http_client.ClientFactory = previous })
+
+	order := &mdb.Orders{
+		TradeId:      "expired-local-xlayer",
+		OrderId:      "expired-local-xlayer",
+		Amount:       10,
+		Currency:     "CNY",
+		ActualAmount: 1.47,
+		Token:        "USDC",
+		Network:      mdb.PaymentProviderXLayer,
+		Status:       mdb.StatusExpired,
+		PayProvider:  mdb.PaymentProviderXLayer,
+	}
+	if err := dao.Mdb.Create(order).Error; err != nil {
+		t.Fatalf("seed order: %v", err)
+	}
+	if err := dao.Mdb.Create(&mdb.ProviderOrder{
+		TradeId:         order.TradeId,
+		Provider:        mdb.PaymentProviderXLayer,
+		ProviderOrderID: "pi_expired_local",
+		ReceiveAddress:  data.GetXLayerToAddress(),
+		Amount:          1.470588,
+		Coin:            "USDC",
+		Status:          mdb.ProviderOrderStatusPending,
+	}).Error; err != nil {
+		t.Fatalf("seed provider order: %v", err)
+	}
+
+	PollXLayerProviderOrders()
+	if requests != 1 {
+		t.Fatalf("provider query count = %d, want 1", requests)
+	}
+	row, err := data.GetProviderOrderByTradeIDAndProvider(order.TradeId, mdb.PaymentProviderXLayer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.Status != mdb.ProviderOrderStatusPaid {
+		t.Fatalf("provider status = %q, want paid", row.Status)
+	}
+	reloaded, err := data.GetOrderInfoByTradeId(order.TradeId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Status != mdb.StatusExpired {
+		t.Fatalf("local status = %d, want expired", reloaded.Status)
+	}
+}
+
 // TestXLayerAPIURLSettingIsIgnored pins the 2026-11-21 4th-review change:
 // the Onchain OS Payment base URL is the fixed xlayerAPIBaseURL constant,
 // so a hostile/stale xlayer.api_url row in the settings table must never
