@@ -123,14 +123,20 @@ func GetOrderInfoByTradeId(tradeId string) (*mdb.Orders, error) {
 
 // SQLiteTimestampUTCExpr converts the timestamp text emitted by both the old
 // local-time writer and the current UTC writer into a comparable UTC value.
-// Older rows can contain Go's "... -0500 EST" suffix, which SQLite cannot
-// parse directly; rebuild the offset as RFC3339 before calling datetime().
+// Older rows can contain Go's "... -0500 EST" suffix (or space-separated
+// "... -05:00"), which SQLite cannot parse directly; rebuild the offset as
+// RFC3339 before calling datetime().
 func SQLiteTimestampUTCExpr(column string) string {
-	public := "instr(" + column + ", ' +')"
-	private := "instr(" + column + ", ' -')"
+	plusPos := "instr(" + column + ", ' +')"
+	minusPos := "instr(" + column + ", ' -')"
+	formatOffset := func(pos string) string {
+		return "CASE WHEN substr(" + column + ", " + pos + " + 4, 1) = ':' " +
+			"THEN datetime(substr(" + column + ", 1, 19) || substr(" + column + ", " + pos + " + 1, 6)) " +
+			"ELSE datetime(substr(" + column + ", 1, 19) || substr(" + column + ", " + pos + " + 1, 3) || ':' || substr(" + column + ", " + pos + " + 4, 2)) END"
+	}
 	return "CASE " +
-		"WHEN " + public + " > 0 THEN datetime(substr(" + column + ", 1, 19) || substr(" + column + ", " + public + " + 1, 3) || ':' || substr(" + column + ", " + public + " + 4, 2)) " +
-		"WHEN " + private + " > 0 THEN datetime(substr(" + column + ", 1, 19) || substr(" + column + ", " + private + " + 1, 3) || ':' || substr(" + column + ", " + private + " + 4, 2)) " +
+		"WHEN " + plusPos + " > 0 THEN " + formatOffset(plusPos) + " " +
+		"WHEN " + minusPos + " > 0 THEN " + formatOffset(minusPos) + " " +
 		"ELSE datetime(" + column + ") END"
 }
 
@@ -255,6 +261,9 @@ func GetPendingCallbackOrders(maxRetry int, limit int) ([]PendingCallbackOrder, 
 // already open. Filtering in SQL prevents a batch of backoff rows from hiding
 // newer first-attempt callbacks behind the LIMIT.
 func GetPendingCallbackOrdersDue(maxRetry int, limit int, now time.Time, retryBase, maxDelay time.Duration) ([]PendingCallbackOrder, error) {
+	if maxRetry < 0 {
+		maxRetry = 0
+	}
 	var orders []PendingCallbackOrder
 	query := dao.Mdb.Model(&mdb.Orders{}).
 		Select("trade_id", "callback_num", "callback_confirm", "updated_at").
@@ -269,7 +278,7 @@ func GetPendingCallbackOrdersDue(maxRetry int, limit int, now time.Time, retryBa
 		due = append(due, "(callback_num = ? AND "+SQLiteTimestampUTCExpr("updated_at")+" <= ?)")
 		args = append(args, attempt, orderTimeUTC(now.Add(-delay)))
 	}
-	query = query.Where("("+strings.Join(due, " OR ")+")", args...).Order("updated_at asc")
+	query = query.Where("("+strings.Join(due, " OR ")+")", args...).Order(SQLiteTimestampUTCExpr("updated_at") + " asc")
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
@@ -342,15 +351,22 @@ func GetSubOrderByTokenNetwork(parentTradeId string, token string, network strin
 
 // GetSubOrderByTokenNetworkAndProvider finds an active sub-order matching
 // token+network and the requested payment provider under a parent. Empty
-// pay_provider is retained for rows created before the explicit on-chain
-// provider value was introduced.
+// pay_provider is matched only for on-chain lookups so legacy rows created
+// before the explicit provider column remain compatible without leaking into
+// hosted provider queries.
 func GetSubOrderByTokenNetworkAndProvider(parentTradeId string, token string, network string, payProvider string) (*mdb.Orders, error) {
 	order := new(mdb.Orders)
-	err := dao.Mdb.Model(order).
+	query := dao.Mdb.Model(order).
 		Where("parent_trade_id = ?", parentTradeId).
 		Where("token = ?", token).
-		Where("network = ?", network).
-		Where("(pay_provider = ? OR pay_provider = '')", payProvider).
+		Where("network = ?", network)
+	payProvider = strings.TrimSpace(payProvider)
+	if payProvider == "" || payProvider == mdb.PaymentProviderOnChain {
+		query = query.Where("(pay_provider = ? OR pay_provider = '')", mdb.PaymentProviderOnChain)
+	} else {
+		query = query.Where("pay_provider = ?", payProvider)
+	}
+	err := query.
 		Where("status = ?", mdb.StatusWaitPay).
 		Limit(1).
 		Find(order).Error

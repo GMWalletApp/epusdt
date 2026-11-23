@@ -379,6 +379,35 @@ func TestCreateOrderGmpayRejectsNonFiniteAmount(t *testing.T) {
 	}
 }
 
+func TestCreateOrderEpayRejectsNonFiniteAmount(t *testing.T) {
+	e := setupTestEnv(t)
+	for _, money := range []string{"Inf", "-Inf", "NaN"} {
+		t.Run(money, func(t *testing.T) {
+			values := signEpayValues(url.Values{
+				"pid":          {"1"},
+				"name":         {"epay-non-finite"},
+				"type":         {"alipay"},
+				"money":        {money},
+				"out_trade_no": {"test-epay-non-finite-" + money},
+				"notify_url":   {"https://93.184.216.34/notify"},
+			})
+			req := httptest.NewRequest(http.MethodGet, "/payments/epay/v1/order/create-transaction/submit.php?"+values.Encode(), nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("money=%q: expected 400, got %d: %s", money, rec.Code, rec.Body.String())
+			}
+			var resp map[string]interface{}
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			if got := int(resp["status_code"].(float64)); got != 10004 {
+				t.Fatalf("money=%q: status_code = %d, want 10004; response=%v", money, got, resp)
+			}
+		})
+	}
+}
+
 func TestPublicJSONBindErrorUsesParamsErrno(t *testing.T) {
 	e := setupTestEnv(t)
 

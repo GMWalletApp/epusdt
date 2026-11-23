@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -216,7 +217,7 @@ func RegisterRouteWithScanner(e *echo.Echo, connection config.ScannerConnection)
 		}
 
 		amountFloat, err := strconv.ParseFloat(money, 64)
-		if err != nil {
+		if err != nil || math.IsNaN(amountFloat) || math.IsInf(amountFloat, 0) {
 			return comm.Ctrl.FailJson(ctx, constant.PayAmountErr)
 		}
 

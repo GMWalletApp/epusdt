@@ -680,7 +680,7 @@ func SwitchNetwork(req *request.SwitchNetworkRequest) (*response.CheckoutCounter
 	}
 
 	// 2. Same token+network as parent → mark selected and return
-	if strings.EqualFold(parent.Token, token) && strings.EqualFold(parent.Network, network) {
+	if isOnChainOrder(parent.PayProvider) && strings.EqualFold(parent.Token, token) && strings.EqualFold(parent.Network, network) {
 		if err := data.SelectCheckoutOrder(dao.Mdb, parent.TradeId, parent, false); err != nil {
 			return nil, err
 		}

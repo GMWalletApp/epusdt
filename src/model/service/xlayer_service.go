@@ -373,9 +373,14 @@ func PollXLayerProviderOrders() {
 					log.Sugar.Warnf("[xlayer] settle order failed trade_id=%s err=%v", row.TradeId, err)
 					continue
 				}
+				if err == constant.OrderStatusConflict {
+					log.Sugar.Warnf("[xlayer] settled payment conflicted with local order state trade_id=%s payment_intent_id=%s tx_hash=%s", row.TradeId, row.ProviderOrderID, blockTxID)
+				}
 				if err == nil {
 					sendPaymentNotification(order)
 				}
+			} else if order.Status != mdb.StatusPaySuccess {
+				log.Sugar.Warnf("[xlayer] provider settled after local order status=%d trade_id=%s payment_intent_id=%s tx_hash=%s", order.Status, row.TradeId, row.ProviderOrderID, blockTxID)
 			}
 			if err := data.MarkProviderOrderPaid(row.TradeId, mdb.PaymentProviderXLayer, raw); err != nil {
 				log.Sugar.Warnf("[xlayer] mark provider order paid failed trade_id=%s err=%v", row.TradeId, err)

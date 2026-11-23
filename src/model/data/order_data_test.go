@@ -83,6 +83,8 @@ func TestStatsBucketGroupsSQLiteTimestamps(t *testing.T) {
 		utc.Format(time.RFC3339),
 		"2026-01-02 23:04:05.000000000 +0800 CST",
 		"2026-01-02 10:04:05.000000000 -0500 EST",
+		"2026-01-02 23:04:05 +08:00",
+		"2026-01-02 10:04:05 -05:00",
 	} {
 		for _, tc := range []struct {
 			hourly bool
@@ -106,6 +108,8 @@ func TestSQLiteTimestampUTCExprPreservesHistoricalOffsets(t *testing.T) {
 	}{
 		{name: "west-fresh", createdAt: "2026-01-02 11:00:00.000000000 -0500 EST", want: false},
 		{name: "east-old", createdAt: "2026-01-02 22:00:00.000000000 +0800 CST", want: true},
+		{name: "west-spaced-colon-fresh", createdAt: "2026-01-02 11:00:00 -05:00", want: false},
+		{name: "east-spaced-colon-old", createdAt: "2026-01-02 22:00:00 +08:00", want: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -121,6 +125,52 @@ func TestSQLiteTimestampUTCExprPreservesHistoricalOffsets(t *testing.T) {
 				t.Fatalf("created_at=%q expiration=%t want=%t err=%v", tc.createdAt, got, tc.want, err)
 			}
 		})
+	}
+}
+
+func TestGetSubOrderByTokenNetworkAndProviderSeparatesProviders(t *testing.T) {
+	defer testutil.SetupTestDatabases(t)()
+	legacyOnChain := &mdb.Orders{
+		TradeId:       "sub-legacy-onchain",
+		OrderId:       "sub-legacy-onchain",
+		ParentTradeId: "parent-provider-sep",
+		Token:         "USDT",
+		Network:       mdb.NetworkTron,
+		Status:        mdb.StatusWaitPay,
+		PayProvider:   "",
+	}
+	if err := dao.Mdb.Create(legacyOnChain).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := dao.Mdb.Model(legacyOnChain).UpdateColumn("pay_provider", "").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	gotHosted, err := GetSubOrderByTokenNetworkAndProvider("parent-provider-sep", "USDT", mdb.NetworkTron, mdb.PaymentProviderOkPay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotHosted.ID != 0 {
+		t.Fatalf("hosted lookup unexpectedly matched legacy on-chain sub-order %q", gotHosted.TradeId)
+	}
+
+	gotOnChain, err := GetSubOrderByTokenNetworkAndProvider("parent-provider-sep", "USDT", mdb.NetworkTron, mdb.PaymentProviderOnChain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotOnChain.TradeId != legacyOnChain.TradeId {
+		t.Fatalf("on-chain lookup trade_id = %q, want %q", gotOnChain.TradeId, legacyOnChain.TradeId)
+	}
+}
+
+func TestGetPendingCallbackOrdersDueHandlesNegativeMaxRetry(t *testing.T) {
+	defer testutil.SetupTestDatabases(t)()
+	orders, err := GetPendingCallbackOrdersDue(-1, 10, time.Now().UTC(), 5*time.Second, 5*time.Minute)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(orders) != 0 {
+		t.Fatalf("got %d orders, want 0", len(orders))
 	}
 }
 
