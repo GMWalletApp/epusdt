@@ -121,9 +121,20 @@ func GetOrderInfoByTradeId(tradeId string) (*mdb.Orders, error) {
 	return order, err
 }
 
-// orderCreatedAtUTCExpr normalizes both timestamp text formats used by
-// SQLite (space separated and RFC3339) before comparing order times.
-const orderCreatedAtUTCExpr = "datetime(substr(created_at, 1, 19))"
+// SQLiteTimestampUTCExpr converts the timestamp text emitted by both the old
+// local-time writer and the current UTC writer into a comparable UTC value.
+// Older rows can contain Go's "... -0500 EST" suffix, which SQLite cannot
+// parse directly; rebuild the offset as RFC3339 before calling datetime().
+func SQLiteTimestampUTCExpr(column string) string {
+	public := "instr(" + column + ", ' +')"
+	private := "instr(" + column + ", ' -')"
+	return "CASE " +
+		"WHEN " + public + " > 0 THEN datetime(substr(" + column + ", 1, 19) || substr(" + column + ", " + public + " + 1, 3) || ':' || substr(" + column + ", " + public + " + 4, 2)) " +
+		"WHEN " + private + " > 0 THEN datetime(substr(" + column + ", 1, 19) || substr(" + column + ", " + private + " + 1, 3) || ':' || substr(" + column + ", " + private + " + 4, 2)) " +
+		"ELSE datetime(" + column + ") END"
+}
+
+var orderCreatedAtUTCExpr = SQLiteTimestampUTCExpr("created_at")
 
 // orderTimeUTC formats a bound consistently with orderCreatedAtUTCExpr.
 // Passing time.Time directly to SQLite can produce Go's " +0000 UTC" text,
@@ -240,6 +251,48 @@ func GetPendingCallbackOrders(maxRetry int, limit int) ([]PendingCallbackOrder, 
 	return orders, err
 }
 
+// GetPendingCallbackOrdersDue returns only callback rows whose retry window is
+// already open. Filtering in SQL prevents a batch of backoff rows from hiding
+// newer first-attempt callbacks behind the LIMIT.
+func GetPendingCallbackOrdersDue(maxRetry int, limit int, now time.Time, retryBase, maxDelay time.Duration) ([]PendingCallbackOrder, error) {
+	var orders []PendingCallbackOrder
+	query := dao.Mdb.Model(&mdb.Orders{}).
+		Select("trade_id", "callback_num", "callback_confirm", "updated_at").
+		Where("callback_num <= ?", maxRetry).
+		Where("callback_confirm = ?", mdb.CallBackConfirmNo).
+		Where("status = ?", mdb.StatusPaySuccess)
+
+	due := []string{"callback_num = 0"}
+	args := make([]interface{}, 0, maxRetry*2)
+	for attempt := 1; attempt <= maxRetry; attempt++ {
+		delay := callbackRetryDelayForQuery(attempt, retryBase, maxDelay)
+		due = append(due, "(callback_num = ? AND "+SQLiteTimestampUTCExpr("updated_at")+" <= ?)")
+		args = append(args, attempt, orderTimeUTC(now.Add(-delay)))
+	}
+	query = query.Where("("+strings.Join(due, " OR ")+")", args...).Order("updated_at asc")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	return orders, query.Find(&orders).Error
+}
+
+func callbackRetryDelayForQuery(attempts int, base, max time.Duration) time.Duration {
+	if attempts <= 0 || base <= 0 {
+		return 0
+	}
+	delay := base
+	for i := 1; i < attempts; i++ {
+		if max > 0 && delay >= max/2 {
+			return max
+		}
+		delay *= 2
+		if max > 0 && delay > max {
+			return max
+		}
+	}
+	return delay
+}
+
 // SaveCallBackOrdersResp persists a callback attempt result.
 func SaveCallBackOrdersResp(order *mdb.Orders) error {
 	return dao.Mdb.Model(order).
@@ -282,13 +335,22 @@ func CountSubOrders(parentTradeId string) (int64, error) {
 	return count, err
 }
 
-// GetSubOrderByTokenNetwork finds an existing active sub-order matching token+network under a parent.
+// GetSubOrderByTokenNetwork preserves the original on-chain lookup contract.
 func GetSubOrderByTokenNetwork(parentTradeId string, token string, network string) (*mdb.Orders, error) {
+	return GetSubOrderByTokenNetworkAndProvider(parentTradeId, token, network, mdb.PaymentProviderOnChain)
+}
+
+// GetSubOrderByTokenNetworkAndProvider finds an active sub-order matching
+// token+network and the requested payment provider under a parent. Empty
+// pay_provider is retained for rows created before the explicit on-chain
+// provider value was introduced.
+func GetSubOrderByTokenNetworkAndProvider(parentTradeId string, token string, network string, payProvider string) (*mdb.Orders, error) {
 	order := new(mdb.Orders)
 	err := dao.Mdb.Model(order).
 		Where("parent_trade_id = ?", parentTradeId).
 		Where("token = ?", token).
 		Where("network = ?", network).
+		Where("(pay_provider = ? OR pay_provider = '')", payProvider).
 		Where("status = ?", mdb.StatusWaitPay).
 		Limit(1).
 		Find(order).Error

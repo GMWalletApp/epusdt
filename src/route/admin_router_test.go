@@ -704,6 +704,50 @@ func TestAdminOrders_CloseWaitSelectOrder(t *testing.T) {
 	}
 }
 
+func TestAdminOrders_CloseHostedOrderExpiresProviderRow(t *testing.T) {
+	e, token := setupAdminTestEnv(t)
+	order := &mdb.Orders{
+		TradeId:        "trade-admin-close-hosted",
+		OrderId:        "order-admin-close-hosted",
+		Amount:         10,
+		Currency:       "CNY",
+		ActualAmount:   1.47,
+		ReceiveAddress: "OKPAY",
+		Token:          "USDT",
+		Network:        mdb.NetworkTron,
+		Status:         mdb.StatusWaitPay,
+		PayProvider:    mdb.PaymentProviderOkPay,
+	}
+	if err := dao.Mdb.Create(order).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := dao.Mdb.Create(&mdb.ProviderOrder{
+		TradeId:         order.TradeId,
+		Provider:        mdb.PaymentProviderOkPay,
+		ProviderOrderID: "okpay-close-hosted",
+		Status:          mdb.ProviderOrderStatusPending,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	rec := doPostAdmin(e, "/admin/api/v1/orders/"+order.TradeId+"/close", nil, token)
+	assertOK(t, rec)
+	reloaded, err := data.GetOrderInfoByTradeId(order.TradeId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Status != mdb.StatusExpired {
+		t.Fatalf("order status = %d, want expired", reloaded.Status)
+	}
+	provider, err := data.GetProviderOrderByTradeIDAndProvider(order.TradeId, mdb.PaymentProviderOkPay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.Status != mdb.ProviderOrderStatusExpired {
+		t.Fatalf("provider status = %q, want expired", provider.Status)
+	}
+}
+
 func TestAdminOrders_CloseManualReviewParentAndChildOrder(t *testing.T) {
 	e, token := setupAdminTestEnv(t)
 	parent := &mdb.Orders{

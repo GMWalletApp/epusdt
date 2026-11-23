@@ -78,7 +78,12 @@ func TestStatsBucketGroupsSQLiteTimestamps(t *testing.T) {
 	utc := time.Date(2026, 1, 2, 15, 4, 5, 0, time.UTC)
 	wantDaily := utc.In(time.Local).Format("2006-01-02")
 	wantHourly := utc.In(time.Local).Format("2006-01-02 15:00")
-	for _, timestamp := range []string{utc.Format("2006-01-02 15:04:05"), utc.Format(time.RFC3339)} {
+	for _, timestamp := range []string{
+		utc.Format("2006-01-02 15:04:05"),
+		utc.Format(time.RFC3339),
+		"2026-01-02 23:04:05.000000000 +0800 CST",
+		"2026-01-02 10:04:05.000000000 -0500 EST",
+	} {
 		for _, tc := range []struct {
 			hourly bool
 			want   string
@@ -89,6 +94,33 @@ func TestStatsBucketGroupsSQLiteTimestamps(t *testing.T) {
 				t.Fatalf("timestamp %q hourly=%v: got %q, want %q (error %v)", timestamp, tc.hourly, got, tc.want, err)
 			}
 		}
+	}
+}
+
+func TestSQLiteTimestampUTCExprPreservesHistoricalOffsets(t *testing.T) {
+	defer testutil.SetupTestDatabases(t)()
+	cases := []struct {
+		name      string
+		createdAt string
+		want      bool
+	}{
+		{name: "west-fresh", createdAt: "2026-01-02 11:00:00.000000000 -0500 EST", want: false},
+		{name: "east-old", createdAt: "2026-01-02 22:00:00.000000000 +0800 CST", want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			order := &mdb.Orders{TradeId: tc.name, OrderId: tc.name, Status: mdb.StatusWaitPay}
+			if err := dao.Mdb.Create(order).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := dao.Mdb.Model(order).Update("created_at", tc.createdAt).Error; err != nil {
+				t.Fatal(err)
+			}
+			got, err := UpdateOrderIsExpirationById(order.ID, time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC))
+			if err != nil || got != tc.want {
+				t.Fatalf("created_at=%q expiration=%t want=%t err=%v", tc.createdAt, got, tc.want, err)
+			}
+		})
 	}
 }
 

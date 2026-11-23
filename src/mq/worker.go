@@ -73,7 +73,7 @@ func processExpiredOrders() {
 			return dao.Mdb.Model(&mdb.Orders{}).
 				Select("id", "trade_id", "status", "network", "receive_address", "token", "actual_amount", "pay_provider").
 				Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusWaitSelect}).
-				Where("datetime(substr(created_at, 1, 19)) <= ?", expirationCutoff.UTC().Format("2006-01-02 15:04:05")).
+				Where(data.SQLiteTimestampUTCExpr("created_at")+" <= ?", expirationCutoff.UTC().Format("2006-01-02 15:04:05")).
 				Order("id asc").
 				Limit(batchSize).
 				Find(&orders).Error
@@ -122,7 +122,7 @@ func dispatchPendingCallbacks() {
 	var orders []data.PendingCallbackOrder
 	err := withSQLiteBusyRetry(func() error {
 		var innerErr error
-		orders, innerErr = data.GetPendingCallbackOrders(maxRetry, batchSize)
+		orders, innerErr = data.GetPendingCallbackOrdersDue(maxRetry, batchSize, time.Now().UTC(), config.GetCallbackRetryBaseDuration(), 5*time.Minute)
 		return innerErr
 	})
 	if err != nil {
@@ -190,7 +190,7 @@ func sendOrderCallback(order *mdb.Orders) error {
 			return err
 		}
 
-		epayResp, err := http_client.GetHttpClient().R().SetQueryParams(formData).Get(order.NotifyUrl)
+		epayResp, err := http_client.GetCallbackHttpClient().R().SetQueryParams(formData).Get(order.NotifyUrl)
 		if err != nil {
 			// HTTP errors can include the full signed callback URL.
 			return errors.New("EPay callback request failed")
@@ -214,7 +214,7 @@ func sendOrderCallback(order *mdb.Orders) error {
 			}
 			settled = &child
 		}
-		client := http_client.GetHttpClient()
+		client := http_client.GetCallbackHttpClient()
 		orderResp := response.OrderNotifyResponse{
 			Pid:                apiKeyRow.Pid,
 			TradeId:            order.TradeId,

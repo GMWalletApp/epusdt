@@ -1980,3 +1980,44 @@ func TestWalletRemovedDuringNewAddressAssignment(t *testing.T) {
 		})
 	}
 }
+
+func TestSwitchNetworkDoesNotReuseHostedChildForOnChainTarget(t *testing.T) {
+	defer testutil.SetupTestDatabases(t)()
+
+	parent := &mdb.Orders{
+		TradeId:        "switch-provider-boundary-parent",
+		OrderId:        "switch-provider-boundary-parent",
+		Amount:         100,
+		Currency:       "CNY",
+		ActualAmount:   100,
+		ReceiveAddress: "0x1111111111111111111111111111111111111111",
+		Token:          "USDT",
+		Network:        mdb.NetworkEthereum,
+		Status:         mdb.StatusWaitPay,
+		PayProvider:    mdb.PaymentProviderOnChain,
+	}
+	if err := dao.Mdb.Create(parent).Error; err != nil {
+		t.Fatal(err)
+	}
+	hosted := &mdb.Orders{
+		TradeId:        "switch-provider-boundary-hosted",
+		OrderId:        "switch-provider-boundary-hosted",
+		ParentTradeId:  parent.TradeId,
+		Amount:         parent.Amount,
+		Currency:       parent.Currency,
+		ActualAmount:   0.15,
+		ReceiveAddress: "OKPAY",
+		Token:          "USDT",
+		Network:        mdb.NetworkTron,
+		Status:         mdb.StatusWaitPay,
+		PayProvider:    mdb.PaymentProviderOkPay,
+	}
+	if err := dao.Mdb.Create(hosted).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := SwitchNetwork(&request.SwitchNetworkRequest{TradeId: parent.TradeId, Token: "USDT", Network: mdb.NetworkTron})
+	if !errors.Is(err, constant.SubOrderLimitExceeded) {
+		t.Fatalf("switch returned response=%+v err=%v, want provider-aware sub-order limit", resp, err)
+	}
+}

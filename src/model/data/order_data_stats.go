@@ -29,15 +29,15 @@ type AddressDailyStat struct {
 	ActualAmount float64 `json:"actual_amount"`
 }
 
-// Order timestamps are stored as UTC text. Convert buckets to the server's
-// local time so chart labels line up with the local day/hour used by parseRange.
-// The first 19 characters are the SQLite timestamp without its trailing zone;
-// SQLite treats it as UTC and "localtime" applies the process timezone.
+// Order timestamps may use either the historical Go offset suffix or the
+// current UTC representation. Normalize the instant before applying the
+// server-local label used by parseRange.
 func statsBucketExpr(hourly bool) string {
+	timestamp := SQLiteTimestampUTCExpr("created_at")
 	if hourly {
-		return "strftime('%Y-%m-%d %H:00', substr(created_at, 1, 19), 'localtime')"
+		return "strftime('%Y-%m-%d %H:00', " + timestamp + ", 'localtime')"
 	}
-	return "strftime('%Y-%m-%d', substr(created_at, 1, 19), 'localtime')"
+	return "strftime('%Y-%m-%d', " + timestamp + ", 'localtime')"
 }
 
 // DailyOrderStats returns per-day counts/amounts within [start, end],

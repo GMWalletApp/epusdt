@@ -20,3 +20,10 @@ func GetHttpClient(proxys ...string) *resty.Client {
 	client.SetTimeout(time.Second * 10)
 	return client
 }
+
+// GetCallbackHttpClient returns the outbound client used for merchant
+// callbacks. Callback URLs are validated when orders are created, so a
+// redirect must not be allowed to move a signed payload to another host.
+func GetCallbackHttpClient(proxys ...string) *resty.Client {
+	return GetHttpClient(proxys...).SetRedirectPolicy(resty.NoRedirectPolicy())
+}
