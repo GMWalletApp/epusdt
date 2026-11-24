@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -105,8 +106,9 @@ type updaterRunner interface {
 }
 
 func NewManager(fetchLatest func(context.Context) (*version.Release, error), current func() string) *Manager {
+	path, _ := executablePath()
 	return &Manager{
-		state:       State{Status: StatusIdle, Stage: StageIdle},
+		state:       previousFailure(path),
 		fetchLatest: fetchLatest,
 		current:     current,
 		updater:     newUpdater(),
@@ -157,7 +159,7 @@ func (m *Manager) Start(ctx context.Context, expectedVersion string) error {
 	started := time.Now()
 	m.mu.Lock()
 	m.state = State{
-		Status: StatusRunning, Stage: StageChecking,
+		Status: StatusRunning, Stage: StageChecking, TargetVersion: expectedVersion,
 		TimeoutSeconds: int(downloadTimeout.Seconds()),
 		StartedAt:      &started,
 	}
@@ -166,30 +168,30 @@ func (m *Manager) Start(ctx context.Context, expectedVersion string) error {
 	release, err := m.fetchLatest(ctx)
 	if err != nil {
 		unlock()
-		m.failStart(err)
+		m.failStart(execPath, err)
 		return err
 	}
 	if release == nil {
 		err = errors.New("release checker returned no release")
 		unlock()
-		m.failStart(err)
+		m.failStart(execPath, err)
 		return err
 	}
 	if expectedVersion != "" && release.TagName != expectedVersion {
 		unlock()
-		m.failStart(ErrReleaseChanged)
+		m.failStart(execPath, ErrReleaseChanged)
 		return ErrReleaseChanged
 	}
 	current := m.current()
 	hasUpdate, err := version.IsNewerVersion(release.TagName, current)
 	if err != nil {
 		unlock()
-		m.failStart(err)
+		m.failStart(execPath, err)
 		return err
 	}
 	if !hasUpdate {
 		unlock()
-		m.failStart(ErrNoUpdate)
+		m.failStart(execPath, ErrNoUpdate)
 		return ErrNoUpdate
 	}
 	m.mu.Lock()
@@ -213,6 +215,7 @@ func (m *Manager) run(release *version.Release, execPath string, canRestart bool
 	if err != nil {
 		m.state.Status = StatusFailed
 		m.state.Error = err.Error()
+		recordFailure(execPath, m.state)
 		m.mu.Unlock()
 		return
 	}
@@ -220,6 +223,7 @@ func (m *Manager) run(release *version.Release, execPath string, canRestart bool
 	m.state.Stage = StageDone
 	m.state.Percent = 100
 	m.state.RestartRequired = true
+	_ = os.Remove(execPath + ".update-result")
 	m.mu.Unlock()
 	if canRestart {
 		m.restart()
@@ -238,12 +242,13 @@ func (m *Manager) releaseBusy() {
 	m.mu.Unlock()
 }
 
-func (m *Manager) failStart(err error) {
+func (m *Manager) failStart(execPath string, err error) {
 	finished := time.Now()
 	m.mu.Lock()
 	m.state.Status = StatusFailed
 	m.state.Error = err.Error()
 	m.state.FinishedAt = &finished
+	recordFailure(execPath, m.state)
 	m.busy = false
 	m.mu.Unlock()
 }
@@ -636,6 +641,40 @@ func acquireLock(execPath string) (func(), error) {
 	return func() { _ = lock.Unlock() }, nil
 }
 
+// Keep the last failed stage beside the executable so diagnostics remain available
+// even when database initialization fails. A successful installation clears it.
+func previousFailure(path string) State {
+	var state State
+	if path != "" {
+		if raw, err := os.ReadFile(path + ".update-result"); err == nil && json.Unmarshal(raw, &state) == nil && state.Status == StatusFailed {
+			return state
+		}
+	}
+	return State{Status: StatusIdle, Stage: StageIdle}
+}
+
+func recordFailure(path string, state State) {
+	raw, err := json.Marshal(state)
+	if err == nil {
+		name := path + ".update-result"
+		var f *os.File
+		if f, err = os.CreateTemp(filepath.Dir(path), ".update-result-*"); err == nil {
+			defer os.Remove(f.Name())
+			_, err = f.Write(raw)
+			closeErr := f.Close()
+			if err == nil {
+				err = closeErr
+			}
+			if err == nil {
+				err = os.Rename(f.Name(), name)
+			}
+		}
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "record update failure: %v\n", err)
+	}
+}
+
 func MarkHealthy() {
 	execPath, err := executablePath()
 	if err != nil {
@@ -654,21 +693,31 @@ func markHealthy(execPath string) {
 
 // RollbackPendingUpdate restores the previous executable when startup fails
 // before the HTTP listener confirms the new binary is ready.
-func RollbackPendingUpdate() (bool, error) {
+func RollbackPendingUpdate(cause string) (bool, error) {
 	execPath, err := executablePath()
 	if err != nil {
 		return false, err
 	}
-	return rollbackPendingUpdate(execPath)
+	return rollbackPendingUpdate(execPath, cause)
 }
 
-func rollbackPendingUpdate(execPath string) (bool, error) {
+func rollbackPendingUpdate(execPath, cause string) (restored bool, err error) {
 	pending := execPath + ".update-pending"
-	if _, err := os.Stat(pending); errors.Is(err, os.ErrNotExist) {
+	target, err := os.ReadFile(pending)
+	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	} else if err != nil {
 		return false, err
 	}
+
+	defer func() {
+		now := time.Now()
+		message := "Startup failed; restored the previous executable: " + cause
+		if err != nil {
+			message = fmt.Sprintf("Startup failed: %s; rollback failed: %v", cause, err)
+		}
+		recordFailure(execPath, State{Status: StatusFailed, Stage: "startup", TargetVersion: strings.TrimSpace(string(target)), Error: message, FinishedAt: &now})
+	}()
 
 	backup := execPath + ".update-backup"
 	if _, err := os.Stat(backup); err != nil {

@@ -47,9 +47,13 @@ func newHTTPCommand(frontend http.FileSystem) *cobra.Command {
 			// down so bootstrap.InitApp() can read it normally on the same port.
 			if config.NeedsInstall() {
 				envPath, _ := config.ResolveConfigPath()
-				install.RunInstallServer(install.DefaultInstallAddr, envPath, frontend)
+				if err := install.RunInstallServer(install.DefaultInstallAddr, envPath, frontend); err != nil {
+					panic(err)
+				}
 			}
-			bootstrap.InitApp()
+			if err := bootstrap.InitApp(); err != nil {
+				panic(err)
+			}
 			printBanner()
 			if err := HttpServerStart(frontend); err != nil {
 				panic(err)
@@ -64,7 +68,7 @@ func newHTTPCommand(frontend http.FileSystem) *cobra.Command {
 
 func rollbackFailedUpdate() {
 	if failure := recover(); failure != nil {
-		restored, rollbackErr := selfupdate.RollbackPendingUpdate()
+		restored, rollbackErr := selfupdate.RollbackPendingUpdate(fmt.Sprint(failure))
 		if restored {
 			fmt.Fprintf(os.Stderr, "startup failed; restored previous binary: %v\n", failure)
 			os.Exit(selfupdate.RestartExitCode())

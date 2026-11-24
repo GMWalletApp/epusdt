@@ -15,12 +15,15 @@ import (
 )
 
 var initOnce sync.Once
+var initErr error
 
-func InitApp() {
+func InitApp() error {
 	initOnce.Do(func() {
 		config.Init()
 		log.Init()
-		dao.Init()
+		if initErr = dao.Init(); initErr != nil {
+			return
+		}
 		logLevel := data.GetSettingString(mdb.SettingKeySystemLogLevel, mdb.SettingDefaultSystemLogLevel)
 		if err := log.SetLevel(logLevel); err != nil {
 			color.Red.Printf("[bootstrap] apply log level setting %q err=%s; fallback=%s\n", logLevel, err, mdb.SettingDefaultSystemLogLevel)
@@ -74,4 +77,5 @@ func InitApp() {
 		mq.Start()
 		go telegram.BotStart()
 	})
+	return initErr
 }
