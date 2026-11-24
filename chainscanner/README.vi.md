@@ -16,11 +16,11 @@ ChainScanner quét khối trên từng mạng một lần cho tất cả các d�
 Mỗi ứng dụng tự quản lý logic nghiệp vụ, trạng thái đơn hàng và số dư ví. ChainScanner cung cấp hạ tầng dùng chung để đăng ký theo dõi địa chỉ, quét khối và chuyển sự kiện đến các dịch vụ đã đăng ký.
 
 > [!IMPORTANT]
-> **Hạn mức RPC công cộng khi tra cứu giao dịch thường xuyên trên Solana, TON (GRAM) và Plasma.** Chế độ xác minh nghiêm ngặt yêu cầu hai nhà cung cấp độc lập trả về kết quả giống nhau. Trong một lần thử nghiệm 15 phút trên mainnet với các RPC công cộng miễn phí, cả ba lượt tra cứu nghiêm ngặt trên Solana và cả ba lượt trên Plasma đều thất bại. Trên TON, cả ba lượt đều thành công. Nếu dự kiến có nhiều truy vấn, hãy cấu hình hai nút dự phòng cho mỗi mạng, mỗi nút từ một nhà cung cấp khác nhau. ChainScanner dùng chung kết quả quét khối cho các địa chỉ theo dõi và các dịch vụ đăng ký, giúp giảm số yêu cầu RPC trùng lặp. Nếu chỉ thỉnh thoảng cần quét lại khối và xác minh giao dịch, gói miễn phí hoặc gói cơ bản của phần lớn nhà cung cấp thường là đủ. Khi lưu lượng cao kéo dài, hãy kiểm tra giới hạn yêu cầu mỗi giây và hạn mức hằng tháng. [Cấu hình nút dự phòng](docs/api/vi.md#fallback) · [So sánh các nhà cung cấp nút dự phòng](#fallback-providers)
+> Tra cứu theo mã băm ưu tiên nút dự phòng, loại các nút đã cung cấp giao dịch khi quét khối và trả giao dịch hợp lệ đầu tiên. [So sánh các nhà cung cấp nút dự phòng](#fallback-providers)
 
 ## Tình huống sử dụng
 
-- **Cổng thanh toán.** [Tích hợp EPUSDT](https://github.com/GMWalletApp/epusdt/pull/127) theo dõi địa chỉ nhận tiền và xác minh giao dịch qua hai nút trước khi ghi có.
+- **Cổng thanh toán.** [Tích hợp EPUSDT](https://github.com/GMWalletApp/epusdt/pull/127) theo dõi địa chỉ nhận tiền và xác minh giao dịch qua truy vấn nghiêm ngặt trước khi ghi có.
 - **Ý tưởng bot Telegram.** Bot có thể lưu sự kiện ví cá nhân rồi thông báo tiền vào hoặc ra kèm mã giao dịch.
 - **Ý tưởng đối soát.** Kế toán và dịch vụ cảnh báo theo dõi cùng nhóm ví và xác nhận xử lý độc lập.
 
@@ -42,7 +42,7 @@ Trường `from_height` trong phản hồi cho biết khối đầu tiên đư�
 
 ## Nút dự phòng được khuyến nghị
 
-Đăng ký riêng từng nút để thêm hai nút dự phòng độc lập trên cùng mạng. Các nút đủ điều kiện luân phiên quét bù. Truy vấn nghiêm ngặt ưu tiên hai nút dự phòng và có thể thêm nút thường nếu thiếu. [API](docs/api/vi.md#fallback)
+Đăng ký riêng từng nút dự phòng. Các nút đủ điều kiện luân phiên quét bù các khoảng bị lỗi. [API](docs/api/vi.md#fallback)
 
 ```sh
 BASE=http://127.0.0.1:9081

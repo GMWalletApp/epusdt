@@ -1549,81 +1549,12 @@
                         "description": "Allow manual verification nodes",
                         "name": "manual",
                         "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "hash": {
-                                    "type": "string"
-                                },
-                                "network": {
-                                    "type": "string"
-                                },
-                                "result": {
-                                    "type": "object"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/admin/api/v1/chainscanner/transactions/{network}/{hash}/strict": {
-            "get": {
-                "security": [
-                    {
-                        "AdminJWT": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "ChainScanner"
-                ],
-                "summary": "Verify a transaction with independent nodes",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Network",
-                        "name": "network",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Transaction hash",
-                        "name": "hash",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "boolean",
-                        "description": "Allow manual verification nodes",
-                        "name": "manual",
-                        "in": "query"
                     },
                     {
                         "type": "boolean",
                         "description": "Restrict lookup to fallback nodes",
                         "name": "fallback_only",
                         "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Use 1 for a single round",
-                        "name": "rounds",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Previous voter hashes for a single round",
-                        "name": "X-ChainScanner-Exclude",
-                        "in": "header"
                     }
                 ],
                 "responses": {

@@ -130,7 +130,7 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 	if !strings.Contains(call("GET", "/admin/nodes?network=solana", "", 200), host) {
 		t.Fatal("node not restored")
 	}
-	// Use only the two local RPC servers for ordinary and strict transaction lookups.
+	// Use only the two local RPC servers for transaction lookups.
 	rows, err := reg.List(t.Context(), "solana")
 	if err != nil {
 		t.Fatal(err)
@@ -153,7 +153,7 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 			value = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
 		}
 		if q.Method == "getTransaction" {
-			value = map[string]any{"slot": 123, "transaction": map[string]any{"signatures": []string{signature}, "message": map[string]any{}}}
+			value = map[string]any{"slot": 123, "meta": map[string]any{"err": nil}, "transaction": map[string]any{"signatures": []string{signature}, "message": map[string]any{"recentBlockhash": "block", "instructions": []any{}, "accountKeys": []string{"account"}}}}
 		}
 		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": q.ID, "result": value})
 	})
@@ -201,17 +201,20 @@ func TestScannerAdminBlacklistAndFallback(t *testing.T) {
 			t.Fatalf("missing diagnostic data for node %d: %+v", row.ID, row)
 		}
 	}
-	for _, suffix := range []string{"", "/strict"} {
-		b := call("GET", "/transactions/solana/"+signature+suffix, "", 200)
-		if !strings.Contains(b, signature) {
-			t.Fatal("missing transaction result", b)
+	if b := call("GET", "/transactions/solana/"+signature, "", 200); !strings.Contains(b, signature) {
+		t.Fatal(b)
+	}
+	// Disable the fallback to isolate the regular node's manual-only policy.
+	for _, row := range inventory {
+		if row.ID != node.ID {
+			call("PATCH", fmt.Sprintf("/admin/nodes/%d", row.ID), `{"enabled":false}`, 200)
 		}
 	}
 	call("PATCH", fmt.Sprintf("/admin/nodes/%d", node.ID), `{"enabled":false}`, 200)
-	call("GET", "/transactions/solana/"+signature+"/strict", "", 503)
+	call("GET", "/transactions/solana/"+signature, "", 503)
 	call("PATCH", fmt.Sprintf("/admin/nodes/%d", node.ID), `{"enabled":true,"purpose":"manual_verify"}`, 200)
-	call("GET", "/transactions/solana/"+signature+"/strict", "", 503)
-	call("GET", "/transactions/solana/"+signature+"/strict?manual=true", "", 200)
+	call("GET", "/transactions/solana/"+signature, "", 503)
+	call("GET", "/transactions/solana/"+signature+"?manual=true", "", 200)
 	call("PATCH", fmt.Sprintf("/admin/nodes/%d", node.ID), `{"purpose":"general"}`, 200)
 	call("GET", "/transactions/solana/invalid", "", 400)
 	call("GET", "/transactions/solana/invalid/strict", "", 400)

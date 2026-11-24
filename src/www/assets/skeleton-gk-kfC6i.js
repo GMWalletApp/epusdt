@@ -1,1 +1,0 @@
-import{Ag as e}from"./messages-BPlfbIs7.js";import{i as t}from"./button-CPJ50MUw.js";import{t as n}from"./createLucideIcon-CWEVq4aQ.js";var r=n(`chevron-right`,[[`path`,{d:`m9 18 6-6-6-6`,key:`mthhwq`}]]),i=e();function a({className:e,...n}){return(0,i.jsx)(`div`,{className:t(`animate-pulse rounded-md bg-accent`,e),"data-slot":`skeleton`,...n})}export{r as n,a as t};

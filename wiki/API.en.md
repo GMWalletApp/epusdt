@@ -343,9 +343,9 @@ For the cashier, append `?checkout=true`. If this payment attempt expired becaus
 | 3 | Expired |
 | 4 | Awaiting a network, asset or provider selection |
 | 5 | A matching transfer has been observed and is confirming |
-| 6 | Two rounds of strict verification failed. Manual review is required |
+| 6 | Transaction missing or transfer does not match the order. Manual review required |
 
-At status 5, continue polling and show “Confirming” so the buyer knows the transfer was seen. By default EPUSDT checks the required confirmation depth and verifies the transaction with two independent nodes before crediting it. Waiting for depth does not consume an attempt. Verification attempts and the first set of node IDs persist across restarts. At status 6, automatic verification and success callbacks pause. An administrator can inspect `review_transaction_hash` and recheck the transaction after investigating.
+At status 5, display “Confirming” and continue polling. Once the transfer reaches the required depth, the gateway calls `GET /v1/transactions/{network}/{hash}` when the payment recheck is enabled. Finding that transaction on the requested network completes the recheck. The matched scan event supplies the recipient, asset and amount for settlement. ChainScanner tries another node on lookup failure. If all available nodes fail, the gateway retries with backoff, including after restart. A definitive missing result or a transfer that does not match the order moves it to status 6 and retains `review_transaction_hash` for an administrator. A verified matching payment moves to status 2 and triggers the callback.
 
 For a buyer-supplied hash, send `block_transaction_id` to `POST /pay/submit-tx-hash/{trade_id}`. The server verifies the transfer. The browser return route, `GET /pay/return/{trade_id}`, sends an HTTP 302 redirect.
 

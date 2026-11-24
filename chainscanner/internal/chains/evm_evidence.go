@@ -41,7 +41,7 @@ type evmLogEvidence struct {
 	Data            string   `json:"data"`
 	TransactionHash string   `json:"transactionHash"`
 	BlockHash       string   `json:"blockHash"`
-	Removed         bool     `json:"removed"`
+	Removed         bool     `json:"removed,omitempty"`
 }
 
 func canonicalEVMEvidence(tx, receipt gjson.Result) (json.RawMessage, error) {
@@ -49,12 +49,23 @@ func canonicalEVMEvidence(tx, receipt gjson.Result) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !receipt.Exists() || receipt.Raw == "null" {
+	if receipt.Raw == "null" {
+		if txEvidence.BlockHash != nil && txEvidence.BlockNumber != nil {
+			return nil, ErrTransactionPending
+		}
+		if tx.Get("blockHash").Raw != "null" || txEvidence.BlockNumber != nil {
+			return nil, ErrTransactionData
+		}
 		return json.Marshal(evmEvidence{Transaction: txEvidence})
 	}
 	receiptEvidence, err := canonicalEVMReceipt(receipt)
 	if err != nil {
 		return nil, err
+	}
+	if txEvidence.BlockHash == nil || txEvidence.BlockNumber == nil ||
+		txEvidence.Hash != receiptEvidence.TransactionHash || *txEvidence.BlockHash != receiptEvidence.BlockHash ||
+		*txEvidence.BlockNumber != receiptEvidence.BlockNumber {
+		return nil, ErrTransactionData
 	}
 	return json.Marshal(evmEvidence{Transaction: txEvidence, Receipt: &receiptEvidence})
 }
@@ -62,25 +73,25 @@ func canonicalEVMEvidence(tx, receipt gjson.Result) (json.RawMessage, error) {
 func canonicalEVMTransaction(tx gjson.Result) (evmTransactionEvidence, error) {
 	var out evmTransactionEvidence
 	var err error
-	if out.Hash, err = evmHex(tx.Get("hash"), true); err != nil {
+	if out.Hash, err = evmHex(tx.Get("hash"), 32); err != nil {
 		return out, err
 	}
-	if out.From, err = evmHex(tx.Get("from"), true); err != nil {
+	if out.From, err = evmHex(tx.Get("from"), 20); err != nil {
 		return out, err
 	}
-	if out.Input, err = evmHex(tx.Get("input"), true); err != nil {
+	if out.Input, err = evmHex(tx.Get("input"), -1); err != nil {
 		return out, err
 	}
-	if out.Value, err = evmQuantity(tx.Get("value"), false); err != nil {
+	if out.Value, err = evmQuantity(tx.Get("value")); err != nil {
 		return out, err
 	}
-	if out.BlockHash, err = evmHexPtr(tx.Get("blockHash")); err != nil {
+	if out.BlockHash, err = evmHexPtr(tx.Get("blockHash"), 32); err != nil {
 		return out, err
 	}
 	if out.BlockNumber, err = evmQuantityPtr(tx.Get("blockNumber")); err != nil {
 		return out, err
 	}
-	if out.To, err = evmHexPtr(tx.Get("to")); err != nil {
+	if out.To, err = evmHexPtr(tx.Get("to"), 20); err != nil {
 		return out, err
 	}
 	return out, nil
@@ -89,25 +100,25 @@ func canonicalEVMTransaction(tx gjson.Result) (evmTransactionEvidence, error) {
 func canonicalEVMReceipt(receipt gjson.Result) (evmReceiptEvidence, error) {
 	var out evmReceiptEvidence
 	var err error
-	if out.TransactionHash, err = evmHex(receipt.Get("transactionHash"), true); err != nil {
+	if out.TransactionHash, err = evmHex(receipt.Get("transactionHash"), 32); err != nil {
 		return out, err
 	}
-	if out.BlockHash, err = evmHex(receipt.Get("blockHash"), true); err != nil {
+	if out.BlockHash, err = evmHex(receipt.Get("blockHash"), 32); err != nil {
 		return out, err
 	}
-	if out.BlockNumber, err = evmQuantity(receipt.Get("blockNumber"), true); err != nil {
+	if out.BlockNumber, err = evmQuantity(receipt.Get("blockNumber")); err != nil {
 		return out, err
 	}
-	if out.Status, err = evmQuantity(receipt.Get("status"), true); err != nil {
-		return out, err
+	if out.Status, err = evmQuantity(receipt.Get("status")); err != nil || (out.Status != "0x0" && out.Status != "0x1") {
+		return out, ErrTransactionData
 	}
 	logs := receipt.Get("logs")
 	if !logs.IsArray() {
-		return out, errTxData
+		return out, ErrTransactionData
 	}
 	out.Logs = make([]evmLogEvidence, 0, len(logs.Array()))
 	for _, raw := range logs.Array() {
-		log, err := canonicalEVMLog(raw)
+		log, err := canonicalEVMLog(raw, out.TransactionHash, out.BlockHash)
 		if err != nil {
 			return out, err
 		}
@@ -116,76 +127,83 @@ func canonicalEVMReceipt(receipt gjson.Result) (evmReceiptEvidence, error) {
 	return out, nil
 }
 
-func canonicalEVMLog(raw gjson.Result) (evmLogEvidence, error) {
+func canonicalEVMLog(raw gjson.Result, txHash, blockHash string) (evmLogEvidence, error) {
 	var out evmLogEvidence
 	var err error
-	if out.Address, err = evmHex(raw.Get("address"), true); err != nil {
+	if out.Address, err = evmHex(raw.Get("address"), 20); err != nil {
 		return out, err
 	}
 	topics := raw.Get("topics")
 	if !topics.IsArray() {
-		return out, errTxData
+		return out, ErrTransactionData
 	}
 	out.Topics = make([]string, 0, len(topics.Array()))
 	for _, topic := range topics.Array() {
-		value, err := evmHex(topic, true)
+		value, err := evmHex(topic, 32)
 		if err != nil {
 			return out, err
 		}
 		out.Topics = append(out.Topics, value)
 	}
-	if out.Data, err = evmHex(raw.Get("data"), true); err != nil {
+	if out.Data, err = evmHex(raw.Get("data"), -1); err != nil {
 		return out, err
 	}
-	if out.TransactionHash, err = evmHex(raw.Get("transactionHash"), true); err != nil {
-		return out, err
+	// A nested receipt log already identifies its transaction and block. Check
+	// duplicate identifiers when supplied and return the verified parent IDs.
+	out.TransactionHash, out.BlockHash = txHash, blockHash
+	if id := raw.Get("transactionHash"); id.Exists() && !strings.EqualFold(id.String(), txHash) {
+		return out, ErrTransactionData
 	}
-	if out.BlockHash, err = evmHex(raw.Get("blockHash"), true); err != nil {
-		return out, err
+	if id := raw.Get("blockHash"); id.Exists() && !strings.EqualFold(id.String(), blockHash) {
+		return out, ErrTransactionData
 	}
-	out.Removed = raw.Get("removed").Bool()
+	switch removed := raw.Get("removed"); removed.Type {
+	case gjson.True, gjson.False:
+		out.Removed = removed.Bool()
+	default:
+		if removed.Exists() {
+			return out, ErrTransactionData
+		}
+	}
 	return out, nil
 }
 
-func evmHex(value gjson.Result, required bool) (string, error) {
-	if !value.Exists() || value.Type == gjson.Null {
-		if required {
-			return "", errTxData
-		}
-		return "", nil
+func evmHex(value gjson.Result, size int) (string, error) {
+	if value.Type != gjson.String {
+		return "", ErrTransactionData
 	}
-	out := strings.ToLower(strings.TrimSpace(value.String()))
-	if !strings.HasPrefix(out, "0x") {
-		return "", errTxData
+	out := strings.ToLower(strings.TrimSpace(value.Str))
+	if !strings.HasPrefix(out, "0x") || (size >= 0 && len(out) != 2+size*2) {
+		return "", ErrTransactionData
 	}
 	if _, err := hex.DecodeString(out[2:]); err != nil {
-		return "", errTxData
+		return "", ErrTransactionData
 	}
 	return out, nil
 }
 
-func evmHexPtr(value gjson.Result) (*string, error) {
-	out, err := evmHex(value, false)
-	if err != nil || out == "" {
+func evmHexPtr(value gjson.Result, size int) (*string, error) {
+	if value.Type == gjson.Null {
+		return nil, nil
+	}
+	out, err := evmHex(value, size)
+	if err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
-func evmQuantity(value gjson.Result, required bool) (string, error) {
-	if !value.Exists() || value.Type == gjson.Null {
-		if required {
-			return "", errTxData
-		}
-		return "0x0", nil
+func evmQuantity(value gjson.Result) (string, error) {
+	if value.Type != gjson.String {
+		return "", ErrTransactionData
 	}
 	raw := strings.ToLower(strings.TrimSpace(value.String()))
-	if !strings.HasPrefix(raw, "0x") {
-		return "", errTxData
+	if !strings.HasPrefix(raw, "0x") || strings.ContainsAny(raw, "+-") {
+		return "", ErrTransactionData
 	}
 	number, ok := new(big.Int).SetString(raw[2:], 16)
 	if !ok {
-		return "", errTxData
+		return "", ErrTransactionData
 	}
 	return "0x" + number.Text(16), nil
 }
@@ -194,7 +212,7 @@ func evmQuantityPtr(value gjson.Result) (*string, error) {
 	if !value.Exists() || value.Type == gjson.Null {
 		return nil, nil
 	}
-	out, err := evmQuantity(value, true)
+	out, err := evmQuantity(value)
 	if err != nil {
 		return nil, err
 	}

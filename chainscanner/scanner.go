@@ -3,6 +3,7 @@ package scanner
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/GMWalletApp/ChainScanner/internal/chains"
@@ -125,4 +126,22 @@ func ManagementProtocols() map[string][]string { return nodes.ManagementProtocol
 // ConnectTONPeer opens a mainnet-verified ADNL connection for a selected registry endpoint.
 func ConnectTONPeer(ctx context.Context, pool *liteclient.ConnectionPool, raw string) error {
 	return chains.ConnectTONPeer(ctx, pool, raw)
+}
+
+// PaymentEvidence normalizes chain-native hash lookup data for a payment consumer.
+func PaymentEvidence(network string, raw json.RawMessage) (json.RawMessage, error) {
+	n := chains.Network{Name: network}
+	if network == "ton" {
+		n.Protocol = "toncenter-v3"
+		var proof struct {
+			BOC string `json:"transaction_boc"`
+		}
+		if err := json.Unmarshal(raw, &proof); err != nil {
+			return nil, err
+		}
+		if proof.BOC != "" {
+			n.Protocol = "lite"
+		}
+	}
+	return chains.TransactionEvidence(n, raw)
 }

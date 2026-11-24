@@ -73,31 +73,52 @@ func SetManualOrderPaymentValidatorForTest(fn func(*mdb.Orders, string) (string,
 }
 
 func validateManualOrderPaymentDefault(order *mdb.Orders, blockTransactionID string) (string, error) {
-	id, err := validateManualTransfer(order, blockTransactionID)
-	if err != nil {
-		if StrictTransaction == nil {
-			return "", err
+	id, transferErr := validateManualTransfer(order, blockTransactionID)
+	if LookupPaymentTransaction == nil {
+		if transferErr != nil {
+			return "", transferErr
 		}
-		id, err = canonicalManualStrictTxID(order, blockTransactionID)
-		if err != nil {
-			return "", err
-		}
-		if err := ensureManualBlockTransactionUnused(order, id); err != nil {
-			return "", err
-		}
-	}
-	if StrictTransaction == nil {
-		return "", fmt.Errorf("strict lookup unavailable")
+		return "", fmt.Errorf("transaction lookup unavailable")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	if err := confirmManualTransfer(ctx, order, id, StrictTransaction); err != nil {
+	if transferErr == nil {
+		hash := id
+		if order.Network == mdb.NetworkTon {
+			ref, err := parseManualTonTxRef(id)
+			if err != nil {
+				return "", err
+			}
+			hash = ref.HashHex
+		}
+		if _, err := LookupPaymentTransaction(ctx, order.Network, hash); err != nil {
+			return "", err
+		}
+		return id, nil
+	}
+	// Without a verified transfer, the scanner response must supply the initial order match.
+	id, err := canonicalManualLookupID(order, blockTransactionID)
+	if err != nil {
+		return "", err
+	}
+	if err := ensureManualBlockTransactionUnused(order, id); err != nil {
+		return "", err
+	}
+	raw, err := LookupPaymentTransaction(ctx, order.Network, id)
+	if err != nil {
+		return "", err
+	}
+	evidence, err := scanner.PaymentEvidence(order.Network, raw)
+	if err != nil {
+		return "", err
+	}
+	if err := confirmManualTransfer(ctx, order, id, evidence); err != nil {
 		return "", err
 	}
 	return id, nil
 }
 
-func canonicalManualStrictTxID(order *mdb.Orders, blockTransactionID string) (string, error) {
+func canonicalManualLookupID(order *mdb.Orders, blockTransactionID string) (string, error) {
 	if order == nil || order.ID == 0 {
 		return "", fmt.Errorf("order not found")
 	}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -244,5 +245,65 @@ func TestRetiredMorphWatchDoesNotBlockOtherSubscriptions(t *testing.T) {
 	}
 	if _, err = store.Subscribe(context.Background(), "pay", []feed.Watch{{Network: "morph", Address: wallet}}); err == nil {
 		t.Fatal("accepted retired network")
+	}
+}
+
+func TestMatchedScanSourcesSurviveAckAndRestart(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "scan.sqlite")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := feed.Watch{Network: "base", Address: wallet}
+	if err := store.SeedCursor(ctx, w.Network, 9); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Subscribe(ctx, "merchant", []feed.Watch{w}); err != nil {
+		t.Fatal(err)
+	}
+	paired := chains.Network{Name: w.Network, URL: "wss://stream.example", HistoryURL: "https://history.example/api-key"}
+	row := chains.Activity{Height: 10, TxID: "0x" + strings.Repeat("ab", 32), Addresses: []string{wallet}, ScanSources: chains.SourceIDs(paired)}
+	if err := completeNext(store, ctx, w.Network, 9, 10, []chains.Activity{row}); err != nil {
+		t.Fatal(err)
+	}
+	d, err := store.PendingNetwork(ctx, "merchant", w.Network, 0)
+	if err != nil || d == nil {
+		t.Fatal(d, err)
+	}
+	if err := store.Ack(ctx, "merchant", d.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	rows, err := store.db.Query("SELECT source FROM transaction_sources WHERE network=? AND hash=?", w.Network, row.TxID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	scanned := map[string]bool{}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			t.Fatal(err)
+		}
+		scanned[key] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	for _, url := range []string{"https://stream.example:443", "https://HISTORY.example/other"} {
+		if !chains.SharesScanSource(chains.Network{Name: "base", URL: url}, scanned) {
+			t.Fatalf("lost scan source %s", url)
+		}
+	}
+	if chains.SharesScanSource(chains.Network{Name: "base", URL: "https://other.example"}, scanned) {
+		t.Fatal("independent endpoint excluded")
 	}
 }

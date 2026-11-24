@@ -424,7 +424,7 @@ func (r *NodeRegistry) Test(ctx context.Context, id int64) (Node, error) {
 	probe, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	src := r.network(n, chains.Network{})
-	defer r.lookup.lanes.scan(providerKey(src))()
+	defer r.lookup.lanes.scan(chains.ProviderKey(src))()
 	var height int64
 	if n.Protocol == "toncenter-v3" {
 		height, err = chains.TONIndexHeight(probe, src)

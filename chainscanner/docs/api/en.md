@@ -32,7 +32,6 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Consumer | [`POST /v1/events/{id}/ack`](#ack) | `204` |
 | Consumer | [`GET /v1/heights/{network}`](#height) | `200` |
 | Consumer | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
-| Consumer | [`GET /v1/transactions/{network}/{hash}/strict`](#transactions) | `200` |
 | Administrator | [`GET /v1/admin/progress`](#scan-progress) | `200` |
 | Administrator | [`GET /v1/admin/scan-retry-rate`](#scan-retry-rate) | `200`, `400` |
 | Administrator | [`GET /v1/admin/nodes`](#list) | `200` |
@@ -49,33 +48,26 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 ## Look up a transaction
 
-Send a consumer bearer token and the configured network ID. No address subscription is needed. A successful response contains `network`, the normalized `hash` and the chain-native `result`. EVM and TRON include the transaction and receipt. A pending EVM transaction can have a null receipt.
+Send a consumer bearer token and the configured network ID. No address subscription is needed. A successful response contains `network`, the normalized `hash` and the chain-native `result`. EVM and TRON include the transaction and receipt.
 
-The ordinary route picks one idle endpoint at random, preferring healthy nodes. The strict route queries two distinct endpoints concurrently and returns their complete transaction result if both replies match. If the pair fails to agree, it retries once with two unused endpoints. Missing transactions and RPC errors do not count as votes. Failure responses contain no transaction. JSON object order and whitespace are ignored; field values, array order and large integers are preserved.
+Hash lookup prefers a fallback node and returns the first usable transaction. The scanner excludes the sources that supplied the matching block activity.
 
-Register two independent fallbacks on the same network by calling the endpoint once per provider. Failed ranges rotate across eligible fallbacks. Strict lookups prefer two fallback votes. With only one eligible fallback, an ordinary node can supply the other vote. Ordinary lookups skip fallback nodes. Both routes skip nodes in cooldown. Cold providers are checked before receiving the hash. Aliases on the same host and port count once per network. Different hostnames can belong to one operator. Each round allows up to four seconds to select providers and nine seconds to retrieve transactions. HTTP 400 means invalid input, 401 invalid credentials, 404 an ordinary lookup found no transaction, 502 lookup or agreement failed, and 503 too few eligible nodes or unavailable inventory.
+HTTP 404 with `X-ChainScanner-Evidence: not_found` means the node answered that the hash is absent. A payment service can suspend the order for review. Retry HTTP 502 and 503 with backoff while the order is confirming. These responses may report `pending` or `incomplete`.
 
-TON uses a v3 index as a location hint and queries two direct ADNL LiteServers with distinct hosts and public keys. Each verifies the transaction inclusion proof. The verified result includes the transaction BOC, transaction hash, account, LT, timestamp, and shard and masterchain block roots. When a proof pair cannot be formed, two distinct v3 indexes may instead agree on a complete index record. A global-config URL cannot cast a LiteServer vote. Durable clients may request one round with `?rounds=1`, then pass the opaque `X-ChainScanner-Pair` response header as `X-ChainScanner-Exclude` on their final attempt. The default endpoint performs both rounds internally.
+A failed query rotates to other eligible nodes. With alternatives available, the scanner makes at least three retries within its request deadline. Set `?fallback_only=true` to limit the pool. For a previously delivered transaction, `?observed=true` requires a recorded scan source. A 503 keeps the payment pending if the source record or an independent endpoint is unavailable.
 
 ```sh
 consumer "$BASE/v1/transactions/base/$TX_HASH"
-consumer "$BASE/v1/transactions/base/$TX_HASH/strict"
-consumer "$BASE/v1/transactions/base/$TX_HASH/strict?fallback_only=true"
+consumer "$BASE/v1/transactions/base/$TX_HASH?fallback_only=true"
 ```
 
 <a id="trust"></a>
 
 ### Deciding when to trust a transaction
 
-Public providers rotate. An event or a single-node lookup can contain stale, incorrect or fabricated data. ChainScanner has no measured historical incident rate. Before releasing funds or goods, query the transaction hash with `/strict`, then check execution success, recipient, asset, amount and confirmation depth. Two matching responses improve confidence. Different hostnames can share an operator.
-
-Register a fallback from an operator you trust, independent of your general nodes. A free tier can cover light use. Size the quota for both failed-range repairs and strict lookups, including provider-specific method costs. [API](#fallback)
-
-If the default strict request exhausts both rounds, the response includes `X-ChainScanner-Manual-Review: required`. Stop automatic retries for that payment and retain its network and hash for review. `X-ChainScanner-Strict-Rounds` gives the number of rounds attempted.
+Before crediting a payment, check execution success, confirmation depth, recipient, asset and amount against the order. The result reflects the selected RPC provider.
 
 [Node blacklist](#blacklist)
-
-To restrict every upstream to your fallbacks, use `?fallback_only=true` on the strict route. A retry needs two unused voters. If only the original pair exists, the response is 503. On TON, proof reads also need an eligible v3 locator. In fallback-only mode register it as a fallback too, or use two independent v3 fallback indexes. A v3 index cannot repair blocks. On TON, two fallback v3 indexes may supply the pair when fewer than two fallback LiteServers are configured.
 
 <a id="subscriptions"></a>
 
@@ -382,7 +374,7 @@ admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http"
 
 ### `POST /v1/admin/nodes/fallback`
 
-Register an operator-funded history endpoint for one network with the same fields and administrator token as normal node creation. The response is **201** with `origin: fallback`. After a normal range read fails, a free fallback can take that range immediately. It also handles previously failed ranges recovered from SQLite. The scheduler checks the fallback’s own confirmation height for the repair. Fresh blocks, subscription boundaries and automatic head polling use ordinary nodes. Explicit administrator tests can contact the paid endpoint. Failed repairs remain in the retry queue and the same three-failure cooldown applies. List, test and delete by the returned node ID. Register two independent fallbacks on the same network by calling the endpoint once per provider. Failed ranges rotate across eligible fallbacks. Strict lookups prefer two fallback votes. With only one eligible fallback, an ordinary node can supply the other vote. Ordinary lookups skip fallback nodes. Both routes skip nodes in cooldown.
+Register an operator-funded history endpoint for one network with the same fields and administrator token as normal node creation. The response is **201** with `origin: fallback`. After a normal range read fails, a free fallback can take that range immediately. It also handles previously failed ranges recovered from SQLite. The scheduler checks the fallback’s own confirmation height for the repair. Fresh blocks, subscription boundaries and automatic head polling use ordinary nodes. Explicit administrator tests can contact the paid endpoint. Failed repairs remain in the retry queue and the same three-failure cooldown applies. List, test and delete by the returned node ID. Failed ranges rotate across eligible fallback nodes. Register each node separately.
 
 ```sh
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'
@@ -472,4 +464,4 @@ Correct invalid requests before retrying **400**. For **401**, verify the bearer
 
 ### Node management capabilities
 
-`GET /v1/admin/capabilities` lists the available protocols and reports support for node settings and migration. Use `PATCH /v1/admin/nodes/{id}` with any of `enabled`, `role`, `purpose`, `weight`, `url`, `api_key`, `history_url` and `history_api_key`. Omitted settings retain their values. The role is either `regular` or `fallback`. Disabling a node preserves its settings across restarts and discovery. Set `purpose` to `manual_verify` to reserve a regular node for manual verification. An explicit manual strict lookup accepts `manual=true`. Batch health checks skip disabled nodes and accept `include_manual=true` to include manual-only nodes.
+`GET /v1/admin/capabilities` lists the available protocols and reports support for node settings and migration. Use `PATCH /v1/admin/nodes/{id}` with any of `enabled`, `role`, `purpose`, `weight`, `url`, `api_key`, `history_url` and `history_api_key`. Omitted settings retain their values. The role is either `regular` or `fallback`. Disabling a node preserves its settings across restarts and discovery. Set `purpose` to `manual_verify` to reserve a regular node for manual verification. An explicit manual lookup accepts `manual=true`. Batch health checks skip disabled nodes and accept `include_manual=true` to include manual-only nodes.

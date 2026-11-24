@@ -58,11 +58,11 @@ func TestManagedNodesStayOutOfSchedulingAcrossRestart(t *testing.T) {
 		if enabled && !slices.ContainsFunc(pool.nodes, func(n *endpoint) bool { return n.fallback && n.cfg.URL == fallback.URL && n.weight == 7 }) {
 			t.Fatal("lost fallback role or weight")
 		}
-		auto, err := r.lookupCandidates(ctx, "base", true)
+		auto, err := r.lookupCandidates(ctx, "base", false)
 		if err != nil || enabled && len(auto) != 2 || !enabled && len(auto) != 0 {
 			t.Fatalf("automatic voters: %d, %v", len(auto), err)
 		}
-		onDemand, err := r.lookupCandidates(ctx, "base", true, true)
+		onDemand, err := r.lookupCandidates(ctx, "base", true)
 		if err != nil || !slices.ContainsFunc(onDemand, func(c lookupCandidate) bool { return c.version.id == manual.ID }) {
 			t.Fatal("manual voter missing", err)
 		}

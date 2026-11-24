@@ -2759,6 +2759,10 @@ paths:
         in: query
         name: manual
         type: boolean
+      - description: Restrict lookup to fallback nodes
+        in: query
+        name: fallback_only
+        type: boolean
       produces:
       - application/json
       responses:
@@ -2776,54 +2780,6 @@ paths:
       security:
       - AdminJWT: []
       summary: Look up a transaction
-      tags:
-      - ChainScanner
-  /admin/api/v1/chainscanner/transactions/{network}/{hash}/strict:
-    get:
-      parameters:
-      - description: Network
-        in: path
-        name: network
-        required: true
-        type: string
-      - description: Transaction hash
-        in: path
-        name: hash
-        required: true
-        type: string
-      - description: Allow manual verification nodes
-        in: query
-        name: manual
-        type: boolean
-      - description: Restrict lookup to fallback nodes
-        in: query
-        name: fallback_only
-        type: boolean
-      - description: Use 1 for a single round
-        in: query
-        name: rounds
-        type: integer
-      - description: Previous voter hashes for a single round
-        in: header
-        name: X-ChainScanner-Exclude
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            properties:
-              hash:
-                type: string
-              network:
-                type: string
-              result:
-                type: object
-            type: object
-      security:
-      - AdminJWT: []
-      summary: Verify a transaction with independent nodes
       tags:
       - ChainScanner
   /admin/api/v1/config:
