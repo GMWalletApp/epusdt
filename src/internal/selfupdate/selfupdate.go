@@ -283,7 +283,7 @@ func Detect() Capability {
 		return capability
 	}
 	capability.ExecPath = execPath
-	if !dirWritable(filepath.Dir(execPath)) {
+	if !canStageReplacement(execPath) {
 		capability.BlockReason = BlockDirNotWritable
 		return capability
 	}
@@ -329,15 +329,15 @@ func executablePath() (string, error) {
 	return filepath.EvalSymlinks(path)
 }
 
-func dirWritable(dir string) bool {
-	f, err := os.CreateTemp(dir, ".epusdt-update-check-")
+// Exercise the same hard-link backup used by swapBinary. A systemd service
+// can write to its installation directory yet have a separate mount on its executable.
+func canStageReplacement(execPath string) bool {
+	dir, err := os.MkdirTemp(filepath.Dir(execPath), ".epusdt-update-check-")
 	if err != nil {
 		return false
 	}
-	name := f.Name()
-	_ = f.Close()
-	_ = os.Remove(name)
-	return true
+	defer os.RemoveAll(dir)
+	return os.Link(execPath, filepath.Join(dir, "previous")) == nil
 }
 
 func detectSupervisor() (string, bool) {
