@@ -862,7 +862,7 @@ func TestManualVerifyTronPaymentHTTPFlow(t *testing.T) {
 
 }
 
-func TestManualVerifyEvmMatchesScannerTransferWithoutLegacyRpcNodes(t *testing.T) {
+func TestManualVerifyEvmRejectsStrictTransactionWithoutPaymentChecks(t *testing.T) {
 	cleanup := testutil.SetupTestDatabases(t)
 	defer cleanup()
 
@@ -899,11 +899,8 @@ func TestManualVerifyEvmMatchesScannerTransferWithoutLegacyRpcNodes(t *testing.T
 	}
 
 	got, err := ValidateManualOrderPayment(order, strings.ToUpper(txHash))
-	if err != nil {
-		t.Fatalf("ValidateManualOrderPayment() without legacy rpc_nodes failed: %v", err)
-	}
-	if got != txHash {
-		t.Fatalf("canonical txHash = %q, want %q", got, txHash)
+	if err == nil || got != "" {
+		t.Fatalf("accepted transaction without checking block time and confirmations: hash=%q err=%v", got, err)
 	}
 }
 
