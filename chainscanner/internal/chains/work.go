@@ -25,10 +25,10 @@ func ReadSpan(ctx context.Context, network string, s Source, r Span) (Span, Bloc
 	var err error
 	if reader, ok := s.(interface {
 		ReadLinkedBlock(context.Context, int64, *BlockLink) (int64, []Activity, error)
-	}); ok && IsEVM(network) {
+	}); ok && (IsEVM(network) || network == "bitcoin") {
 		end, rows, err = reader.ReadLinkedBlock(ctx, r.First, &link)
 		if err == nil && (link.Hash == "" || (r.First > 0 && link.Parent == "") || end != r.First) {
-			err = errors.New("invalid EVM block link")
+			err = errors.New("invalid block link")
 		}
 	} else {
 		end, rows, err = s.Read(ctx, r.First, r.Last)

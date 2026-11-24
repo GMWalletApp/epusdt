@@ -331,6 +331,9 @@ func TransactionEvidence(n Network, raw json.RawMessage) (json.RawMessage, error
 	if IsEVM(n.Name) {
 		return canonicalEVMEvidence(v.Get("transaction"), v.Get("receipt"))
 	}
+	if n.Name == "bitcoin" {
+		return canonicalBitcoinEvidence(v)
+	}
 	if n.Name == "ton" && n.Protocol == "lite" {
 		return raw, nil
 	}

@@ -141,6 +141,7 @@ Ví dụ minh họa cấu trúc sự kiện với dữ liệu giao dịch rút g
 | `activity.confirmations, activity.time_ms` | `int64, int64` | Số xác nhận quan sát được và thời gian trên chuỗi tính bằng mili giây Unix. |
 | `activity.addresses` | `string[]` | Các địa chỉ đăng ký của dịch vụ đã khớp. |
 | `activity.data` | `JSON` | Dữ liệu JSON riêng của mạng. EVM có thể chứa `transaction`, `logs`, `receipt` và `trace`. |
+| `activity.data.refresh_assets` | `string[]` | Danh sách hợp đồng token cần cập nhật số dư sau sự kiện toàn cục đã nhận diện. Bỏ qua trường này nếu danh sách rỗng. [EVM](../guide/en.md#asset-events) |
 
 <a id="ack"></a>
 

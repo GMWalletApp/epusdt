@@ -50,6 +50,8 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 使用消费者令牌，指定已配置的网络，无需订阅地址。成功响应包含 `network`、规范化后的 `hash` 和链原生数据 `result`。EVM 和 TRON 返回交易及回执。
 
+Bitcoin 主网键为 `bitcoin`，哈希使用 64 位十六进制 txid。已入块交易返回 `result.txid`、完整序列化交易 `result.hex` 及 `result.blockhash`，未入块交易视为 `pending`。扫描事件的 `activity.data.transaction` 包含按块取得的交易和前序输出，`activity.data.block_hash` 标明区块。
+
 按哈希查询优先使用兜底节点，取得可用交易内容即返回。Scanner 排除曾经扫到这笔订阅交易的节点。
 
 HTTP 404 且响应头为 `X-ChainScanner-Evidence: not_found` 表示节点明确返回查无该交易，支付系统可挂起订单。遇到 502 或 503 时保持确认中，延迟后继续查询。响应头也可能标记 `pending` 或 `incomplete`。
@@ -141,6 +143,7 @@ consumer "$BASE/v1/events/next?network=base&wait=15"
 | `activity.confirmations, activity.time_ms` | `int64, int64` | 观察到的确认数、链上时间戳（Unix 毫秒）。 |
 | `activity.addresses` | `string[]` | 该消费者本次匹配到的监听地址。 |
 | `activity.data` | `JSON` | 链专属 JSON 证据。EVM 数据可包含 `transaction`、`logs`、`receipt`、`trace`。 |
+| `activity.data.refresh_assets` | `string[]` | 识别到全局余额调整时，列出需要刷新的代币合约；为空时省略。 [EVM](../guide/zh-CN.md#asset-events) |
 
 <a id="ack"></a>
 

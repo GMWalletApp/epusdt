@@ -58,6 +58,31 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 | `consumers` · `admin_token` | 消费者名称映射到各自的令牌，每个至少 24 字节。另设独立的管理员令牌即可启用节点管理。 |
 | `blacklist` | `keyword:acme` 按主机名做不区分大小写的子串匹配；`exact:rpc.example.org` 只封禁完整主机名；直接填写域名则同时封禁子域名。配置文件和添加、移除接口使用同一种写法。关键词不匹配 URL 路径、查询参数或凭据。 [API](../api/zh-CN.md#blacklist) |
 
+<a id="asset-events"></a>
+
+### EVM 代币事件
+
+扫描器复用扫块时已经读取的日志。Ethereum 主网内置 Aave V3 Core Pool 的 `Supply` 规则，可以匹配非索引的操作人 `user`。监听 Lido stETH 全局余额调整时，订阅一次 stETH 代币合约地址；收到 `TokenRebased` 时，`activity.data.refresh_assets` 含 stETH 的合约地址，余额服务可据此重查自己跟踪的 stETH 持有人。只订阅个人钱包无法匹配未提及该钱包的 rebase。每笔交易对同一资产只提示一次，提示不含入账金额。[Aave 事件 ABI](https://github.com/aave/aave-v3-core/blob/master/contracts/interfaces/IPool.sol) · [stETH 集成说明](https://docs.lido.fi/guides/lido-tokens-integration-guide/)
+
+其他可信合约可在对应的 `networks` 配置项添加 `asset_events`。两级键分别为发出日志的合约地址（代理合约使用代理地址）和事件签名的 32 字节 Keccak 哈希。下例对应 `event RewardPaid(address beneficiary, uint256 amount)`，两个参数都未标记 `indexed`。使用时将示例地址替换为实际奖励合约。
+
+```json
+{
+  "name": "base",
+  "asset_events": {
+    "0x2222222222222222222222222222222222222222": {
+      "0xe2403640ba68fed3a2f88b7557551d1993f84b99bb10ff833f0cf8db0c5e0486": {
+        "topics": 1,
+        "data_words": 2,
+        "address_words": [0]
+      }
+    }
+  }
+}
+```
+
+`topics` 为完整主题数，包含签名。`data_words` 为静态数据的 32 字节字数。`address_words` 指明经 ABI 核实的地址参数位置，从 0 开始。若发出事件的代币合约调整全局余额，可设 `refresh_asset: true`。每条规则至少指定一个地址位置或启用刷新提示。同链、同合约、同签名的自定义规则优先于内置规则。目前支持固定长度的事件数据。
+
 <a id="networks"></a>
 
 ## 网络与节点协议
@@ -81,6 +106,7 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 
 | 网络 | 协议 | 活动与历史数据 |
 | --- | --- | --- |
+| `bitcoin` | `jsonrpc` · `http` | 从前序输出、收款及找零脚本匹配地址。节点需提供区块及 undo 数据。 |
 | `tron` | `http` · `rest` · `grpc` · `solidity-http` · `solidity-grpc` · `jsonrpc` | Wallet 转账、回执及内部转账。WalletSolidity 读取已固化区块；JSON-RPC 需要配对 Wallet HTTP 历史节点。 |
 | `solana` | `http` · `jsonrpc` · `ws` · `grpc` | 按最终确认的 slot 扫描交易账户与 SPL 所有者。PubSub 和 Yellowstone 需配对 HTTP 节点查询完整区块并识别跳过的 slot。 |
 | `sui` | `grpc` · `graphql` | 原生 Move 检查点、发送方、赞助方、所有者和事件。HTTPS 默认使用 gRPC v2。 |

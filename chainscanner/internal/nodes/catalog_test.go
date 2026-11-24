@@ -65,7 +65,7 @@ func TestBuiltinRoutesAndHeightOnlyNodes(t *testing.T) {
 		}
 	}
 	for _, n := range list {
-		if n.Network == "bitcoin" && n.Scannable {
+		if n.Network == "bitcoin" && n.Scannable != (n.Protocol == "jsonrpc" && !strings.Contains(n.URL, "rpcnode.dev")) {
 			t.Fatal(n.NodeEndpoint)
 		}
 		if strings.Contains(n.URL, "yellowstone-grpc.publicnode.com") {

@@ -58,6 +58,31 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 | `consumers` · `admin_token` | Map consumer names to distinct tokens of at least 24 bytes. An optional, separate admin token enables node management. |
 | `blacklist` | Use `keyword:acme` for a case-insensitive substring of the hostname, `exact:rpc.example.org` for a single host, or an unprefixed domain to include subdomains. The same spelling works in the configuration and both admin routes. Paths, credentials and query strings are excluded from keyword matching. [API](../api/en.md#blacklist) |
 
+<a id="asset-events"></a>
+
+### EVM token events
+
+The scanner uses logs already fetched for each block. On Ethereum mainnet it also matches the non-indexed `user` of the Aave V3 Core Pool's `Supply` event. For Lido's stETH `TokenRebased`, subscribe once to the stETH token contract and check `activity.data.refresh_assets` for its address. A balance service can then reread stETH for the holders it tracks. Subscribing to a holder address alone cannot discover a rebase that does not name that holder. Refresh hints are deduplicated per transaction and carry no amount. [Aave event ABI](https://github.com/aave/aave-v3-core/blob/master/contracts/interfaces/IPool.sol) · [stETH integration guide](https://docs.lido.fi/guides/lido-tokens-integration-guide/)
+
+For another trusted deployment, add `asset_events` to its entry in `networks`. Keys are the emitting contract address (use the proxy for delegated execution) and the 32-byte Keccak hash of the event signature. This example assumes `event RewardPaid(address beneficiary, uint256 amount)` with both arguments non-indexed. Replace the example contract with the deployed rewards contract.
+
+```json
+{
+  "name": "base",
+  "asset_events": {
+    "0x2222222222222222222222222222222222222222": {
+      "0xe2403640ba68fed3a2f88b7557551d1993f84b99bb10ff833f0cf8db0c5e0486": {
+        "topics": 1,
+        "data_words": 2,
+        "address_words": [0]
+      }
+    }
+  }
+}
+```
+
+`topics` is the exact topic count including the signature. `data_words` is the exact number of static 32-byte data words. `address_words` lists zero-based positions declared as addresses in the verified ABI. Use `refresh_asset: true` when the emitting token changes balances globally. Configure at least one address position or a refresh hint. A custom rule replaces the built-in layout for that exact network, contract and signature. Configured layouts support fixed-size payloads only.
+
 <a id="networks"></a>
 
 ## Networks and transports
@@ -81,6 +106,7 @@ EVM mainnets share an adapter. Set the exact network ID in every watch and node 
 
 | Network | Protocols | Activity and history |
 | --- | --- | --- |
+| `bitcoin` | `jsonrpc` · `http` | Spent prevouts, recipients and change. Requires full blocks with undo data. |
 | `tron` | `http` · `rest` · `grpc` · `solidity-http` · `solidity-grpc` · `jsonrpc` | Wallet transfers, receipts and internal transfers. WalletSolidity reads solidified blocks. JSON-RPC needs a Wallet HTTP history URL. |
 | `solana` | `http` · `jsonrpc` · `ws` · `grpc` | Finalized slots, transaction accounts and SPL owners. PubSub and Yellowstone require HTTP history for full blocks and skipped slots. |
 | `sui` | `grpc` · `graphql` | Native Move checkpoints, senders, sponsors, owners and events. The HTTPS default uses gRPC v2. |

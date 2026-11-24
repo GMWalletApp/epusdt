@@ -110,6 +110,8 @@ func openPublicRPC(ctx context.Context, n Network, watch bool) (Source, error) {
 	p := PublicRPCProtocol(n.URL)
 	valid := false
 	switch {
+	case n.Name == "bitcoin":
+		valid = p == "http" && (n.Protocol == "jsonrpc" || n.Protocol == "http")
 	case IsEVM(n.Name):
 		valid = p != "" && n.Protocol == p
 	case n.Name == "solana" || n.Name == "aptos":
@@ -207,9 +209,13 @@ func probePublic(ctx context.Context, n Network, scan bool) (int64, error) {
 	if span.Last != h-1 {
 		return 0, errors.New("incomplete recent history")
 	}
+	maxAge := 5 * time.Minute
+	if n.Name == "bitcoin" {
+		maxAge = 2 * time.Hour
+	}
 	for _, event := range events {
 		age := time.Since(time.UnixMilli(event.TimeMS))
-		if event.TxID != "" && age < 5*time.Minute && age > -time.Minute {
+		if event.TxID != "" && age < maxAge && age > -time.Minute {
 			return h, nil
 		}
 	}

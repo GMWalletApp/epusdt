@@ -81,6 +81,7 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 
 | Mạng | Giao thức | Hoạt động và lịch sử |
 | --- | --- | --- |
+| `bitcoin` | `jsonrpc` · `http` | Theo dõi đầu vào đã chi, người nhận và địa chỉ tiền thừa. Cần khối đầy đủ và dữ liệu undo. |
 | `tron` | `http` · `rest` · `grpc` · `solidity-http` · `solidity-grpc` · `jsonrpc` | Giao dịch Wallet, biên nhận và chuyển nội bộ. WalletSolidity đọc khối đã xác nhận; JSON-RPC cần URL lịch sử Wallet HTTP. |
 | `solana` | `http` · `jsonrpc` · `ws` · `grpc` | Quét slot đã hoàn tất, tài khoản giao dịch và chủ sở hữu SPL. PubSub và Yellowstone cần lịch sử HTTP để đọc khối đầy đủ và nhận biết slot bị bỏ qua. |
 | `sui` | `grpc` · `graphql` | Checkpoint Move gốc, người gửi, nhà tài trợ, chủ sở hữu và sự kiện. HTTPS dùng gRPC v2 theo mặc định. |

@@ -4,13 +4,12 @@ go 1.25.0
 
 require (
 	github.com/GMWalletApp/ChainScanner v0.0.0
-	github.com/btcsuite/btcutil v1.0.2
 	github.com/dromara/carbon/v2 v2.6.15
 	github.com/ethereum/go-ethereum v1.15.11
 	github.com/gagliardetto/solana-go v1.16.0
 	github.com/go-resty/resty/v2 v2.11.0
-	github.com/golang-jwt/jwt/v4 v4.5.1
 	github.com/gofrs/flock v0.8.1
+	github.com/golang-jwt/jwt/v4 v4.5.1
 	github.com/gookit/color v1.5.0
 	github.com/gookit/goutil v0.4.6
 	github.com/gookit/validate v1.3.1
@@ -37,6 +36,13 @@ require (
 
 require (
 	github.com/block-vision/sui-go-sdk v1.3.1 // indirect
+	github.com/btcsuite/btcd v0.24.2 // indirect
+	github.com/btcsuite/btcd/btcec/v2 v2.3.4 // indirect
+	github.com/btcsuite/btcd/btcutil v1.1.5 // indirect
+	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0 // indirect
+	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f // indirect
+	github.com/btcsuite/btcutil v1.0.2 // indirect
+	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
 	github.com/fbsobreira/gotron-sdk v0.24.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/rpcpool/yellowstone-grpc/examples/golang v0.0.0-20261118123819-b9a4f56a43a1 // indirect

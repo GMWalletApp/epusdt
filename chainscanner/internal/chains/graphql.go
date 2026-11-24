@@ -99,6 +99,7 @@ func (s *graphSource) ReadLinkedBlock(ctx context.Context, h int64, link *BlockL
 			addAddress(&ev.Addresses, s.n.Name, a)
 		}
 		logs := []json.RawMessage{}
+		evidence := Evidence{Transaction: object(tx)}
 		for _, l := range t.Get("logs").Array() {
 			topics := l.Get("topics")
 			addr := l.Get("account.address").String()
@@ -107,13 +108,11 @@ func (s *graphSource) ReadLinkedBlock(ctx context.Context, h int64, link *BlockL
 				return 0, nil, errors.New("incomplete GraphQL log")
 			}
 			logs = append(logs, object(map[string]any{"address": addr, "topics": json.RawMessage(topics.Raw), "data": l.Get("data").String(), "blockHash": hash, "blockNumber": tx["blockNumber"], "transactionHash": id, "transactionIndex": tx["transactionIndex"], "logIndex": fmt.Sprintf("0x%x", index), "removed": false}))
-			addAddress(&ev.Addresses, s.n.Name, addr)
-			ts := topics.Array()
-			if len(ts) > 1 {
-				indexTopics(&ev.Addresses, s.n.Name, ts[1:])
-			}
+			s.n.indexEVMLog(&ev.Addresses, &evidence, addr, topics.Array(), l)
 		}
-		ev.Data = object(Evidence{Transaction: object(tx), Logs: logs, Receipt: object(map[string]any{"blockHash": hash, "blockNumber": tx["blockNumber"], "transactionHash": id, "contractAddress": contract, "status": fmt.Sprintf("0x%x", status), "logs": logs})})
+		evidence.Logs = logs
+		evidence.Receipt = object(map[string]any{"blockHash": hash, "blockNumber": tx["blockNumber"], "transactionHash": id, "contractAddress": contract, "status": fmt.Sprintf("0x%x", status), "logs": logs})
+		ev.Data = object(evidence)
 		out = append(out, ev)
 	}
 	return h, out, nil

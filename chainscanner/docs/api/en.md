@@ -50,6 +50,8 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 Send a consumer bearer token and the configured network ID. No address subscription is needed. A successful response contains `network`, the normalized `hash` and the chain-native `result`. EVM and TRON include the transaction and receipt.
 
+For Bitcoin mainnet use `bitcoin` and the 64-character hexadecimal txid. Confirmed lookups return `txid`, the serialized transaction in `hex`, and `blockhash`; unconfirmed transactions are treated as `pending`. Scan deliveries carry the decoded transaction with spent prevouts in `activity.data.transaction` and identify its block in `activity.data.block_hash`.
+
 Hash lookup prefers a fallback node and returns the first usable transaction. The scanner excludes the sources that supplied the matching block activity.
 
 HTTP 404 with `X-ChainScanner-Evidence: not_found` means the node answered that the hash is absent. A payment service can suspend the order for review. Retry HTTP 502 and 503 with backoff while the order is confirming. These responses may report `pending` or `incomplete`.
@@ -141,6 +143,7 @@ The example shows the delivery envelope with abbreviated transaction evidence. A
 | `activity.confirmations, activity.time_ms` | `int64, int64` | Observed confirmation count and chain timestamp in Unix milliseconds. |
 | `activity.addresses` | `string[]` | Subscribed addresses matched for this consumer. |
 | `activity.data` | `JSON` | Chain-specific JSON evidence. EVM evidence can include `transaction`, `logs`, `receipt` and `trace`. |
+| `activity.data.refresh_assets` | `string[]` | Token contracts to refresh after a recognized global balance event, omitted when empty. [EVM](../guide/en.md#asset-events) |
 
 <a id="ack"></a>
 

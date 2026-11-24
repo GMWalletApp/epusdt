@@ -82,6 +82,8 @@ func TestTronWalletWireEvidence(t *testing.T) {
 	}
 }
 func TestExecutionGraphQLRequiresCompleteReceipts(t *testing.T) {
+	const emitter = "0x2222222222222222222222222222222222222222"
+	const sig = "0xe2403640ba68fed3a2f88b7557551d1993f84b99bb10ff833f0cf8db0c5e0486"
 	ctx := context.Background()
 	complete := true
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -93,13 +95,17 @@ func TestExecutionGraphQLRequiresCompleteReceipts(t *testing.T) {
 		}
 		var logs any
 		if complete {
-			logs = []any{}
+			logs = []any{map[string]any{"index": "0x0", "account": map[string]string{"address": emitter}, "topics": []string{sig}, "data": "0x" + strings.Repeat("0", 24) + wallet[2:] + strings.Repeat("0", 64)}}
 		}
-		tx := map[string]any{"hash": "hash", "from": map[string]string{"address": wallet}, "to": map[string]string{"address": wallet}, "value": "0xde0b6b3a7640000", "status": "0x1", "index": "0x0", "logs": logs}
+		tx := map[string]any{"hash": "hash", "from": map[string]string{"address": emitter}, "to": map[string]string{"address": emitter}, "value": "0xde0b6b3a7640000", "status": "0x1", "index": "0x0", "logs": logs}
 		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"block": map[string]any{"hash": "block", "number": "0xa", "timestamp": 12, "transactionCount": 1, "transactions": []any{tx}}}})
 	}))
 	defer server.Close()
-	src, e := NewSource(ctx, Network{Name: "optimism", URL: server.URL, Protocol: "graphql"})
+	var n Network
+	if err := json.Unmarshal([]byte(fmt.Sprintf(`{"name":"optimism","url":%q,"protocol":"graphql","asset_events":{"%s":{"%s":{"topics":1,"data_words":2,"address_words":[0],"refresh_asset":true}}}}`, server.URL, emitter, sig)), &n); err != nil {
+		t.Fatal(err)
+	}
+	src, e := NewSource(ctx, n)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -107,6 +113,9 @@ func TestExecutionGraphQLRequiresCompleteReceipts(t *testing.T) {
 	_, ev, e := src.Read(ctx, 10, 10)
 	if e != nil || len(ev) != 1 || !slices.Contains(ev[0].Addresses, wallet) || gjson.GetBytes(ev[0].Data, "receipt.status").String() != "0x1" {
 		t.Fatal(ev, e)
+	}
+	if gjson.GetBytes(ev[0].Data, "refresh_assets.0").String() != emitter {
+		t.Fatalf("missing GraphQL refresh hint: %s", ev[0].Data)
 	}
 	complete = false
 	if _, _, e = src.Read(ctx, 10, 10); e == nil {

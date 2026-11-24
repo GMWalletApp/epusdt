@@ -18,6 +18,7 @@ var retiredEndpoints = map[NodeEndpoint]bool{
 
 // These public routes serve heights, but restrict methods required to scan blocks.
 var heightOnlyNodes = []NodeEndpoint{
+	{"bitcoin", "jsonrpc", "https://public-bitcoin-mainnet.rpcnode.dev"},
 	{"base", "http", "https://public-base-mainnet.rpcnode.dev"},
 	{"polygon", "http", "https://public-matic-mainnet.rpcnode.dev"},
 	{"arbitrum", "http", "https://public-arb-mainnet.rpcnode.dev"},
@@ -273,7 +274,6 @@ var builtinNodes = append([]NodeEndpoint{
 	{"robinhood", "ws", "wss://robinhood.drpc.org"},
 	{"robinhood", "ws", "wss://rpc-robinhood.blockmachine.io"},
 	{"bitcoin", "jsonrpc", "https://bitcoin-rpc.publicnode.com"},
-	{"bitcoin", "jsonrpc", "https://public-bitcoin-mainnet.rpcnode.dev"},
 	{"bitcoin", "unisat", "https://open-api.unisat.io"},
 	{"bitcoin", "jsonrpc", "https://public-btc.nownodes.io"},
 	{"sui", "graphql", "https://graphql.mainnet.sui.io/graphql"},

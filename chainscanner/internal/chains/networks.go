@@ -15,7 +15,7 @@ var evmIDs = map[string]int64{
 func IsEVM(name string) bool       { _, ok := evmIDs[name]; return ok }
 func EVMChainID(name string) int64 { return evmIDs[name] }
 func Supported(name string) bool {
-	return IsEVM(name) || name == "aptos" || name == "sui" || name == "solana" || name == "ton" || name == "tron"
+	return name == "bitcoin" || IsEVM(name) || name == "aptos" || name == "sui" || name == "solana" || name == "ton" || name == "tron"
 }
 
 // NativeAsset identifies the top-level value-transfer assets supported by

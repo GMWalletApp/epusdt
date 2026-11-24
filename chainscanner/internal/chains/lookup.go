@@ -26,6 +26,10 @@ func TransactionHash(network, raw string) (string, error) {
 		return "", ErrTransactionData
 	}
 	switch network {
+	case "bitcoin":
+		if bitcoinHash(raw) {
+			return strings.ToLower(raw), nil
+		}
 	case "solana", "sui":
 		size := 32
 		if network == "solana" {
@@ -152,6 +156,8 @@ func LookupTransaction(ctx context.Context, n Network, hash string, public bool)
 	switch {
 	case IsEVM(n.Name):
 		return s.lookupEVM(ctx, hash)
+	case n.Name == "bitcoin":
+		return s.lookupBitcoin(ctx, hash)
 	case n.Name == "solana":
 		v, err = s.call(ctx, "getTransaction", hash, map[string]any{"commitment": "finalized", "encoding": "json", "maxSupportedTransactionVersion": 1})
 		if err == nil && v.Raw == "null" {

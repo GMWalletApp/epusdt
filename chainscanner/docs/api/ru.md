@@ -141,6 +141,7 @@ consumer "$BASE/v1/events/next?network=base&wait=15"
 | `activity.confirmations, activity.time_ms` | `int64, int64` | Наблюдаемое число подтверждений и время в сети в миллисекундах Unix. |
 | `activity.addresses` | `string[]` | Адреса из подписки потребителя, по которым найдено совпадение. |
 | `activity.data` | `JSON` | Данные сети в JSON. В EVM могут присутствовать `transaction`, `logs`, `receipt` и `trace`. |
+| `activity.data.refresh_assets` | `string[]` | Контракты токенов для обновления балансов после известного глобального события. Пустое поле опускается. [EVM](../guide/en.md#asset-events) |
 
 <a id="ack"></a>
 

@@ -141,6 +141,7 @@ El ejemplo muestra una entrega con datos de transacción abreviados. Una transac
 | `activity.confirmations, activity.time_ms` | `int64, int64` | Número observado de confirmaciones y tiempo de la cadena en milisegundos Unix. |
 | `activity.addresses` | `string[]` | Direcciones suscritas que coincidieron para este consumidor. |
 | `activity.data` | `JSON` | Datos JSON propios de la red. En EVM pueden incluir `transaction`, `logs`, `receipt` y `trace`. |
+| `activity.data.refresh_assets` | `string[]` | Contratos de tokens cuyos saldos deben actualizarse tras un evento global reconocido. Se omite si está vacío. [EVM](../guide/en.md#asset-events) |
 
 <a id="ack"></a>
 

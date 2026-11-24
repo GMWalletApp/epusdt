@@ -17,11 +17,13 @@ import (
 )
 
 type (
-	Network  = chains.Network
-	Source   = chains.Source
-	Activity = chains.Activity
-	Evidence = chains.Evidence
-	TONData  = chains.TONData
+	AssetEventRules  = chains.AssetEventRules
+	AssetEventLayout = chains.AssetEventLayout
+	Network          = chains.Network
+	Source           = chains.Source
+	Activity         = chains.Activity
+	Evidence         = chains.Evidence
+	TONData          = chains.TONData
 
 	Store               = engine.Store
 	Watch               = feed.Watch

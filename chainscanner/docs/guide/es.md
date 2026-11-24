@@ -81,6 +81,7 @@ Las 12 redes EVM comparten adaptador. Indica la red concreta en cada suscripció
 
 | Red | Protocolos | Actividad e historial |
 | --- | --- | --- |
+| `bitcoin` | `jsonrpc` · `http` | Entradas gastadas, destinatarios y cambio. Requiere bloques completos con datos undo. |
 | `tron` | `http` · `rest` · `grpc` · `solidity-http` · `solidity-grpc` · `jsonrpc` | Transferencias Wallet, recibos y transferencias internas. WalletSolidity lee bloques consolidados. JSON-RPC necesita un nodo histórico Wallet HTTP. |
 | `solana` | `http` · `jsonrpc` · `ws` · `grpc` | Slots finalizados, cuentas de transacciones y titulares de SPL. PubSub y Yellowstone necesitan historial HTTP para bloques completos y slots omitidos. |
 | `sui` | `grpc` · `graphql` | Checkpoints nativos de Move, remitentes, patrocinadores, propietarios y eventos. HTTPS usa gRPC v2 por defecto. |

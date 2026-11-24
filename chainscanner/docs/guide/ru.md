@@ -81,6 +81,7 @@ curl -i -sS -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/next?network=base
 
 | Сеть | Протоколы | События и история |
 | --- | --- | --- |
+| `bitcoin` | `jsonrpc` · `http` | Потраченные выходы, получатели и сдача. Нужны полные блоки с данными undo. |
 | `tron` | `http` · `rest` · `grpc` · `solidity-http` · `solidity-grpc` · `jsonrpc` | Переводы Wallet, квитанции и внутренние переводы. WalletSolidity читает закреплённые блоки. Для JSON-RPC нужен исторический Wallet HTTP. |
 | `solana` | `http` · `jsonrpc` · `ws` · `grpc` | Финализированные слоты, счета транзакций и владельцы SPL. Для полных блоков и пропущенных слотов PubSub и Yellowstone используют HTTP-историю. |
 | `sui` | `grpc` · `graphql` | Нативные контрольные точки Move, отправители, спонсоры, владельцы и события. По умолчанию HTTPS использует gRPC v2. |

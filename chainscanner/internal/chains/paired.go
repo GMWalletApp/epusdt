@@ -40,6 +40,7 @@ func (s *pairedSource) Close() {
 }
 func newPaired(ctx context.Context, n Network, u *url.URL, p string) (Source, error) {
 	history := Network{Name: n.Name, URL: n.HistoryURL, APIKey: n.HistoryAPIKey, TraceCalls: n.TraceCalls}
+	history.AssetEvents = n.AssetEvents
 	src, err := NewSource(ctx, history)
 	if err != nil {
 		return nil, err
