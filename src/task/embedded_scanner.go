@@ -15,7 +15,7 @@ import (
 	"github.com/GMWalletApp/epusdt/util/log"
 )
 
-// Keep the pinned scanner's API (including strict verification) identical to
+// Keep the pinned scanner's API (including hash lookup) identical to
 // standalone mode. Its listener and credentials are private to this process.
 func startEmbeddedScanner(ctx context.Context, path string, networks []scanner.Network) (config.ScannerConnection, func(), error) {
 	// The node registry may contain private RPC URLs.

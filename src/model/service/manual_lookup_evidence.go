@@ -2,28 +2,22 @@ package service
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 
 	scanner "github.com/GMWalletApp/ChainScanner"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/gagliardetto/solana-go"
 	"github.com/tidwall/gjson"
-	"github.com/xssnick/tonutils-go/tlb"
-	"github.com/xssnick/tonutils-go/tvm/cell"
 )
 
-// Rebuild payment evidence from the strict response. TON's indexed JSON and
-// subscription BOC are bound by the transaction cell hash, account and LT.
-func strictActivity(e scanner.Activity, raw json.RawMessage) (scanner.Activity, error) {
+// Rebuild the transfer from the scanner result for manual order matching.
+func manualLookupActivity(e scanner.Activity, raw json.RawMessage) (scanner.Activity, error) {
 	v := gjson.ParseBytes(raw)
-	invalid := errors.New("strict transaction is unsuccessful or differs from subscribed block")
+	invalid := errors.New("transaction is unsuccessful or inconsistent")
 	switch {
 	case scanner.IsEVM(e.Network):
 		tx, r := v.Get("transaction"), v.Get("receipt")
@@ -70,32 +64,14 @@ func strictActivity(e scanner.Activity, raw json.RawMessage) (scanner.Activity, 
 		if v.Get("transaction.signatures.0").String() != e.TxID || v.Get("meta.err").Raw != "null" || v.Get("slot").Int() != e.Height || v.Get("blockTime").Int()*1000 != e.TimeMS {
 			return e, invalid
 		}
-	case e.Network == "ton":
-		var d scanner.TONData
-		if err := json.Unmarshal(e.Data, &d); err != nil {
-			return e, err
-		}
-		c, err := cell.FromBOC(d.BOC)
-		if err != nil {
-			return e, err
-		}
-		var tx tlb.Transaction
-		if err = tlb.LoadFromCell(&tx, c.BeginParse()); err != nil {
-			return e, err
-		}
-		hash, err := base64.StdEncoding.DecodeString(v.Get("hash").String())
-		if err != nil || hex.EncodeToString(hash) != e.TxID || hex.EncodeToString(c.Hash()) != e.TxID || !strings.EqualFold(v.Get("account").String(), d.Account) || v.Get("lt").Uint() != tx.LT || v.Get("now").Int()*1000 != e.TimeMS || int64(tx.Now)*1000 != e.TimeMS || !v.Get("mc_block_seqno").Exists() || v.Get("mc_block_seqno").Int() != e.Height {
-			return e, invalid
-		}
-		return e, nil
 	default:
-		return e, fmt.Errorf("unsupported strict payment network %s", e.Network)
+		return e, fmt.Errorf("unsupported payment network %s", e.Network)
 	}
 	e.Data = raw
 	return e, nil
 }
 
-// Strict Solana reads use raw JSON (including address-table lookups). Decode
+// Solana hash lookups use raw JSON (including address-table lookups). Decode
 // the same transfer instructions that the subscription receives as jsonParsed.
 func compiledSolanaTransfer(ins, tx gjson.Result) (*TransferInfo, error) {
 	keys := append([]gjson.Result{}, tx.Get("transaction.message.accountKeys").Array()...)
@@ -149,31 +125,9 @@ func compiledSolanaTransfer(ins, tx gjson.Result) (*TransferInfo, error) {
 	return &TransferInfo{Source: key(accounts[0]), Destination: key(accounts[dest]), Mint: mint, Decimals: &d, RawAmount: binary.LittleEndian.Uint64(encoded[1:9])}, nil
 }
 
-// Manual entry already checked the transaction's block time and confirmation
-// depth. Bind that verification to the credit returned by the strict route.
-func confirmManualTransfer(ctx context.Context, order *mdb.Orders, id string, lookup StrictLookup) error {
+// Match a manually supplied hash when the scanner provides the transfer evidence.
+func confirmManualTransfer(ctx context.Context, order *mdb.Orders, hash string, raw json.RawMessage) error {
 	dest, err := scanner.Canonical(order.Network, order.ReceiveAddress)
-	if err != nil {
-		return err
-	}
-	hash := id
-	if order.Network == "ton" {
-		ref, err := parseManualTonTxRef(id)
-		if err != nil {
-			return err
-		}
-		raw, err := lookup(ctx, order.Network, ref.HashHex)
-		if err != nil {
-			return err
-		}
-		v := gjson.ParseBytes(raw)
-		b, err := base64.StdEncoding.DecodeString(v.Get("hash").String())
-		if err != nil || hex.EncodeToString(b) != ref.HashHex || !strings.EqualFold(v.Get("account").String(), dest) || !ref.HasLT || ref.LT != v.Get("lt").Uint() {
-			return errors.New("strict TON transaction does not match verified transfer")
-		}
-		return nil
-	}
-	raw, err := lookup(ctx, order.Network, hash)
 	if err != nil {
 		return err
 	}
@@ -204,7 +158,7 @@ func confirmManualTransfer(ctx context.Context, order *mdb.Orders, id string, lo
 	if e.TimeMS < order.CreatedAt.TimestampMilli() {
 		return errors.New("transaction predates the order")
 	}
-	verified, err := strictActivity(e, raw)
+	verified, err := manualLookupActivity(e, raw)
 	if err != nil {
 		return err
 	}

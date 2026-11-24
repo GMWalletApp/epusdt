@@ -16,11 +16,11 @@ ChainScanner gives all subscribers on a network a shared block scan. Each servic
 Each application manages its own business logic, order status and wallet balances. ChainScanner provides shared infrastructure for address subscriptions, block scanning and event delivery.
 
 > [!IMPORTANT]
-> **Public RPC limits for frequent transaction lookups on Solana, TON (GRAM) and Plasma.** Strict verification needs matching results from two independent providers. In a 15-minute mainnet test using free public RPCs, all three strict lookups failed on Solana and all three failed on Plasma. All three succeeded on TON. If you expect frequent lookups, configure two fallback nodes per network, each from a different provider. ChainScanner scans each block once for all watched addresses and subscribers, reducing duplicate RPC requests. At most providers, a free or entry-level plan is usually enough for occasional block retries and transaction checks. For sustained traffic, check each plan’s rate limit and monthly quota. [Configure fallback nodes](docs/api/en.md#fallback) · [Compare fallback providers](#fallback-providers)
+> Hash lookup prefers a fallback node and returns the first usable transaction. The scanner excludes the sources that supplied the matching block activity. [Compare fallback providers](#fallback-providers)
 
 ## Use cases
 
-- **On-chain checkout.** The [EPUSDT integration](https://github.com/GMWalletApp/epusdt/pull/127) subscribes to deposit addresses, marks a matching order as confirming and checks the transaction with two nodes before crediting it.
+- **On-chain checkout.** The [EPUSDT integration](https://github.com/GMWalletApp/epusdt/pull/127) subscribes to deposit addresses, marks a matching order as confirming and checks the transaction through the strict lookup before crediting it.
 - **Telegram wallet bot idea.** Subscribe to a personal address, record each delivery, then send a message identifying an incoming or outgoing transfer.
 - **Treasury reconciliation idea.** Watch operational wallets once and deliver the same activity to accounting and alerting as separate consumers, each with its own acknowledgement.
 
@@ -42,7 +42,7 @@ The response includes `from_height`, the first block covered. [Receive and ackno
 
 ## Recommended fallback node
 
-Register two independent fallbacks on the same network by calling the endpoint once per provider. Failed ranges rotate across eligible fallbacks. Strict lookups prefer two fallback votes. With only one eligible fallback, an ordinary node can supply the other vote. [API](docs/api/en.md#fallback)
+Failed ranges rotate across eligible fallback nodes. Register each node separately. [API](docs/api/en.md#fallback)
 
 ```sh
 BASE=http://127.0.0.1:9081

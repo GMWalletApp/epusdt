@@ -44,6 +44,8 @@ func TestSolanaSkippedSlotsAndSPLAccountOwner(t *testing.T) {
 	owner := "So11111111111111111111111111111111111111112"
 	rpc := testutil.RPCServer(t, func(r testutil.RPCRequest) (any, error) {
 		switch r.Method {
+		case "getGenesisHash":
+			return "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d", nil
 		case "getBlocks":
 			return []int{101}, nil
 		case "getFirstAvailableBlock":
@@ -85,6 +87,28 @@ func TestNewEVMRejectsWrongChain(t *testing.T) {
 			src.Close()
 			t.Fatal(name, "accepted the Ethereum endpoint")
 		}
+	}
+}
+
+func TestNewSolanaValidatesMainnet(t *testing.T) {
+	const mainnet = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
+	for _, genesis := range []string{mainnet, "wrong-genesis", ""} {
+		t.Run(genesis, func(t *testing.T) {
+			srv := testutil.RPCServer(t, func(req testutil.RPCRequest) (any, error) {
+				if req.Method == "getGenesisHash" {
+					return genesis, nil
+				}
+				return 42, nil
+			})
+			defer srv.Close()
+			src, err := NewSource(t.Context(), Network{Name: "solana", URL: srv.URL})
+			if src != nil {
+				defer src.Close()
+			}
+			if (err == nil) != (genesis == mainnet) {
+				t.Fatalf("genesis=%q err=%v", genesis, err)
+			}
+		})
 	}
 }
 

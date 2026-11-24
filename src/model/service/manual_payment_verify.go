@@ -77,12 +77,20 @@ func validateManualOrderPaymentDefault(order *mdb.Orders, blockTransactionID str
 	if err != nil {
 		return "", err
 	}
-	if StrictTransaction == nil {
-		return "", fmt.Errorf("strict lookup unavailable")
+	if LookupPaymentTransaction == nil {
+		return "", fmt.Errorf("transaction lookup unavailable")
+	}
+	hash := id
+	if order.Network == mdb.NetworkTon {
+		ref, err := parseManualTonTxRef(id)
+		if err != nil {
+			return "", err
+		}
+		hash = ref.HashHex
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	if err := confirmManualTransfer(ctx, order, id, StrictTransaction); err != nil {
+	if _, err := LookupPaymentTransaction(ctx, order.Network, hash); err != nil {
 		return "", err
 	}
 	return id, nil

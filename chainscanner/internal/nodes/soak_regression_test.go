@@ -128,6 +128,8 @@ func TestSolanaStepReusesFinalizedSlotList(t *testing.T) {
 	var ranges, blocks atomic.Int32
 	server := testutil.RPCServer(t, func(r testutil.RPCRequest) (any, error) {
 		switch r.Method {
+		case "getGenesisHash":
+			return "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d", nil
 		case "getSlot":
 			return 16, nil
 		case "getBlocks":

@@ -25,18 +25,18 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func TestSubmitTxHashRequiresPaymentChecksAndStrictAgreement(t *testing.T) {
+func TestSubmitTxHashRequiresPaymentChecksAndLookupRecheck(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
 		predates      bool
 		confirmations int64
-		disagree      bool
+		lookupFails   bool
 		wantPaid      bool
 	}{
 		{name: "historical transfer", predates: true, confirmations: 12},
 		{name: "insufficient confirmations", confirmations: 1},
 		{name: "exact confirmation threshold", confirmations: 12, wantPaid: true},
-		{name: "strict nodes disagree", confirmations: 12, disagree: true},
+		{name: "lookup unavailable", confirmations: 12, lookupFails: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			defer testutil.SetupTestDatabases(t)()
@@ -96,7 +96,7 @@ func TestSubmitTxHashRequiresPaymentChecksAndStrictAgreement(t *testing.T) {
 					_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
 				}))
 			}
-			first, second := newRPC(false), newRPC(tc.disagree)
+			first, second := newRPC(false), newRPC(false)
 			defer first.Close()
 			defer second.Close()
 			store, err := scanner.Open(":memory:")
@@ -137,10 +137,13 @@ func TestSubmitTxHashRequiresPaymentChecksAndStrictAgreement(t *testing.T) {
 			scanneradmin.CandidateInventory = func(ctx context.Context, _ config.ScannerConnection, network, use string) (scanner.RouteInventory, error) {
 				return scanneradmin.Inventory(ctx, conn, network, use)
 			}
-			previous := service.StrictTransaction
-			t.Cleanup(func() { service.StrictTransaction = previous })
-			service.StrictTransaction = func(ctx context.Context, network, hash string) (json.RawMessage, error) {
-				req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/v1/transactions/"+network+"/"+hash+"/strict?manual=true", nil)
+			previous := service.LookupPaymentTransaction
+			t.Cleanup(func() { service.LookupPaymentTransaction = previous })
+			service.LookupPaymentTransaction = func(ctx context.Context, network, hash string) (json.RawMessage, error) {
+				if tc.lookupFails {
+					return nil, fmt.Errorf("transaction lookup unavailable")
+				}
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/v1/transactions/"+network+"/"+hash+"?manual=true", nil)
 				if err != nil {
 					return nil, err
 				}
@@ -151,7 +154,7 @@ func TestSubmitTxHashRequiresPaymentChecksAndStrictAgreement(t *testing.T) {
 				}
 				defer res.Body.Close()
 				if res.StatusCode != http.StatusOK {
-					return nil, fmt.Errorf("strict HTTP %d", res.StatusCode)
+					return nil, fmt.Errorf("lookup HTTP %d", res.StatusCode)
 				}
 				var body struct{ Result json.RawMessage }
 				err = json.NewDecoder(res.Body).Decode(&body)

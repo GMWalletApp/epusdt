@@ -787,7 +787,7 @@ func TestManualVerifyTronPaymentHTTPFlow(t *testing.T) {
 		t.Fatalf("create tron rpc node: %v", err)
 	}
 	// Move the only usable route into an embedded registry, then exercise both
-	// manual verification and strict disagreement using the migrated provider.
+	// manual verification and lookup failure using the migrated provider.
 	store, err := scanner.Open(":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -841,19 +841,19 @@ func TestManualVerifyTronPaymentHTTPFlow(t *testing.T) {
 		t.Fatalf("create order: %v", err)
 	}
 
-	previous := StrictTransaction
-	t.Cleanup(func() { StrictTransaction = previous })
-	StrictTransaction = func(context.Context, string, string) (json.RawMessage, error) {
-		return nil, fmt.Errorf("nodes disagree")
+	previous := LookupPaymentTransaction
+	t.Cleanup(func() { LookupPaymentTransaction = previous })
+	LookupPaymentTransaction = func(context.Context, string, string) (json.RawMessage, error) {
+		return nil, fmt.Errorf("transaction lookup unavailable")
 	}
 	if _, err := ValidateManualOrderPayment(order, txID); err == nil {
-		t.Fatal("manual payment bypassed strict confirmation")
+		t.Fatal("manual payment bypassed transaction recheck")
 	}
-	StrictTransaction = func(_ context.Context, n, h string) (json.RawMessage, error) {
+	LookupPaymentTransaction = func(_ context.Context, n, h string) (json.RawMessage, error) {
 		if n != "tron" || h != txID {
-			t.Fatalf("unexpected strict request %s %s", n, h)
+			t.Fatalf("unexpected lookup request %s %s", n, h)
 		}
-		return json.RawMessage(fmt.Sprintf(`{"transaction":{"txID":%q,"ret":[{"contractRet":"SUCCESS"}]},"receipt":{"id":%q,"blockNumber":100,"blockTimeStamp":%d,"log":[{"address":%q,"topics":[%q,"%064x","%064s"],"data":"%064x"}]}}`, h, h, blockTimeMs, contractHex[2:], transferSignature, 1, recipientHex[2:], rawAmount)), nil
+		return json.RawMessage(`{"found":true}`), nil
 	}
 	got, err := ValidateManualOrderPayment(order, "0X"+strings.ToUpper(txID))
 	if err != nil || got != txID || requestCalls != 6 {
@@ -876,8 +876,8 @@ func TestManualVerifyEvmRejectsStrictTransactionWithoutPaymentChecks(t *testing.
 	receive := "0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
 	sender := "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"
 	order := &mdb.Orders{
-		TradeId:        "manual-evm-strict-only",
-		OrderId:        "manual-evm-strict-only",
+		TradeId:        "manual-evm-scanner-only",
+		OrderId:        "manual-evm-scanner-only",
 		ActualAmount:   0.1,
 		ReceiveAddress: receive,
 		Token:          "ETH",
@@ -889,13 +889,13 @@ func TestManualVerifyEvmRejectsStrictTransactionWithoutPaymentChecks(t *testing.
 		t.Fatalf("create order: %v", err)
 	}
 
-	previous := StrictTransaction
-	t.Cleanup(func() { StrictTransaction = previous })
-	StrictTransaction = func(_ context.Context, n, h string) (json.RawMessage, error) {
+	previous := LookupPaymentTransaction
+	t.Cleanup(func() { LookupPaymentTransaction = previous })
+	LookupPaymentTransaction = func(_ context.Context, n, h string) (json.RawMessage, error) {
 		if n != mdb.NetworkBase || h != txHash {
-			t.Fatalf("unexpected strict lookup %s %s", n, h)
+			t.Fatalf("unexpected transaction lookup %s %s", n, h)
 		}
-		return json.RawMessage(fmt.Sprintf(`{"transaction":{"hash":%q,"blockHash":"0x123","blockNumber":"0xa","from":%q,"to":%q,"value":"0x16345785d8a0000"},"receipt":{"transactionHash":%q,"blockHash":"0x123","blockNumber":"0xa","status":"0x1","logs":[]}}`, txHash, sender, receive, txHash)), nil
+		return json.RawMessage(fmt.Sprintf(`{"transaction":{"hash":%q,"blockHash":"0xabababababababababababababababababababababababababababababababab","blockNumber":"0xa","from":%q,"to":%q,"input":"0x","value":"0x16345785d8a0000"},"receipt":{"transactionHash":%q,"blockHash":"0xabababababababababababababababababababababababababababababababab","blockNumber":"0xa","status":"0x1","logs":[]}}`, txHash, sender, receive, txHash)), nil
 	}
 
 	got, err := ValidateManualOrderPayment(order, strings.ToUpper(txHash))

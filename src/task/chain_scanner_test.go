@@ -174,7 +174,11 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 	}
 	api := httptest.NewServer(h)
 	defer api.Close()
-	remote := newStrictClient(scanner.Client{URL: api.URL, Token: token})
+	remote := newTransactionClient(scanner.Client{URL: api.URL, Token: token})
+	// A scan source with a higher weight must still be excluded after ACK.
+	if _, err := registry.Add(ctx, scanner.NodeOptions{Weight: 100, NodeEndpoint: scanner.NodeEndpoint{Network: net, Protocol: "http", URL: rpc.URL}}); err != nil {
+		t.Fatal(err)
+	}
 	var mode atomic.Int32
 	counts := [2]atomic.Int32{}
 	for i := range 2 {
@@ -195,10 +199,13 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 				result = "0x12"
 			case "eth_getTransactionByHash":
 				counts[i].Add(1)
-				result = map[string]any{"hash": incoming, "from": contract, "to": wallet, "input": "0x", "blockHash": blockHash, "blockNumber": "0x11"}
+				if mode.Load() == 1 {
+					break
+				}
+				result = map[string]any{"hash": incoming, "from": contract, "to": wallet, "input": "0x", "value": "0x0", "blockHash": blockHash, "blockNumber": "0x11"}
 			case "eth_getTransactionReceipt":
 				amount := amounts[1]
-				if mode.Load() == 0 || mode.Load() == 1 && i == 1 {
+				if mode.Load() == 0 {
 					amount = amounts[0]
 				}
 				result = map[string]any{"transactionHash": incoming, "blockHash": blockHash, "blockNumber": "0x11", "status": "0x1", "logs": []any{map[string]any{"address": contract, "transactionHash": incoming, "blockHash": blockHash, "data": "0x" + amount, "topics": []string{"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", "0x" + strings.Repeat("0", 64), "0x" + strings.Repeat("0", 24) + wallet[2:]}}}}
@@ -212,11 +219,11 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, phase := range []int32{0, 1, 2} {
+	for _, phase := range []int32{1, 0} {
 		mode.Store(phase)
 		lookup := remote
-		if phase < 2 {
-			if err := service.ConfirmPayment(ctx, client, lookup.full, job); err == nil {
+		if phase == 1 {
+			if err := service.ConfirmPayment(ctx, client, lookup.automatic, job); err == nil {
 				t.Fatalf("phase %d accepted unverified transfer", phase)
 			}
 			expired, err := data.UpdateOrderIsExpirationById(order.ID, time.Now().Add(time.Hour))
@@ -224,10 +231,11 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 				t.Fatal("expired confirming payment", err)
 			}
 		} else {
-			// Start a new worker with no in-memory event after the queue was acknowledged.
+			// The second RPC reports a different amount. Existence completes the recheck;
+			// the worker settles from the previously matched scan event.
 			run, cancel := context.WithTimeout(ctx, 5*time.Second)
 			stopped := make(chan struct{})
-			go func() { defer close(stopped); service.RunPaymentConfirmations(run, client, lookup.round) }()
+			go func() { defer close(stopped); service.RunPaymentConfirmations(run, client, lookup.automatic) }()
 			var left int64
 			for {
 				if err := dao.Mdb.Model(&mdb.PaymentConfirmation{}).Count(&left).Error; err != nil {
@@ -254,15 +262,15 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if phase != 2 && (got.Status != mdb.StatusConfirming || got.BlockTransactionId != "" || len(callbacks) != 0) {
+		if phase == 1 && (got.Status != mdb.StatusConfirming || got.BlockTransactionId != "" || len(callbacks) != 0) {
 			t.Fatal("unverified credit", got, callbacks)
 		}
-		if phase == 2 && (got.Status != mdb.StatusPaySuccess || got.BlockTransactionId != incoming || len(callbacks) != 1) {
+		if phase == 0 && (got.Status != mdb.StatusPaySuccess || got.BlockTransactionId != incoming || len(callbacks) != 1) {
 			t.Fatal("verified credit missing", got, callbacks)
 		}
 	}
-	if counts[0].Load() != 3 || counts[1].Load() != 3 {
-		t.Fatal("strict requests", counts[0].Load(), counts[1].Load())
+	if counts[0].Load()+counts[1].Load() != 2 {
+		t.Fatal("lookup requests", counts[0].Load(), counts[1].Load())
 	}
 	if err := service.ConfirmPayment(ctx, client, remote.full, job); err == nil {
 		t.Fatal("settled twice")

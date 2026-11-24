@@ -1,44 +1,6 @@
 package nodes
 
-import (
-	"net/url"
-	"strings"
-	"sync"
-
-	"github.com/GMWalletApp/ChainScanner/internal/chains"
-)
-
-// Public gateways with documented aliases share a lookup vote. Keep different
-// operators on branded domains separate (for example, Monad's Goldsky and Ankr RPCs).
-var publicGatewayAliases = map[string]string{
-	"api.mainnet-beta.solana.com":      "api.mainnet.solana.com",
-	"fullnode.mainnet.aptoslabs.com":   "api.mainnet.aptoslabs.com",
-	"rpc3.monad.xyz":                   "rpc.ankr.com",
-	"bsc-dataseed-public.bnbchain.org": "bsc-dataseed.bnbchain.org",
-	"bsc-dataseed.binance.org":         "bsc-dataseed.bnbchain.org",
-}
-
-// Different credentials, paths, or transports on one host and port do not
-// supply independent votes. A paired node uses its history provider's key.
-func providerKey(n chains.Network) string {
-	raw := n.HistoryURL
-	if raw == "" {
-		raw = n.URL
-	}
-	u, e := url.Parse(raw)
-	if e == nil && u.Hostname() != "" {
-		port := u.Port()
-		if port == "443" || port == "80" {
-			port = ""
-		}
-		host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
-		if alias, ok := publicGatewayAliases[host]; ok && port == "" {
-			host = alias
-		}
-		return n.Name + "|" + host + "|" + port
-	}
-	return n.Name + "|" + raw
-}
+import "sync"
 
 type providerLanes struct {
 	mu   sync.Mutex

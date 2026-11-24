@@ -89,12 +89,12 @@ func startPaymentFeed(ctx context.Context, workers *sync.WaitGroup, connection c
 		return errors.New("unsupported CHAINSCANNER_TRANSPORT")
 	}
 	client := scanner.Client{URL: url, Token: token}
-	verifier := newStrictClient(client)
-	service.StrictTransaction = verifier.full
+	verifier := newTransactionClient(client)
+	service.LookupPaymentTransaction = verifier.full
 	subscriptions := &paymentSubscriptions{feed: client}
 	service.EnsurePaymentWatch = subscriptions.ensure
 	for range 4 {
-		workers.Go(func() { service.RunPaymentConfirmations(ctx, client, verifier.round) })
+		workers.Go(func() { service.RunPaymentConfirmations(ctx, client, verifier.automatic) })
 	}
 	for _, network := range scannerNetworks {
 		workers.Go(func() { runScannerFeed(ctx, client, network, transport) })

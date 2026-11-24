@@ -1,0 +1,289 @@
+{
+  "hash": "0x53ef18e731c85d88e4882a1ba97424f1bf1c25922fb96c12ed285a64cc402e3e",
+  "type": "user_transaction",
+  "success": true,
+  "timestamp": "1795413968390214",
+  "version": "8180768422",
+  "events": [
+    {
+      "guid": {
+        "creation_number": "0",
+        "account_address": "0x0"
+      },
+      "sequence_number": "0",
+      "type": "0x1::fungible_asset::Withdraw",
+      "data": {
+        "amount": "6000",
+        "store": "0x8e99c0b354e72845f5e7ab361aa89f5f9b877785c73a985bacbddd7b0f7e3008"
+      }
+    },
+    {
+      "guid": {
+        "creation_number": "0",
+        "account_address": "0x0"
+      },
+      "sequence_number": "0",
+      "type": "0x1::fungible_asset::Deposit",
+      "data": {
+        "amount": "6000",
+        "store": "0x53d99dec3b3aec3a9f080a4b101f3aef2a02a8c6085e7c75181fa1964f0d8e57"
+      }
+    },
+    {
+      "guid": {
+        "creation_number": "0",
+        "account_address": "0x0"
+      },
+      "sequence_number": "0",
+      "type": "0x1::fungible_asset::Withdraw",
+      "data": {
+        "amount": "356961",
+        "store": "0xceae4883c6fc31580ae5feddaa7221772c7f5b297948b2cd1615c94b1bda36dc"
+      }
+    },
+    {
+      "guid": {
+        "creation_number": "0",
+        "account_address": "0x0"
+      },
+      "sequence_number": "0",
+      "type": "0x1::fungible_asset::Deposit",
+      "data": {
+        "amount": "356961",
+        "store": "0xe16a858661bf74702611c836df8d7fcbf61d9a7a1382a82f586e412478f043d8"
+      }
+    }
+  ],
+  "changes": [
+    {
+      "address": "0xa",
+      "state_key_hash": "0x1db5441d8fa4229c5844f73fd66da4ad8176cb8793d8b3a7f6ca858722030043",
+      "data": {
+        "type": "0x1::object::ObjectCore",
+        "data": {
+          "allow_ungated_transfer": true,
+          "guid_creation_num": "1125899906842625",
+          "owner": "0x1",
+          "transfer_events": {
+            "counter": "0",
+            "guid": {
+              "id": {
+                "addr": "0xa",
+                "creation_num": "1125899906842624"
+              }
+            }
+          }
+        }
+      },
+      "type": "write_resource"
+    },
+    {
+      "address": "0x53d99dec3b3aec3a9f080a4b101f3aef2a02a8c6085e7c75181fa1964f0d8e57",
+      "state_key_hash": "0xf216647b64e17a597ac1ede74ba64d8306712b709a2b6a3b97c9d77ad0c5ea3c",
+      "data": {
+        "type": "0x1::fungible_asset::FungibleStore",
+        "data": {
+          "balance": "93502444",
+          "frozen": false,
+          "metadata": {
+            "inner": "0xb0b819dcf8d9517ed14195a95adfae6a49bfdb49de33a532ca0aa7ee588e8e0"
+          }
+        }
+      },
+      "type": "write_resource"
+    },
+    {
+      "address": "0x53d99dec3b3aec3a9f080a4b101f3aef2a02a8c6085e7c75181fa1964f0d8e57",
+      "state_key_hash": "0xf216647b64e17a597ac1ede74ba64d8306712b709a2b6a3b97c9d77ad0c5ea3c",
+      "data": {
+        "type": "0x1::object::ObjectCore",
+        "data": {
+          "allow_ungated_transfer": false,
+          "guid_creation_num": "1125899906842625",
+          "owner": "0x704370ac6f54975f14c54e36a68dbb2899fa7061b3436fe508267334c84611c0",
+          "transfer_events": {
+            "counter": "0",
+            "guid": {
+              "id": {
+                "addr": "0x53d99dec3b3aec3a9f080a4b101f3aef2a02a8c6085e7c75181fa1964f0d8e57",
+                "creation_num": "1125899906842624"
+              }
+            }
+          }
+        }
+      },
+      "type": "write_resource"
+    },
+    {
+      "address": "0x87b18eaa1e91cd0da42b56fac8840452504bf23f9408055ae84399ff80d3aa54",
+      "state_key_hash": "0xee9079739c220335f15e978c2c672084bfd6c520ce6b5f2b72a1c5b61d3f800d",
+      "data": {
+        "type": "0x1::fungible_asset::FungibleStore",
+        "data": {
+          "balance": "3120247982940",
+          "frozen": false,
+          "metadata": {
+            "inner": "0xa"
+          }
+        }
+      },
+      "type": "write_resource"
+    },
+    {
+      "address": "0x87b18eaa1e91cd0da42b56fac8840452504bf23f9408055ae84399ff80d3aa54",
+      "state_key_hash": "0xee9079739c220335f15e978c2c672084bfd6c520ce6b5f2b72a1c5b61d3f800d",
+      "data": {
+        "type": "0x1::object::ObjectCore",
+        "data": {
+          "allow_ungated_transfer": false,
+          "guid_creation_num": "1125899906842625",
+          "owner": "0x87301633020cbde6d308130d72242bf2568ab28a07e79cb17dd53522381f58ff",
+          "transfer_events": {
+            "counter": "0",
+            "guid": {
+              "id": {
+                "addr": "0x87b18eaa1e91cd0da42b56fac8840452504bf23f9408055ae84399ff80d3aa54",
+                "creation_num": "1125899906842624"
+              }
+            }
+          }
+        }
+      },
+      "type": "write_resource"
+    },
+    {
+      "address": "0x8e99c0b354e72845f5e7ab361aa89f5f9b877785c73a985bacbddd7b0f7e3008",
+      "state_key_hash": "0x1eecc5b445301fbe5df07bbd8e9431dd0756d55b3dc6800ba853603c395a59af",
+      "data": {
+        "type": "0x1::fungible_asset::FungibleStore",
+        "data": {
+          "balance": "129589800",
+          "frozen": false,
+          "metadata": {
+            "inner": "0xb0b819dcf8d9517ed14195a95adfae6a49bfdb49de33a532ca0aa7ee588e8e0"
+          }
+        }
+      },
+      "type": "write_resource"
+    },
+    {
+      "address": "0x8e99c0b354e72845f5e7ab361aa89f5f9b877785c73a985bacbddd7b0f7e3008",
+      "state_key_hash": "0x1eecc5b445301fbe5df07bbd8e9431dd0756d55b3dc6800ba853603c395a59af",
+      "data": {
+        "type": "0x1::object::ObjectCore",
+        "data": {
+          "allow_ungated_transfer": false,
+          "guid_creation_num": "1125899906842625",
+          "owner": "0x6bb9925fda3ac2ea3c3e30544372bcd83bb44f9dcfaa95b683eb05384650e7e0",
+          "transfer_events": {
+            "counter": "0",
+            "guid": {
+              "id": {
+                "addr": "0x8e99c0b354e72845f5e7ab361aa89f5f9b877785c73a985bacbddd7b0f7e3008",
+                "creation_num": "1125899906842624"
+              }
+            }
+          }
+        }
+      },
+      "type": "write_resource"
+    },
+    {
+      "address": "0xa8d796ad0e4f2d96f133db0ff0528a770cdacce1d8421dc42754806db4d3d2e7",
+      "state_key_hash": "0xaba6394100a0d8f8d9389ca7162577f6bd476fa99c9c0ebacce031ba1da1edf4",
+      "data": {
+        "type": "0x1::object::ObjectCore",
+        "data": {
+          "allow_ungated_transfer": true,
+          "guid_creation_num": "1125899906842625",
+          "owner": "0x903ef7f3c9a6447e76a2ae6875384be4c11ac3b8cf19a03e74e3c5be8382a0d",
+          "transfer_events": {
+            "counter": "0",
+            "guid": {
+              "id": {
+                "addr": "0xa8d796ad0e4f2d96f133db0ff0528a770cdacce1d8421dc42754806db4d3d2e7",
+                "creation_num": "1125899906842624"
+              }
+            }
+          }
+        }
+      },
+      "type": "write_resource"
+    },
+    {
+      "address": "0xceae4883c6fc31580ae5feddaa7221772c7f5b297948b2cd1615c94b1bda36dc",
+      "state_key_hash": "0xc44ebf4ab4767530df2476ba88c7d659b2ebab87d1dfe042dd1e496894f4f4c8",
+      "data": {
+        "type": "0x1::fungible_asset::FungibleStore",
+        "data": {
+          "balance": "49594917775",
+          "frozen": false,
+          "metadata": {
+            "inner": "0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b"
+          }
+        }
+      },
+      "type": "write_resource"
+    },
+    {
+      "address": "0xceae4883c6fc31580ae5feddaa7221772c7f5b297948b2cd1615c94b1bda36dc",
+      "state_key_hash": "0xc44ebf4ab4767530df2476ba88c7d659b2ebab87d1dfe042dd1e496894f4f4c8",
+      "data": {
+        "type": "0x1::object::ObjectCore",
+        "data": {
+          "allow_ungated_transfer": false,
+          "guid_creation_num": "1125899906842625",
+          "owner": "0x9d5ddb95e1f9af0c5d0a275725e8f87ccc78f0230b3ba2ce040b8c6afe09931d",
+          "transfer_events": {
+            "counter": "0",
+            "guid": {
+              "id": {
+                "addr": "0xceae4883c6fc31580ae5feddaa7221772c7f5b297948b2cd1615c94b1bda36dc",
+                "creation_num": "1125899906842624"
+              }
+            }
+          }
+        }
+      },
+      "type": "write_resource"
+    },
+    {
+      "address": "0xe16a858661bf74702611c836df8d7fcbf61d9a7a1382a82f586e412478f043d8",
+      "state_key_hash": "0xdeb98c9e0c9431e7b79399769e9b59ef8d70bb62fe1d8c88b2f6ddba906acda3",
+      "data": {
+        "type": "0x1::fungible_asset::FungibleStore",
+        "data": {
+          "balance": "3863655332825",
+          "frozen": false,
+          "metadata": {
+            "inner": "0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b"
+          }
+        }
+      },
+      "type": "write_resource"
+    },
+    {
+      "address": "0xe16a858661bf74702611c836df8d7fcbf61d9a7a1382a82f586e412478f043d8",
+      "state_key_hash": "0xdeb98c9e0c9431e7b79399769e9b59ef8d70bb62fe1d8c88b2f6ddba906acda3",
+      "data": {
+        "type": "0x1::object::ObjectCore",
+        "data": {
+          "allow_ungated_transfer": false,
+          "guid_creation_num": "1125899906842625",
+          "owner": "0x836e0558f907fe74488d455d729bd8b6752fb7d218665852dba7d2aa9f9cfd0a",
+          "transfer_events": {
+            "counter": "0",
+            "guid": {
+              "id": {
+                "addr": "0xe16a858661bf74702611c836df8d7fcbf61d9a7a1382a82f586e412478f043d8",
+                "creation_num": "1125899906842624"
+              }
+            }
+          }
+        }
+      },
+      "type": "write_resource"
+    }
+  ],
+  "vm_status": "Executed successfully"
+}

@@ -165,7 +165,7 @@ func (r *NodeRegistry) refreshCandidates(ctx context.Context, origin, network st
 				}
 				attempt, cancel := context.WithTimeout(probeCtx, timeout)
 				cfg := chains.Network{Name: e.Network, Protocol: e.Protocol, URL: e.URL}
-				release := r.lookup.lanes.scan(providerKey(cfg))
+				release := r.lookup.lanes.scan(chains.ProviderKey(cfg))
 				h, err := probe(attempt, cfg)
 				release()
 				cancel()

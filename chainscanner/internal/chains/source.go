@@ -94,7 +94,19 @@ type jsonSource struct {
 }
 
 func NewSource(ctx context.Context, n Network) (Source, error) {
-	return newSource(ctx, n, false, true)
+	src, err := newSource(ctx, n, false, true)
+	if err != nil {
+		return nil, err
+	}
+	if s, ok := src.(*jsonSource); ok && n.Name == "solana" {
+		probe, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		if err := s.verifyMainnet(probe); err != nil {
+			s.Close()
+			return nil, err
+		}
+	}
+	return src, nil
 }
 
 func newSource(ctx context.Context, n Network, discovered, watch bool) (Source, error) {
@@ -237,6 +249,12 @@ func (s *jsonSource) request(ctx context.Context, path string, post any) (gjson.
 	if res.StatusCode/100 != 2 {
 		if res.StatusCode == http.StatusTooManyRequests {
 			return gjson.Result{}, ErrRateLimited
+		}
+		if s.n.Name == "aptos" && res.StatusCode == http.StatusNotFound && strings.HasPrefix(strings.TrimPrefix(path, "/v1"), "/transactions/by_hash/") {
+			body, readErr := io.ReadAll(io.LimitReader(res.Body, 8192))
+			if readErr == nil && gjson.ValidBytes(body) && gjson.GetBytes(body, "error_code").Str == "transaction_not_found" {
+				return gjson.Result{}, ErrTransactionMissing
+			}
 		}
 		return gjson.Result{}, rpc.HTTPError{StatusCode: res.StatusCode, Status: res.Status}
 	}

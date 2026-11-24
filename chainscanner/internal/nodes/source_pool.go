@@ -248,7 +248,7 @@ func (p *SourcePool) record(n *endpoint, read bool, err error) {
 	}
 }
 func (p *SourcePool) height(ctx context.Context, n *endpoint) (height int64, resultErr error) {
-	defer p.lanes.scan(providerKey(n.cfg))()
+	defer p.lanes.scan(chains.ProviderKey(n.cfg))()
 	return p.readHeight(ctx, n)
 }
 func (p *SourcePool) readHeight(ctx context.Context, n *endpoint) (height int64, resultErr error) {

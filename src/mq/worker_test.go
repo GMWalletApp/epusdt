@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 
 	"github.com/GMWalletApp/epusdt/model/service"
 	"sync/atomic"
@@ -17,8 +18,15 @@ import (
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
+	"github.com/GMWalletApp/epusdt/util/http_client"
 	"github.com/GMWalletApp/epusdt/util/sign"
+	"github.com/go-resty/resty/v2"
 )
+
+func TestMain(m *testing.M) {
+	http_client.CallbackClientFactory = resty.New
+	os.Exit(m.Run())
+}
 
 func TestCleanupExpiredTransactionLocksRetriesSQLiteBusy(t *testing.T) {
 	attempts := 0

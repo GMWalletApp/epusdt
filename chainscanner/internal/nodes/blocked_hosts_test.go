@@ -72,7 +72,7 @@ func TestBlockedHostsApplyBeforeAdmissionAndToSavedRoutes(t *testing.T) {
 	if _, err := r.add(ctx, paired, true); !errors.Is(err, errInvalidNode) {
 		t.Fatal(err)
 	}
-	nodes, err := r.lookupCandidates(ctx, "base", true)
+	nodes, err := r.lookupCandidates(ctx, "base", false)
 	if err != nil || len(nodes) == 0 {
 		t.Fatal(err, nodes)
 	}
@@ -192,7 +192,7 @@ func TestStrictLookupDropsNewlyBlacklistedVote(t *testing.T) {
 	if _, err = r.db.Exec("UPDATE rpc_nodes SET removed=1"); err != nil {
 		t.Fatal(err)
 	}
-	for _, host := range []string{"one.example", "two.example"} {
+	for _, host := range []string{"one.example"} {
 		if _, err := r.Add(ctx, NodeOptions{NodeEndpoint: NodeEndpoint{"base", "http", "https://" + host}}); err != nil {
 			t.Fatal(err)
 		}
@@ -203,24 +203,24 @@ func TestStrictLookupDropsNewlyBlacklistedVote(t *testing.T) {
 	r.lookup.read = func(context.Context, chains.Network, string, bool) (json.RawMessage, error) {
 		entered <- struct{}{}
 		<-resume
-		return json.RawMessage(`{"ok":true}`), nil
+		return nil, chains.ErrTransactionMissing
 	}
 	h := r.transactionHandler(map[string]chains.Network{"base": {Name: "base"}})
 	query := func() int {
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest("GET", "/v1/transactions/base/0x"+strings.Repeat("aa", 32)+"/strict?rounds=1", nil))
+		h.ServeHTTP(w, httptest.NewRequest("GET", "/v1/transactions/base/0x"+strings.Repeat("aa", 32), nil))
 		return w.Code
 	}
 	result := make(chan int, 1)
 	go func() { result <- query() }()
 	timer := time.NewTimer(3 * time.Second)
 	defer timer.Stop()
-	for range 2 {
+	{
 		select {
 		case <-entered:
 		case <-timer.C:
 			close(resume)
-			t.Fatal("two reads did not start")
+			t.Fatal("read did not start")
 		}
 	}
 	err = r.setBlocked(ctx, "one.example", true)
@@ -237,7 +237,7 @@ func TestStrictLookupDropsNewlyBlacklistedVote(t *testing.T) {
 	if err := r.setBlocked(ctx, "one.example", false); err != nil {
 		t.Fatal(err)
 	}
-	if status := query(); status != 200 {
+	if status := query(); status != 404 {
 		t.Fatal(status)
 	}
 }
