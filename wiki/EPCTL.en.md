@@ -109,6 +109,8 @@ Upgrade to a newer release (auto-detects installed components, or pass `--compon
 ```
 
 Running `./epctl upgrade --tag ...` directly restarts `epusdt` immediately after the files are replaced.
+
+Older epctl units mount the EPUSDT executable read-only. Use the updated epctl for one command-line upgrade and restart to refresh the unit before installing future binary updates from the admin console. Custom units must allow the service account to create a backup in the installation directory and atomically replace the EPUSDT executable.
 If you want to replace files only, pass `--no-restart`.
 If you want an explicit confirmation step, pass `--prompt-restart`; in an interactive terminal the prompt is `[Y/n]`, so pressing Enter restarts by default.
 

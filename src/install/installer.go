@@ -228,7 +228,7 @@ func (h *installHandler) Submit(c echo.Context) error {
 // RunInstallServer starts the install UI and REST API on listenAddr
 // (default :8000), then blocks until installation has been finalized.
 // The caller should then proceed with normal app initialisation (bootstrap.InitApp).
-func RunInstallServer(listenAddr, envFilePath string, frontend http.FileSystem) {
+func RunInstallServer(listenAddr, envFilePath string, frontend http.FileSystem) error {
 	if listenAddr == "" {
 		listenAddr = DefaultInstallAddr
 	}
@@ -250,11 +250,11 @@ func RunInstallServer(listenAddr, envFilePath string, frontend http.FileSystem) 
 	}()
 
 	if err := e.Start(listenAddr); err != nil && err != http.ErrServerClosed {
-		color.Red.Printf("[install] server error: %s\n", err)
-		os.Exit(1)
+		return fmt.Errorf("start install server: %w", err)
 	}
 
 	color.Green.Printf("[install] configuration saved to %s, starting…\n", envFilePath)
+	return nil
 }
 
 // formControlledKeys are keys whose values always come from the install form

@@ -230,7 +230,7 @@ func TestRestorePreviousBinaryAfterFailedStartup(t *testing.T) {
 	if err := os.WriteFile(pendingPath, []byte("v2.1.1"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	restored, err := rollbackPendingUpdate(execPath)
+	restored, err := rollbackPendingUpdate(execPath, "startup test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -434,7 +434,7 @@ func TestVerifiedReleaseCanBeAppliedAndRolledBack(t *testing.T) {
 				if fmt.Sprint(stages) != "[downloading verifying extracting swapping]" {
 					t.Fatalf("stages: %v", stages)
 				}
-				if restored, err := rollbackPendingUpdate(path); err != nil || !restored {
+				if restored, err := rollbackPendingUpdate(path, "startup test"); err != nil || !restored {
 					t.Fatalf("rollback: %v %v", restored, err)
 				}
 			} else if !errors.Is(err, ErrChecksumMismatch) {

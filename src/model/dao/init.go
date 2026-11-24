@@ -1,15 +1,14 @@
 package dao
 
-import (
-	"log"
-)
+import "fmt"
 
-func Init() {
+func Init() error {
 	if err := DBInit(); err != nil {
-		log.Fatalf("DBInit err: %v", err)
+		return fmt.Errorf("initialize primary database: %w", err)
 	}
 
 	if err := RuntimeInit(); err != nil {
-		log.Fatalf("RuntimeInit err: %v", err)
+		return fmt.Errorf("initialize runtime database: %w", err)
 	}
+	return nil
 }

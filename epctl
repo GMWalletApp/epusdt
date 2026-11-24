@@ -1001,7 +1001,8 @@ Type=simple
 User=${SYSTEM_USER}
 Group=${SYSTEM_USER}
 WorkingDirectory=${INSTALL_DIR}
-ReadOnlyPaths=-${BIN_PATH} -${SCANNER_BIN_PATH}
+# EPUSDT replaces its own executable atomically after verifying the release.
+ReadOnlyPaths=-${SCANNER_BIN_PATH}
 NoNewPrivileges=true
 ExecStart=${BIN_PATH} http start
 Restart=always
