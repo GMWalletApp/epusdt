@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/tidwall/gjson"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
@@ -56,7 +57,7 @@ func TestTransactionLookupFailover(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			r.lookup.probe = func(context.Context, chains.Network, bool) error { return nil }
+			r.lookup.probe = func(context.Context, chains.Network, bool) (int64, error) { return 100, nil }
 			last := ""
 			calls := 0
 			r.lookup.read = func(_ context.Context, n chains.Network, h string, public bool) (json.RawMessage, error) {
@@ -129,5 +130,61 @@ func TestOfficialGatewayVotes(t *testing.T) {
 	}
 	if chains.ProviderKey(chains.Network{Name: "monad", URL: "https://rpc2.monad.xyz"}) == chains.ProviderKey(chains.Network{Name: "monad", URL: "wss://rpc3.monad.xyz"}) {
 		t.Fatal("Goldsky and Ankr must be independent")
+	}
+}
+
+func TestTronObservedAbsenceUsesTheLookupNodesConfirmedHeight(t *testing.T) {
+	sample, err := os.ReadFile("../chains/testdata/strict/tron.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := gjson.GetBytes(sample, "transaction.txID").String()
+	for _, tc := range []struct {
+		name                string
+		observed, head      int64
+		visibleOnSecondRead bool
+		wantReads           int
+		wantErr             error
+	}{
+		{"behind", 100, 99, false, 1, chains.ErrTransactionPending},
+		{"equal", 100, 100, false, 1, chains.ErrTransactionPending},
+		{"ahead but absent", 100, 101, false, 2, chains.ErrTransactionMissing},
+		{"indexed between reads", 100, 101, true, 2, nil},
+		{"unknown historical height", -1, 101, false, 1, chains.ErrTransactionPending},
+		{"height unavailable", 100, -1, false, 1, errCapacity},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reads := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/walletsolidity/getblockbynum":
+					fmt.Fprint(w, `{"blockID":"00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc"}`)
+				case "/walletsolidity/getnowblock":
+					if tc.head < 0 {
+						http.Error(w, "offline", 503)
+						return
+					}
+					fmt.Fprintf(w, `{"block_header":{"raw_data":{"number":%d}}}`, tc.head)
+				case "/walletsolidity/gettransactionbyid":
+					reads++
+					if reads == 2 && tc.visibleOnSecondRead {
+						fmt.Fprint(w, gjson.GetBytes(sample, "transaction").Raw)
+					} else {
+						fmt.Fprint(w, "{}")
+					}
+				case "/walletsolidity/gettransactioninfobyid":
+					fmt.Fprint(w, gjson.GetBytes(sample, "receipt").Raw)
+				default:
+					t.Errorf("unexpected TRON method %s", r.URL.Path)
+				}
+			}))
+			defer srv.Close()
+			r := &NodeRegistry{lookup: transactionLookup{read: chains.LookupTransaction, probe: chains.LookupHead}}
+			c := lookupCandidate{cfg: chains.Network{Name: "tron", Protocol: "solidity-http", URL: srv.URL}, healthy: true, sourceStatus: "excluded"}
+			_, err := r.lookupAtObservedHeight(t.Context(), c, nil, hash, tc.observed)
+			if !errors.Is(err, tc.wantErr) || reads != tc.wantReads {
+				t.Fatalf("reads=%d, err=%v", reads, err)
+			}
+		})
 	}
 }

@@ -269,10 +269,10 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 			t.Fatal("verified credit missing", got, callbacks)
 		}
 	}
-	if counts[0].Load()+counts[1].Load() != 2 {
+	if counts[0].Load()+counts[1].Load() != 5 {
 		t.Fatal("lookup requests", counts[0].Load(), counts[1].Load())
 	}
-	if err := service.ConfirmPayment(ctx, client, remote.full, job); err == nil {
+	if err := service.ConfirmPayment(ctx, client, remote.automatic, job); err == nil {
 		t.Fatal("settled twice")
 	}
 	if err := sub.refresh(ctx); err != nil || len(sub.registered) != 0 {

@@ -101,23 +101,21 @@ func openLookupSource(ctx context.Context, n Network, public bool) (Source, erro
 }
 
 // Check availability without sending the caller's transaction hash.
-func ProbeLookup(ctx context.Context, n Network, public bool) error {
+func LookupHead(ctx context.Context, n Network, public bool) (int64, error) {
 	if n.Protocol == "toncenter-v3" {
-		_, err := TONIndexHeight(ctx, n)
-		return err
+		return TONIndexHeight(ctx, n)
 	}
 	src, err := openLookupSource(ctx, n, public)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer src.Close()
 	if s, ok := src.(*jsonSource); ok && !public {
 		if err := s.verifyMainnet(ctx); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	_, err = src.Head(ctx)
-	return err
+	return src.Head(ctx)
 }
 
 func LookupTransaction(ctx context.Context, n Network, hash string, public bool) (json.RawMessage, error) {

@@ -36,7 +36,7 @@ func TestTransientFailuresRetryUntilDefinitiveMissingSuspendsParentAndChild(t *t
 		t.Fatal(err)
 	}
 	calls := 0
-	read := func(_ context.Context, n, h string) (json.RawMessage, error) {
+	read := func(_ context.Context, n, h string, _ int64) (json.RawMessage, error) {
 		calls++
 		if calls <= 3 {
 			return nil, errors.New("RPC unavailable")
@@ -95,7 +95,7 @@ func TestLegacyJobWithTwoAttemptsResumesLookup(t *testing.T) {
 		t.Fatal(err)
 	}
 	called := false
-	read := func(context.Context, string, string) (json.RawMessage, error) {
+	read := func(context.Context, string, string, int64) (json.RawMessage, error) {
 		called = true
 		return nil, errors.New("still unavailable")
 	}
@@ -188,7 +188,7 @@ func TestConfirmingOrderRenewsLockAndWaitingBlockDepthReleasesLease(t *testing.T
 		t.Fatalf("confirming order lock was not renewed: expires_at=%v", lock.ExpiresAt)
 	}
 	lookupCalls := 0
-	ok, err := processDueConfirmation(t.Context(), staticHeightFeed{height: 10}, func(context.Context, string, string) (json.RawMessage, error) {
+	ok, err := processDueConfirmation(t.Context(), staticHeightFeed{height: 10}, func(context.Context, string, string, int64) (json.RawMessage, error) {
 		lookupCalls++
 		return nil, nil
 	})

@@ -134,7 +134,7 @@ func TestLedgerEvidencePaysOnlyIncomingOrder(t *testing.T) {
 				}
 				result = marshal(map[string]any{"hash": base64.StdEncoding.EncodeToString(c.Hash()), "account": recipient, "lt": tx.LT, "now": tx.Now, "mc_block_seqno": 10})
 			}
-			if err := ConfirmPayment(t.Context(), nil, func(context.Context, string, string) (json.RawMessage, error) { return result, nil }, job); err != nil {
+			if err := ConfirmPayment(t.Context(), nil, func(context.Context, string, string, int64) (json.RawMessage, error) { return result, nil }, job); err != nil {
 				t.Fatal(err)
 			}
 			paid, err := data.GetOrderInfoByTradeId(order.TradeId)
