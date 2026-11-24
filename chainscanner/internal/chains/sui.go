@@ -207,13 +207,24 @@ func SuiTransaction(ctx context.Context, n Network, digest string) (Activity, er
 }
 
 func (s *suiSource) transaction(ctx context.Context, digest string, fields []string) (Activity, error) {
-	res, err := s.ledger.GetTransaction(s.auth(ctx), &pb.GetTransactionRequest{Digest: &digest, ReadMask: &fieldmaskpb.FieldMask{Paths: fields}})
+	tx, err := s.finalizedTransaction(ctx, digest, fields)
 	if err != nil {
 		return Activity{}, err
 	}
-	tx := res.GetTransaction()
-	if tx.GetDigest() != digest || tx.Checkpoint == nil || tx.GetTimestamp() == nil {
-		return Activity{}, errors.New("missing finalized Sui transaction")
+	if tx.GetTimestamp() == nil {
+		return Activity{}, errors.New("missing Sui checkpoint timestamp")
 	}
 	return suiActivity(tx, int64(tx.GetCheckpoint()), tx.GetTimestamp().AsTime().UnixMilli())
+}
+
+func (s *suiSource) finalizedTransaction(ctx context.Context, digest string, fields []string) (*pb.ExecutedTransaction, error) {
+	res, err := s.ledger.GetTransaction(s.auth(ctx), &pb.GetTransactionRequest{Digest: &digest, ReadMask: &fieldmaskpb.FieldMask{Paths: fields}})
+	if err != nil {
+		return nil, err
+	}
+	tx := res.GetTransaction()
+	if tx.GetDigest() != digest || tx.Checkpoint == nil {
+		return nil, errors.New("missing finalized Sui transaction")
+	}
+	return tx, nil
 }

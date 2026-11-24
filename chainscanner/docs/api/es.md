@@ -32,7 +32,6 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Consumidor | [`POST /v1/events/{id}/ack`](#ack) | `204` |
 | Consumidor | [`GET /v1/heights/{network}`](#height) | `200` |
 | Consumidor | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
-| Consumidor | [`GET /v1/transactions/{network}/{hash}/strict`](#transactions) | `200` |
 | Administrador | [`GET /v1/admin/progress`](#scan-progress) | `200` |
 | Administrador | [`GET /v1/admin/scan-retry-rate`](#scan-retry-rate) | `200`, `400` |
 | Administrador | [`GET /v1/admin/nodes`](#list) | `200` |
@@ -51,33 +50,24 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 Usa el token del consumidor y una red configurada. No se necesita una suscripción. La respuesta incluye `network`, `hash` y `result`.
 
-La ruta normal elige un nodo libre al azar y da prioridad a los sanos. La ruta estricta consulta dos nodos distintos en paralelo. Si ambos devuelven el mismo resultado completo, lo devuelve. En caso contrario, prueba una vez más con dos nodos nuevos. Los errores y las transacciones ausentes no cuentan como votos. El orden de las claves JSON y los espacios no afectan la comparación.
+La consulta por hash da prioridad a los respaldos, excluye los nodos que entregaron la actividad observada y devuelve la primera transacción válida.
 
-Registra dos respaldos independientes en la misma red, uno por solicitud. Los bloques fallidos se reparten por turnos entre respaldos aptos. La consulta estricta prefiere dos respaldos y puede completar el par con nodos normales. La consulta normal omite los de respaldo. Ambos modos omiten nodos en pausa. Cada ronda permite hasta 4 segundos para seleccionar nodos y 9 para consultar la transacción. 400 indica datos inválidos, 401 acceso denegado, 404 ausencia en la consulta normal, 502 fallo de consulta o consenso y 503 falta de nodos disponibles.
+HTTP 404 con `X-ChainScanner-Evidence: not_found` indica que el nodo no encontró la transacción. El pedido puede pasar a revisión manual. Ante 502 o 503, vuelva a intentar la consulta tras una pausa.
 
-En TON, un índice v3 localiza la transacción. Dos LiteServers ADNL directos con hosts y claves diferentes verifican la inclusión. Se devuelven el BOC, el hash, la cuenta, LT, la fecha y las raíces de ambos bloques. Si no hay un par de LiteServers, dos índices v3 distintos pueden cotejar el registro completo.
+Tras un fallo, se prueban otros nodos. Si hay alternativas y queda tiempo, se reintenta al menos tres veces. Use `?fallback_only=true` para restringir la consulta a respaldos. Con `?observed=true` se requiere un origen de escaneo registrado. Si falta el origen o no hay un nodo independiente, se devuelve 503.
 
 ```sh
 consumer "$BASE/v1/transactions/base/$TX_HASH"
-consumer "$BASE/v1/transactions/base/$TX_HASH/strict"
-consumer "$BASE/v1/transactions/base/$TX_HASH/strict?fallback_only=true"
+consumer "$BASE/v1/transactions/base/$TX_HASH?fallback_only=true"
 ```
 
 <a id="trust"></a>
 
 ### Cuándo verificar una transacción
 
-Los proveedores públicos rotan. Un evento o una consulta normal puede contener datos obsoletos, erróneos o falsos. No hay una tasa histórica verificada. Antes de acreditar o entregar un pedido, usa `/strict` y comprueba el éxito, el destinatario, el activo, el importe y las confirmaciones. Dos dominios pueden compartir operador.
-
-Elige un respaldo de confianza con un operador distinto. Para poco tráfico puede bastar la cuota gratuita. Calcula el consumo conjunto de reparaciones y consultas estrictas. [API](#fallback)
-
-Si se agotan ambas rondas, la ruta predeterminada devuelve `X-ChainScanner-Manual-Review: required`. Detén los reintentos automáticos y guarda red y hash para revisión. `X-ChainScanner-Strict-Rounds` indica las rondas intentadas.
-
-`?rounds=1` · `X-ChainScanner-Pair` → `X-ChainScanner-Exclude`
+Antes de abonar un pago, compruebe la ejecución, las confirmaciones, el destinatario, el activo y el importe.
 
 [Lista negra de nodos](#blacklist)
-
-Usa `?fallback_only=true` para limitar todas las consultas a respaldos. Un reintento requiere dos votantes nuevos y devuelve 503 si faltan. En TON registra también un índice v3 de respaldo para localizar la prueba, o usa dos índices v3 independientes. Estos índices no reparan bloques. En TON, dos índices v3 de respaldo pueden formar la pareja preferida cuando hay menos de dos LiteServers de respaldo configurados.
 
 <a id="subscriptions"></a>
 
@@ -384,7 +374,7 @@ admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http"
 
 ### `POST /v1/admin/nodes/fallback`
 
-Registra un nodo de historial de pago para una red con los mismos campos y el token de administrador de la ruta normal. Devuelve **201** con `origin: fallback`. Tras un fallo de lectura, un nodo de respaldo libre puede tomar el intervalo y verificar sus confirmaciones. También repara huecos guardados en SQLite tras reiniciar. Las lecturas iniciales y las consultas de altura para suscripciones usan nodos ordinarios. Las pruebas manuales pueden consumir cuota. Los huecos pendientes se reintentan y tres fallos consecutivos activan la pausa progresiva. Usa el ID devuelto para probar o eliminar el nodo. Registra dos respaldos independientes en la misma red, uno por solicitud. Los bloques fallidos se reparten por turnos entre respaldos aptos. La consulta estricta prefiere dos respaldos y puede completar el par con nodos normales. La consulta normal omite los de respaldo. Ambos modos omiten nodos en pausa.
+Registra un nodo de historial de pago para una red con los mismos campos y el token de administrador de la ruta normal. Devuelve **201** con `origin: fallback`. Tras un fallo de lectura, un nodo de respaldo libre puede tomar el intervalo y verificar sus confirmaciones. También repara huecos guardados en SQLite tras reiniciar. Las lecturas iniciales y las consultas de altura para suscripciones usan nodos ordinarios. Las pruebas manuales pueden consumir cuota. Los huecos pendientes se reintentan y tres fallos consecutivos activan la pausa progresiva. Usa el ID devuelto para probar o eliminar el nodo. Registre cada respaldo por separado. Los intervalos fallidos se reparten entre los respaldos aptos.
 
 ```sh
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'

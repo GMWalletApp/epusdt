@@ -201,23 +201,10 @@ func registerScannerAdmin(group *echo.Group, connection config.ScannerConnection
 		// @Param network path string true "Network"
 		// @Param hash path string true "Transaction hash"
 		// @Param manual query bool false "Allow manual verification nodes"
+		// @Param fallback_only query bool false "Restrict lookup to fallback nodes"
 		// @Success 200 {object} object{network=string,hash=string,result=object}
 		// @Router /admin/api/v1/chainscanner/transactions/{network}/{hash} [get]
 		{"GET", "/transactions/:network/:hash"},
-
-		// @Summary Verify a transaction with independent nodes
-		// @Tags ChainScanner
-		// @Security AdminJWT
-		// @Produce json
-		// @Param network path string true "Network"
-		// @Param hash path string true "Transaction hash"
-		// @Param manual query bool false "Allow manual verification nodes"
-		// @Param fallback_only query bool false "Restrict lookup to fallback nodes"
-		// @Param rounds query int false "Use 1 for a single round"
-		// @Param X-ChainScanner-Exclude header string false "Previous voter hashes for a single round"
-		// @Success 200 {object} object{network=string,hash=string,result=object}
-		// @Router /admin/api/v1/chainscanner/transactions/{network}/{hash}/strict [get]
-		{"GET", "/transactions/:network/:hash/strict"},
 	} {
 		scanner.Add(r.method, r.path, scannerForward(r.path, connection))
 	}
@@ -263,9 +250,6 @@ func scannerForward(template string, connection config.ScannerConnection) echo.H
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
-		if strings.HasSuffix(template, "/strict") {
-			req.Header.Set("X-ChainScanner-Exclude", in.Header.Get("X-ChainScanner-Exclude"))
-		}
 		client := scannerHTTP
 		if template == "/admin/nodes/test" {
 			// A large inventory can exceed the per-request timeout. Cancellation
@@ -280,7 +264,7 @@ func scannerForward(template string, connection config.ScannerConnection) echo.H
 		if res.StatusCode == http.StatusUnauthorized {
 			return echo.NewHTTPError(http.StatusBadGateway, "ChainScanner rejected its configured credential")
 		}
-		for _, key := range []string{"Content-Type", "X-ChainScanner-Strict-Rounds", "X-ChainScanner-Manual-Review", "X-ChainScanner-Pair", "Retry-After"} {
+		for _, key := range []string{"Content-Type", "X-ChainScanner-Evidence", "X-ChainScanner-Scan-Source", "Retry-After"} {
 			if v := res.Header.Get(key); v != "" {
 				c.Response().Header().Set(key, v)
 			}

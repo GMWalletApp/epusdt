@@ -32,7 +32,6 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 | Dịch vụ | [`POST /v1/events/{id}/ack`](#ack) | `204` |
 | Dịch vụ | [`GET /v1/heights/{network}`](#height) | `200` |
 | Dịch vụ | [`GET /v1/transactions/{network}/{hash}`](#transactions) | `200` |
-| Dịch vụ | [`GET /v1/transactions/{network}/{hash}/strict`](#transactions) | `200` |
 | Quản trị viên | [`GET /v1/admin/progress`](#scan-progress) | `200` |
 | Quản trị viên | [`GET /v1/admin/scan-retry-rate`](#scan-retry-rate) | `200`, `400` |
 | Quản trị viên | [`GET /v1/admin/nodes`](#list) | `200` |
@@ -51,33 +50,24 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 Gửi mã xác thực của dịch vụ và ID mạng đã cấu hình. Không cần đăng ký địa chỉ. Phản hồi chứa `network`, `hash` và `result`.
 
-Truy vấn thường chọn ngẫu nhiên một nút rảnh, ưu tiên nút đang hoạt động tốt. Truy vấn nghiêm ngặt gửi yêu cầu đồng thời đến hai nút khác nhau. Nếu cả hai trả về cùng một kết quả giao dịch đầy đủ, dịch vụ trả kết quả. Nếu không, dịch vụ thử lại một lần với hai nút chưa dùng. Lỗi và phản hồi không tìm thấy giao dịch không được tính. Thứ tự khóa JSON và khoảng trắng không ảnh hưởng đến so sánh.
+Tra cứu theo mã băm ưu tiên nút dự phòng, loại các nút đã cung cấp giao dịch khi quét khối và trả giao dịch hợp lệ đầu tiên.
 
-Đăng ký riêng từng nút để thêm hai nút dự phòng độc lập trên cùng mạng. Các nút đủ điều kiện luân phiên quét bù. Truy vấn nghiêm ngặt ưu tiên hai nút dự phòng và có thể thêm nút thường nếu thiếu. Tra cứu thường bỏ qua nút dự phòng. Cả hai chế độ bỏ qua các nút đang tạm dừng. Mỗi lượt có tối đa 4 giây để chọn nút và 9 giây để tra giao dịch. HTTP 400 là đầu vào sai, 401 là lỗi xác thực, 404 là không tìm thấy khi tra thường, 502 là truy vấn lỗi hoặc kết quả khác nhau và 503 là thiếu nút khả dụng.
+HTTP 404 kèm `X-ChainScanner-Evidence: not_found` nghĩa là nút đã trả lời rằng không tìm thấy giao dịch. Có thể tạm dừng đơn hàng để kiểm tra thủ công. Với 502 hoặc 503, hãy thử lại sau một khoảng chờ.
 
-Trên TON, chỉ mục v3 cung cấp vị trí giao dịch. Hai LiteServer ADNL trực tiếp có máy chủ và khóa khác nhau kiểm tra bằng chứng giao dịch nằm trong khối. Kết quả gồm BOC, mã băm, tài khoản, LT, thời gian và hai mã băm gốc của khối shard và masterchain. Nếu không đủ hai LiteServer, hai chỉ mục v3 khác nhau có thể đối chiếu bản ghi đầy đủ.
+Nếu truy vấn lỗi, hệ thống chuyển sang nút khác và thử lại ít nhất ba lần khi còn nút thay thế và thời gian. Dùng `?fallback_only=true` để chỉ dùng nút dự phòng. Với `?observed=true`, cần có bản ghi nguồn quét. Nếu thiếu bản ghi hoặc không còn nút độc lập, API trả về 503.
 
 ```sh
 consumer "$BASE/v1/transactions/base/$TX_HASH"
-consumer "$BASE/v1/transactions/base/$TX_HASH/strict"
-consumer "$BASE/v1/transactions/base/$TX_HASH/strict?fallback_only=true"
+consumer "$BASE/v1/transactions/base/$TX_HASH?fallback_only=true"
 ```
 
 <a id="trust"></a>
 
 ### Khi nào cần xác minh giao dịch
 
-Các nút công cộng luân phiên phục vụ. Sự kiện hoặc kết quả từ một nút có thể lỗi thời, sai hoặc giả mạo. Chưa có số liệu lịch sử đã kiểm chứng. Trước khi ghi có hoặc giao hàng, gọi `/strict` rồi kiểm tra trạng thái thành công, người nhận, tài sản, số tiền và độ sâu xác nhận. Hai tên miền có thể thuộc cùng nhà vận hành.
-
-Chọn nút dự phòng từ nhà cung cấp đáng tin và độc lập với các nút thường. Hạn mức miễn phí có thể đủ khi lưu lượng thấp. Tính cả lượt quét bù và truy vấn nghiêm ngặt. [API](#fallback)
-
-Khi hết hai vòng, API mặc định trả về `X-ChainScanner-Manual-Review: required`. Dừng thử lại tự động và lưu mạng cùng mã giao dịch để kiểm tra thủ công. `X-ChainScanner-Strict-Rounds` cho biết số vòng đã thử.
-
-`?rounds=1` · `X-ChainScanner-Pair` → `X-ChainScanner-Exclude`
+Trước khi ghi có, hãy kiểm tra kết quả thực thi, độ sâu xác nhận, người nhận, tài sản và số tiền.
 
 [Danh sách đen nút](#blacklist)
-
-Dùng `?fallback_only=true` để chỉ gửi yêu cầu tới nút dự phòng. Lần thử lại cần hai nút mới và trả về 503 nếu thiếu. Trên TON, hãy đăng ký thêm chỉ mục v3 dự phòng để định vị giao dịch cho bằng chứng, hoặc dùng hai chỉ mục v3 dự phòng độc lập. Chỉ mục không quét bù khối. Trên TON, hai chỉ mục v3 dự phòng có thể được ưu tiên khi cấu hình chưa đủ hai LiteServer dự phòng.
 
 <a id="subscriptions"></a>
 
@@ -384,7 +374,7 @@ admin -X POST "$BASE/v1/admin/nodes" --data '{"network":"base","protocol":"http"
 
 ### `POST /v1/admin/nodes/fallback`
 
-Đăng ký nút lịch sử trả phí cho một mạng bằng các trường và token quản trị như khi thêm nút thường. Phản hồi **201** có `origin: fallback`. Khi đọc khối thất bại, nút dự phòng đang rảnh có thể nhận khoảng đó ngay và kiểm tra độ cao xác nhận. Nút này cũng quét bù các khoảng lỗi đã lưu trong SQLite sau khi khởi động lại. Nút thường đảm nhiệm khối mới, mốc đăng ký và việc kiểm tra đầu chuỗi định kỳ. Kiểm tra thủ công có thể dùng hạn mức trả phí. Lỗi quét bù giữ nguyên khoảng cần thử lại, ba lỗi liên tiếp kích hoạt thời gian tạm dừng tăng dần. Dùng ID trả về để kiểm tra hoặc xóa nút. Đăng ký riêng từng nút để thêm hai nút dự phòng độc lập trên cùng mạng. Các nút đủ điều kiện luân phiên quét bù. Truy vấn nghiêm ngặt ưu tiên hai nút dự phòng và có thể thêm nút thường nếu thiếu. Tra cứu thường bỏ qua nút dự phòng. Cả hai chế độ bỏ qua các nút đang tạm dừng.
+Đăng ký nút lịch sử trả phí cho một mạng bằng các trường và token quản trị như khi thêm nút thường. Phản hồi **201** có `origin: fallback`. Khi đọc khối thất bại, nút dự phòng đang rảnh có thể nhận khoảng đó ngay và kiểm tra độ cao xác nhận. Nút này cũng quét bù các khoảng lỗi đã lưu trong SQLite sau khi khởi động lại. Nút thường đảm nhiệm khối mới, mốc đăng ký và việc kiểm tra đầu chuỗi định kỳ. Kiểm tra thủ công có thể dùng hạn mức trả phí. Lỗi quét bù giữ nguyên khoảng cần thử lại, ba lỗi liên tiếp kích hoạt thời gian tạm dừng tăng dần. Dùng ID trả về để kiểm tra hoặc xóa nút. Đăng ký riêng từng nút dự phòng. Các nút đủ điều kiện luân phiên quét bù các khoảng bị lỗi.
 
 ```sh
 admin -X POST "$BASE/v1/admin/nodes/fallback" --data '{"network":"base","protocol":"http","url":"https://paid-rpc.example.org","api_key":"YOUR_PROVIDER_KEY"}'

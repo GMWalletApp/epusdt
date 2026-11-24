@@ -144,8 +144,15 @@ func (s *Store) step(ctx context.Context, n chains.Network, source chains.Source
 			unavailable = readErr
 			return s.deferGap(ctx, n.Name, span)
 		}
+		var sourceIDs []string
+		if len(events) != 0 {
+			sourceIDs = chains.SourceIDs(n)
+		}
 		for i := range events {
 			e := &events[i]
+			if len(e.ScanSources) == 0 {
+				e.ScanSources = sourceIDs
+			}
 			if e.Height < span.First || e.Height > span.Last || (e.Network != "" && e.Network != n.Name) {
 				return errors.New("event outside assigned range")
 			}

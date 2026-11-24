@@ -14,7 +14,7 @@ import (
 	"github.com/GMWalletApp/epusdt/model/mdb"
 )
 
-func TestStrictRoundsPersistAcrossWorkersAndStopForReview(t *testing.T) {
+func TestTransientFailuresRetryUntilDefinitiveMissingSuspendsParentAndChild(t *testing.T) {
 	defer testutil.SetupTestDatabases(t)()
 	db := dao.Mdb
 	ctx := t.Context()
@@ -36,22 +36,28 @@ func TestStrictRoundsPersistAcrossWorkersAndStopForReview(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := 0
-	read := func(_ context.Context, n, h, previous string) (json.RawMessage, string, error) {
+	read := func(_ context.Context, n, h string) (json.RawMessage, error) {
 		calls++
-		if calls == 1 && previous != "" || calls == 2 && previous != "first-pair" {
-			t.Fatal(calls, previous)
+		if calls <= 3 {
+			return nil, errors.New("RPC unavailable")
 		}
-		return nil, "first-pair", errors.New("no quorum")
+		return nil, ErrTransactionNotFound
 	}
-	if ok, err := processDueConfirmation(ctx, nil, read); !ok || err == nil {
-		t.Fatal(ok, err)
-	}
-	var job mdb.PaymentConfirmation
-	if err := db.Take(&job).Error; err != nil || job.Attempts != 1 || job.PreviousPair != "first-pair" {
-		t.Fatal(job, err)
-	}
-	if err := db.Model(&job).Update("retry_at", time.Now().Add(-time.Second).UnixMilli()).Error; err != nil {
-		t.Fatal(err)
+	for attempt := 1; attempt <= 3; attempt++ {
+		if ok, err := processDueConfirmation(ctx, nil, read); !ok || err == nil {
+			t.Fatal(ok, err)
+		}
+		var job mdb.PaymentConfirmation
+		if err := db.Take(&job).Error; err != nil || job.Attempts != attempt {
+			t.Fatal(job, err)
+		}
+		o, err := data.GetOrderInfoByTradeId("child")
+		if err != nil || o.Status != mdb.StatusConfirming || o.BlockTransactionId != "" {
+			t.Fatal(o, err)
+		}
+		if err := db.Model(&job).Update("retry_at", time.Now().Add(-time.Second).UnixMilli()).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	if ok, err := processDueConfirmation(ctx, nil, read); !ok || err != nil {
 		t.Fatal(ok, err)
@@ -62,7 +68,7 @@ func TestStrictRoundsPersistAcrossWorkersAndStopForReview(t *testing.T) {
 			t.Fatal(o, err)
 		}
 	}
-	if ok, err := processDueConfirmation(ctx, nil, read); ok || err != nil || calls != 2 {
+	if ok, err := processDueConfirmation(ctx, nil, read); ok || err != nil || calls != 4 {
 		t.Fatal(ok, err, calls)
 	}
 	if err := queueConfirmation(child, e); !errors.Is(err, errInactiveCandidate) {
@@ -73,7 +79,7 @@ func TestStrictRoundsPersistAcrossWorkersAndStopForReview(t *testing.T) {
 	}
 }
 
-func TestCrashAfterReservingLastStrictRoundRequiresReview(t *testing.T) {
+func TestLegacyJobWithTwoAttemptsResumesLookup(t *testing.T) {
 	defer testutil.SetupTestDatabases(t)()
 	db := dao.Mdb
 	order := mdb.Orders{TradeId: "crash", OrderId: "crash", Network: "ethereum", Status: mdb.StatusConfirming}
@@ -88,15 +94,16 @@ func TestCrashAfterReservingLastStrictRoundRequiresReview(t *testing.T) {
 	if err := db.Model(&mdb.PaymentConfirmation{}).Where("order_id = ?", order.ID).Updates(map[string]any{"attempts": 2, "retry_at": time.Now().Add(-time.Minute).UnixMilli()}).Error; err != nil {
 		t.Fatal(err)
 	}
-	unexpected := func(context.Context, string, string, string) (json.RawMessage, string, error) {
-		t.Fatal("third round started after restart")
-		return nil, "", nil
+	called := false
+	read := func(context.Context, string, string) (json.RawMessage, error) {
+		called = true
+		return nil, errors.New("still unavailable")
 	}
-	if ok, err := processDueConfirmation(t.Context(), nil, unexpected); !ok || err != nil {
-		t.Fatal(ok, err)
+	if ok, err := processDueConfirmation(t.Context(), nil, read); !ok || err == nil || !called {
+		t.Fatal(ok, err, called)
 	}
 	got, err := data.GetOrderInfoByTradeId(order.TradeId)
-	if err != nil || got.Status != mdb.StatusManualReview || got.ReviewTransactionHash != e.TxID {
+	if err != nil || got.Status != mdb.StatusConfirming {
 		t.Fatal(got, err)
 	}
 }
@@ -181,9 +188,9 @@ func TestConfirmingOrderRenewsLockAndWaitingBlockDepthReleasesLease(t *testing.T
 		t.Fatalf("confirming order lock was not renewed: expires_at=%v", lock.ExpiresAt)
 	}
 	lookupCalls := 0
-	ok, err := processDueConfirmation(t.Context(), staticHeightFeed{height: 10}, func(context.Context, string, string, string) (json.RawMessage, string, error) {
+	ok, err := processDueConfirmation(t.Context(), staticHeightFeed{height: 10}, func(context.Context, string, string) (json.RawMessage, error) {
 		lookupCalls++
-		return nil, "", nil
+		return nil, nil
 	})
 	if !ok || !errors.Is(err, errWaitingBlockDepth) || lookupCalls != 0 {
 		t.Fatalf("ok=%v err=%v lookupCalls=%d", ok, err, lookupCalls)

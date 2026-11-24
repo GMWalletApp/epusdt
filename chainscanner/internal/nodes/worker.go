@@ -26,7 +26,7 @@ type segment struct {
 func (p *SourcePool) fetch(ctx context.Context, n *endpoint, j *segment, oneRead bool) error {
 	call, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	defer p.lanes.scan(providerKey(n.cfg))()
+	defer p.lanes.scan(chains.ProviderKey(n.cfg))()
 	required := j.to + max(n.cfg.Confirmations-1, 0)
 	if n.tip < required || n.src == nil {
 		h, err := p.readHeight(call, n)
@@ -55,6 +55,12 @@ func (p *SourcePool) fetch(ctx context.Context, n *endpoint, j *segment, oneRead
 		}
 		j.last = link
 		end := part.Last
+		if len(rows) > 0 {
+			sources := chains.SourceIDs(n.cfg)
+			for i := range rows {
+				rows[i].ScanSources = sources
+			}
+		}
 		j.events = append(j.events, rows...)
 		if oneRead {
 			j.to = end
