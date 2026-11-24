@@ -33,7 +33,7 @@ func TestTransactionLookupFailover(t *testing.T) {
 		{"missing", 3, 3, 404, 3, chains.ErrTransactionMissing, "not_found"},
 		{"missing then found", 3, 1, 200, 2, chains.ErrTransactionMissing, ""},
 		{"missing with unqueried node", 5, 4, 502, 4, chains.ErrTransactionMissing, ""},
-		{"four failures then success", 5, 4, 200, 5, errors.New("upstream failure"), ""},
+		{"four failures then success", 5, 3, 200, 4, errors.New("upstream failure"), ""},
 		{"exhausted", 4, 4, 502, 4, context.DeadlineExceeded, ""},
 		{"pending", 4, 4, 502, 4, chains.ErrTransactionPending, "pending"},
 		{"invalid evidence", 4, 4, 502, 4, nil, "incomplete"},

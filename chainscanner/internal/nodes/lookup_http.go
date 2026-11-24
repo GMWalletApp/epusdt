@@ -99,6 +99,9 @@ func (r *NodeRegistry) lookupHash(ctx context.Context, candidates []lookupCandid
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
+			if attempts >= 4 {
+				break
+			}
 			if seen[c.key] || c.key == lastKey || missing[c.key] || !r.lookup.ready(c.version, time.Now()) {
 				continue
 			}
