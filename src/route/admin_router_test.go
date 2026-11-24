@@ -241,6 +241,7 @@ func TestAdminProtectedRoute_NoToken(t *testing.T) {
 		"/admin/api/v1/chains",
 		"/admin/api/v1/wallets",
 		"/admin/api/v1/orders",
+		"/admin/api/v1/diagnostics/export",
 		"/admin/api/v1/dashboard/overview",
 		"/admin/api/v1/dashboard/rpc-stats",
 		"/admin/api/v1/settings",

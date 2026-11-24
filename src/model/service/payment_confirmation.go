@@ -13,6 +13,7 @@ import (
 
 	scanner "github.com/GMWalletApp/ChainScanner"
 	"github.com/GMWalletApp/epusdt/config"
+	"github.com/GMWalletApp/epusdt/internal/diagnostics"
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
@@ -35,7 +36,7 @@ func queueConfirmation(order *mdb.Orders, e scanner.Activity) error {
 	if err != nil {
 		return err
 	}
-	return dao.Mdb.Transaction(func(tx *gorm.DB) error {
+	err = dao.Mdb.Transaction(func(tx *gorm.DB) error {
 		// Always lock parent first so a direct payment and a child payment serialize.
 		ids := []string{order.TradeId}
 		if order.ParentTradeId != "" {
@@ -85,6 +86,10 @@ func queueConfirmation(order *mdb.Orders, e scanner.Activity) error {
 		job := mdb.PaymentConfirmation{SkipStrict: skipStrict, Position: hex.EncodeToString(digest[:]), OrderID: order.ID, Hash: e.TxID, Activity: string(payload), RetryAt: time.Now().UnixMilli()}
 		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&job).Error
 	})
+	if err == nil {
+		diagnostics.Record(diagnostics.Event{Event: "order.matched", Order: order.ID, Trade: order.TradeId, Parent: order.ParentTradeId, MerchantOrder: order.OrderId, Network: e.Network, Hash: e.TxID, Height: e.Height, Confirmations: e.Confirmations, Token: order.Token, Amount: order.ActualAmount, Status: mdb.StatusConfirming})
+	}
+	return err
 }
 
 // ErrTransactionNotFound means the scanner completed a chain lookup for this hash.
@@ -156,7 +161,7 @@ func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup Obser
 		return v, nil
 	}, job)
 	if errors.Is(err, ErrTransactionNotFound) || errors.Is(err, errPaymentMismatch) {
-		return true, markPaymentForReview(db, job, lease)
+		return true, markPaymentForReview(db, job, lease, err)
 	}
 	if err != nil && !errors.Is(err, errInactiveCandidate) {
 		if lookupFailed || errors.Is(err, errWaitingBlockDepth) {
@@ -172,6 +177,13 @@ func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup Obser
 				return false, e
 			}
 		}
+		reason := "settlement_retry"
+		if lookupFailed {
+			reason = "lookup_retry"
+		} else if errors.Is(err, errWaitingBlockDepth) {
+			reason = "waiting_confirmations"
+		}
+		diagnostics.Record(diagnostics.Event{Event: "order.confirmation", Order: job.OrderID, Hash: job.Hash, Attempt: job.Attempts + 1, Outcome: reason})
 		return true, fmt.Errorf("order=%d tx=%s: %w", job.OrderID, job.Hash, err)
 	}
 	err = db.Where("id = ? AND retry_at = ?", job.ID, lease).Delete(&mdb.PaymentConfirmation{}).Error
@@ -215,12 +227,23 @@ func ConfirmPayment(ctx context.Context, feed scanner.Feed, lookup ObservedTrans
 	if chain.ID == 0 || !chain.Enabled {
 		return errors.New("payment network is disabled")
 	}
+	ctx = diagnostics.WithOrder(ctx, order.TradeId, order.ParentTradeId, order.OrderId, order.ID)
 	if e.Confirmations < int64(chain.MinConfirmations) {
 		h, err := feed.Height(ctx, e.Network)
 		if err != nil {
 			return err
 		}
 		if h-e.Height+1 < int64(chain.MinConfirmations) {
+			diag := diagnostics.Order(ctx)
+			diag.Event = "order.depth"
+			diag.Network = e.Network
+			diag.Hash = e.TxID
+			diag.Height = e.Height
+			diag.NodeHead = &h
+			diag.Confirmations = h - e.Height + 1
+			diag.Required = int64(chain.MinConfirmations)
+			diag.Outcome = "waiting"
+			diagnostics.Record(diag)
 			return errWaitingBlockDepth
 		}
 	}
@@ -270,25 +293,39 @@ func verifiedOrderCredit(ctx context.Context, order *mdb.Orders, e scanner.Activ
 	return blockID, nil
 }
 
-func markPaymentForReview(db *gorm.DB, job mdb.PaymentConfirmation, lease int64) error {
-	return db.Transaction(func(tx *gorm.DB) error {
+func markPaymentForReview(db *gorm.DB, job mdb.PaymentConfirmation, lease int64, reason error) error {
+	event := diagnostics.Event{Event: "order.review", Order: job.OrderID, Hash: job.Hash, Status: mdb.StatusManualReview, Outcome: "payment_mismatch"}
+	if errors.Is(reason, ErrTransactionNotFound) {
+		event.Outcome = "transaction_not_found"
+	}
+	changed := false
+	err := db.Transaction(func(tx *gorm.DB) error {
 		q := tx.Where("id = ? AND retry_at = ?", job.ID, lease).Delete(&mdb.PaymentConfirmation{})
 		if q.Error != nil || q.RowsAffected == 0 {
 			return q.Error
 		}
 		var o mdb.Orders
-		if err := tx.Select("trade_id", "parent_trade_id").Where("id = ?", job.OrderID).Take(&o).Error; err != nil {
+		if err := tx.Select("trade_id", "parent_trade_id", "order_id", "network").Where("id = ?", job.OrderID).Take(&o).Error; err != nil {
 			return err
 		}
+		event.Trade, event.Parent, event.MerchantOrder, event.Network = o.TradeId, o.ParentTradeId, o.OrderId, o.Network
 		ids := []string{o.TradeId}
 		if o.ParentTradeId != "" {
 			ids = []string{o.ParentTradeId, o.TradeId}
 		}
 		for _, id := range ids {
-			if err := tx.Model(&mdb.Orders{}).Where("trade_id = ? AND status = ?", id, mdb.StatusConfirming).Updates(map[string]any{"status": mdb.StatusManualReview, "review_transaction_hash": job.Hash}).Error; err != nil {
-				return err
+			q := tx.Model(&mdb.Orders{}).Where("trade_id = ? AND status = ?", id, mdb.StatusConfirming).Updates(map[string]any{"status": mdb.StatusManualReview, "review_transaction_hash": job.Hash})
+			if q.Error != nil {
+				return q.Error
+			}
+			if q.RowsAffected > 0 {
+				changed = true
 			}
 		}
 		return nil
 	})
+	if err == nil && changed {
+		diagnostics.Record(event)
+	}
+	return err
 }

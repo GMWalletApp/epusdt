@@ -175,7 +175,7 @@ func (c *BaseAdminController) UpsertSettings(ctx echo.Context) error {
 			out = append(out, errorResult(key, constant.SettingItemErr))
 			continue
 		}
-		if key == mdb.SettingKeyStrictPayment {
+		if key == mdb.SettingKeyStrictPayment || key == mdb.SettingKeyDetailedDiagnostics {
 			item.Group = mdb.SettingGroupSystem
 			item.Type = mdb.SettingTypeBool
 		}
@@ -296,7 +296,7 @@ func normalizeAndValidateSettingItem(group, key, value string) (string, error) {
 			}
 		}
 		return strings.Join(tokens, ","), nil
-	case mdb.SettingKeyStrictPayment:
+	case mdb.SettingKeyStrictPayment, mdb.SettingKeyDetailedDiagnostics:
 		if group != mdb.SettingGroupSystem || (value != "true" && value != "false") {
 			return value, fmt.Errorf("%s requires a system boolean", key)
 		}

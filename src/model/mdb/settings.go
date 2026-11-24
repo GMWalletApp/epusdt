@@ -32,6 +32,7 @@ const (
 	SettingKeyInitAdminPasswordChanged = "system.init_admin_password_changed"
 	SettingKeyOrderExpiration          = "system.order_expiration_time"
 	SettingKeyAmountPrecision          = "system.amount_precision"
+	SettingKeyDetailedDiagnostics      = "system.detailed_diagnostics"
 	SettingKeyStrictPayment            = "system.strict_payment_verification"
 	SettingKeySystemLogLevel           = "system.log_level"
 	SettingKeyBrandCheckoutName        = "brand.checkout_name"

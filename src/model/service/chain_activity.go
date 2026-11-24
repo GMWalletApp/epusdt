@@ -13,6 +13,7 @@ import (
 
 	scanner "github.com/GMWalletApp/ChainScanner"
 	"github.com/GMWalletApp/epusdt/config"
+	"github.com/GMWalletApp/epusdt/internal/diagnostics"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/tidwall/gjson"
@@ -206,13 +207,16 @@ func observeCredit(e scanner.Activity, recipient string, t mdb.ChainToken, raw *
 		}
 	}
 	if order == nil || order.ID == 0 || order.Network != e.Network || !strings.EqualFold(order.Token, symbol) || (order.PayProvider != "" && order.PayProvider != mdb.PaymentProviderOnChain) {
+		diagnostics.Record(diagnostics.Event{Event: "order.match", Outcome: "no_matching_order", Network: e.Network, Token: symbol, Hash: e.TxID, Height: e.Height})
 		return nil
 	}
 	a, err := scanner.Canonical(e.Network, order.ReceiveAddress)
 	if err != nil || a != canonical || !amountMatchesRaw(order.ActualAmount, raw, t.Decimals) {
+		diagnostics.Record(diagnostics.Event{Event: "order.match", Outcome: "transfer_mismatch", Trade: order.TradeId, Parent: order.ParentTradeId, MerchantOrder: order.OrderId, Hash: e.TxID, Network: e.Network, Height: e.Height})
 		return nil
 	}
 	if e.TimeMS < order.CreatedAt.TimestampMilli() || e.TimeMS > order.CreatedAt.AddMinutes(config.GetOrderExpirationTime()).TimestampMilli() {
+		diagnostics.Record(diagnostics.Event{Event: "order.match", Outcome: "outside_payment_window", Trade: order.TradeId, Parent: order.ParentTradeId, MerchantOrder: order.OrderId, Hash: e.TxID, Network: e.Network, Height: e.Height})
 		return nil
 	}
 	err = queueConfirmation(order, e)

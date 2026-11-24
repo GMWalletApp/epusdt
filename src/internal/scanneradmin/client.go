@@ -129,3 +129,21 @@ func Connection(ctx context.Context, c config.ScannerConnection) (ConnectionInfo
 	}
 	return info, err
 }
+
+// NodeStatus excludes node URLs and keys from the diagnostic snapshot.
+type NodeStatus struct {
+	ID       int64  `json:"id"`
+	Network  string `json:"network"`
+	Protocol string `json:"protocol"`
+	Role     string `json:"role"`
+	Status   string `json:"status"`
+	Enabled  bool   `json:"enabled"`
+	Height   *int64 `json:"height"`
+	Latency  *int64 `json:"latency_ms"`
+}
+
+func NodeStatuses(ctx context.Context, c config.ScannerConnection) ([]NodeStatus, error) {
+	var rows []NodeStatus
+	_, err := request(ctx, c, http.MethodGet, "nodes", nil, &rows)
+	return rows, err
+}

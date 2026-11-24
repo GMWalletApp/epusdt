@@ -166,7 +166,7 @@ func (r *NodeRegistry) readCandidate(ctx context.Context, c lookupCandidate, can
 
 // A node can catch up between the empty reply and the height query. Only
 // accept absence from a new read after that same route has passed the block.
-func (r *NodeRegistry) lookupAtObservedHeight(ctx context.Context, c lookupCandidate, candidates []lookupCandidate, hash string, height int64) (json.RawMessage, error) {
+func (r *NodeRegistry) lookupAtObservedHeight(ctx context.Context, c lookupCandidate, candidates []lookupCandidate, hash string, height int64, attempt *LookupAttempt) (json.RawMessage, error) {
 	raw, err := r.readCandidate(ctx, c, candidates, hash)
 	if c.sourceStatus == "unobserved" || !errors.Is(err, chains.ErrTransactionMissing) {
 		return raw, err
@@ -177,6 +177,9 @@ func (r *NodeRegistry) lookupAtObservedHeight(ctx context.Context, c lookupCandi
 	head, err := r.lookup.probe(ctx, c.cfg, c.public)
 	if err != nil {
 		return nil, errCapacity
+	}
+	if attempt != nil {
+		attempt.Head = &head
 	}
 	if head <= height {
 		return nil, chains.ErrTransactionPending

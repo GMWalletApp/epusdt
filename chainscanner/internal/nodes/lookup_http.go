@@ -65,7 +65,15 @@ func (r *NodeRegistry) transactionHandler(configured map[string]chains.Network) 
 			eligible = append(eligible, c)
 		}
 		r.lookup.prioritize(eligible)
-		raw, source, err := r.lookupHash(ctx, eligible, hash, sources.height)
+		var trace *[]LookupAttempt
+		if req.Header.Get("X-ChainScanner-Lookup-Trace") == "1" {
+			trace = new([]LookupAttempt)
+		}
+		raw, source, err := r.lookupHash(ctx, eligible, hash, sources.height, trace)
+		if trace != nil && len(*trace) > 0 {
+			b, _ := json.Marshal(*trace)
+			w.Header().Set("X-ChainScanner-Lookup-Trace", string(b))
+		}
 		if source != "" {
 			w.Header().Set("X-ChainScanner-Scan-Source", source)
 		}
@@ -120,7 +128,7 @@ func (r *NodeRegistry) scanSources(ctx context.Context, network, hash string) (s
 
 // Try each available provider before reusing one. With a small pool rotate
 // through alternatives until the initial read and three retries have run.
-func (r *NodeRegistry) lookupHash(ctx context.Context, candidates []lookupCandidate, hash string, height int64) (json.RawMessage, string, error) {
+func (r *NodeRegistry) lookupHash(ctx context.Context, candidates []lookupCandidate, hash string, height int64, trace *[]LookupAttempt) (json.RawMessage, string, error) {
 	attempts := 0
 	lastKey := ""
 	lastErr := errCapacity
@@ -145,14 +153,31 @@ func (r *NodeRegistry) lookupHash(ctx context.Context, candidates []lookupCandid
 			lastKey = c.key
 			attempts++
 			call, cancel := context.WithTimeout(ctx, 8*time.Second)
-			raw, err := r.lookupAtObservedHeight(call, c, candidates, hash, height)
+			started := time.Now()
+			var attempt *LookupAttempt
+			if trace != nil && len(*trace) < 32 {
+				attempt = &LookupAttempt{}
+			}
+			raw, err := r.lookupAtObservedHeight(call, c, candidates, hash, height, attempt)
 			cancel()
 			release()
 			if ctx.Err() != nil {
 				return nil, "", ctx.Err()
 			}
 			r.lookup.record(c.version, err)
-			if !r.lookupAllowed(ctx, c) {
+			allowed := r.lookupAllowed(ctx, c)
+			if attempt != nil {
+				attempt.NodeID = c.version.id
+				attempt.Fallback = c.fallback
+				attempt.Reused = c.sourceStatus == "fallback_reused"
+				attempt.Result = lookupOutcome(err)
+				if !allowed {
+					attempt.Result = "configuration_changed"
+				}
+				attempt.LatencyMS = time.Since(started).Milliseconds()
+				*trace = append(*trace, *attempt)
+			}
+			if !allowed {
 				lastErr = errLookup
 				continue
 			}

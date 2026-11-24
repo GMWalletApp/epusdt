@@ -147,6 +147,22 @@ func TestSeedDefaultSettingsIncludesSystemLogLevel(t *testing.T) {
 
 }
 
+func TestDetailedDiagnosticsDefaultsOnAndPreservesOptOut(t *testing.T) {
+	Mdb = setupSeedSettingsTestDB(t)
+	seedDefaultSettings()
+	var row mdb.Setting
+	if err := Mdb.Where(&mdb.Setting{Key: mdb.SettingKeyDetailedDiagnostics}).Take(&row).Error; err != nil || row.Value != "true" || row.Type != mdb.SettingTypeBool {
+		t.Fatal(row, err)
+	}
+	if err := Mdb.Model(&row).Update("value", "false").Error; err != nil {
+		t.Fatal(err)
+	}
+	seedDefaultSettings()
+	if err := Mdb.First(&row, row.ID).Error; err != nil || row.Value != "false" {
+		t.Fatal(row, err)
+	}
+}
+
 func TestSeedDefaultSettingsIncludesDefaultForcedRateList(t *testing.T) {
 	db := setupSeedSettingsTestDB(t)
 	Mdb = db

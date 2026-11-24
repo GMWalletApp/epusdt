@@ -15,6 +15,7 @@ import (
 
 	scanner "github.com/GMWalletApp/ChainScanner"
 	tron "github.com/GMWalletApp/epusdt/crypto"
+	"github.com/GMWalletApp/epusdt/internal/diagnostics"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	addressutil "github.com/GMWalletApp/epusdt/util/address"
@@ -90,6 +91,7 @@ func validateManualOrderPaymentDefault(order *mdb.Orders, blockTransactionID str
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
+	ctx = diagnostics.WithOrder(ctx, order.TradeId, order.ParentTradeId, order.OrderId, order.ID)
 	if _, err := LookupPaymentTransaction(ctx, order.Network, hash); err != nil {
 		return "", err
 	}

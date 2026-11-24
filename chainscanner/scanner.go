@@ -39,6 +39,7 @@ type (
 	ManagementCapabilities = nodes.ManagementCapabilities
 	RouteInventory         = nodes.RouteInventory
 	NodeRoute              = nodes.Route
+	LookupAttempt          = nodes.LookupAttempt
 	NodeRegistry           = nodes.NodeRegistry
 	Node                   = nodes.Node
 	NodeOptions            = nodes.NodeOptions
