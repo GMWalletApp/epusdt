@@ -1,0 +1,1 @@
+import{t as e}from"./not-found-error-D2l7dbDy.js";var t=e;export{t as component};
