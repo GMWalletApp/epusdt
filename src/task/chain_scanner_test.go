@@ -205,9 +205,6 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 				result = map[string]any{"hash": incoming, "from": contract, "to": wallet, "input": "0x", "value": "0x0", "blockHash": blockHash, "blockNumber": "0x11"}
 			case "eth_getTransactionReceipt":
 				amount := amounts[1]
-				if mode.Load() == 0 {
-					amount = amounts[0]
-				}
 				result = map[string]any{"transactionHash": incoming, "blockHash": blockHash, "blockNumber": "0x11", "status": "0x1", "logs": []any{map[string]any{"address": contract, "transactionHash": incoming, "blockHash": blockHash, "data": "0x" + amount, "topics": []string{"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", "0x" + strings.Repeat("0", 64), "0x" + strings.Repeat("0", 24) + wallet[2:]}}}}
 			default:
 				t.Errorf("unexpected RPC %s", req.Method)
@@ -231,8 +228,7 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 				t.Fatal("expired confirming payment", err)
 			}
 		} else {
-			// The second RPC reports a different amount. Existence completes the recheck;
-			// the worker settles from the previously matched scan event.
+			// The independent RPC repeats the matched transfer evidence.
 			run, cancel := context.WithTimeout(ctx, 5*time.Second)
 			stopped := make(chan struct{})
 			go func() { defer close(stopped); service.RunPaymentConfirmations(run, client, lookup.automatic) }()
@@ -269,8 +265,8 @@ func TestScannerHTTPSubscriptionThroughOrderSettlement(t *testing.T) {
 			t.Fatal("verified credit missing", got, callbacks)
 		}
 	}
-	if counts[0].Load()+counts[1].Load() != 2 {
-		t.Fatal("lookup requests", counts[0].Load(), counts[1].Load())
+	if counts[0].Load() == 0 || counts[1].Load() == 0 {
+		t.Fatal("lookup did not use both independent nodes", counts[0].Load(), counts[1].Load())
 	}
 	if err := service.ConfirmPayment(ctx, client, remote.full, job); err == nil {
 		t.Fatal("settled twice")

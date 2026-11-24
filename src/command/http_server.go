@@ -84,6 +84,11 @@ func HttpServerStart(frontend http.FileSystem) error {
 	e := echo.New()
 	e.HideBanner = true
 	e.HTTPErrorHandler = luluHttp.HandleError
+	clientIPExtractor, err := middleware.NewClientIPExtractor(viper.GetString("http_trusted_proxies"))
+	if err != nil {
+		return fmt.Errorf("configure trusted proxies: %w", err)
+	}
+	e.IPExtractor = clientIPExtractor
 
 	MiddlewareRegister(e)
 	scanner, stopTasks := task.Start()

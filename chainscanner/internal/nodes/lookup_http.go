@@ -91,6 +91,7 @@ func (r *NodeRegistry) lookupHash(ctx context.Context, candidates []lookupCandid
 	lastKey := ""
 	lastErr := errCapacity
 	pending := false
+	missing := map[string]bool{}
 	for ctx.Err() == nil {
 		before := attempts
 		seen := map[string]bool{}
@@ -98,7 +99,7 @@ func (r *NodeRegistry) lookupHash(ctx context.Context, candidates []lookupCandid
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			if seen[c.key] || c.key == lastKey || !r.lookup.ready(c.version, time.Now()) {
+			if seen[c.key] || c.key == lastKey || missing[c.key] || !r.lookup.ready(c.version, time.Now()) {
 				continue
 			}
 			release, ok := r.lookup.lanes.tryLookup(c.key, true)
@@ -124,9 +125,8 @@ func (r *NodeRegistry) lookupHash(ctx context.Context, candidates []lookupCandid
 				return raw, nil
 			}
 			if errors.Is(err, chains.ErrTransactionMissing) {
-				if !pending {
-					return nil, err
-				}
+				missing[c.key] = true
+				lastErr = err
 				continue
 			}
 			if errors.Is(err, chains.ErrTransactionPending) {
@@ -140,6 +140,19 @@ func (r *NodeRegistry) lookupHash(ctx context.Context, candidates []lookupCandid
 	}
 	if pending {
 		return nil, chains.ErrTransactionPending
+	}
+	allMissing := len(candidates) > 0
+	for _, c := range candidates {
+		if !missing[c.key] {
+			allMissing = false
+			break
+		}
+	}
+	if allMissing {
+		return nil, chains.ErrTransactionMissing
+	}
+	if errors.Is(lastErr, chains.ErrTransactionMissing) {
+		return nil, errLookup
 	}
 	return nil, lastErr
 }
