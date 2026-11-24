@@ -155,6 +155,7 @@ func setupTestEnv(t *testing.T) *echo.Echo {
 	})
 
 	e := echo.New()
+	e.IPExtractor = echo.ExtractIPDirect()
 	RegisterRoute(e)
 	return e
 }
@@ -352,6 +353,34 @@ func TestCreateOrderGmpayRejectsPrivateNotifyURL(t *testing.T) {
 	}
 	if got, _ := resp["message"].(string); got != constant.Errno[10041] {
 		t.Fatalf("message = %q, want %q", got, constant.Errno[10041])
+	}
+}
+
+func TestCreateOrderGmpayWhitelistUsesDirectPeerByDefault(t *testing.T) {
+	e := setupTestEnv(t)
+	useRspErrorHTTPStatuses(e)
+	if err := dao.Mdb.Model(&mdb.ApiKey{}).Where("pid = ?", testAPIToken).Update("ip_whitelist", "198.51.100.8").Error; err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(signBody(map[string]interface{}{
+		"order_id":   "whitelist-forwarded-ip",
+		"amount":     1.0,
+		"token":      "usdt",
+		"currency":   "cny",
+		"network":    "solana",
+		"notify_url": "https://93.184.216.34/notify",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/payments/gmpay/v1/order/create-transaction", strings.NewReader(string(body)))
+	req.RemoteAddr = "203.0.113.50:43120"
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	req.Header.Set(echo.HeaderXForwardedFor, "198.51.100.8")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("forged X-Forwarded-For passed merchant IP whitelist: HTTP %d %s", rec.Code, rec.Body.String())
 	}
 }
 

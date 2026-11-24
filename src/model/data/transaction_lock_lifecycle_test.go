@@ -97,6 +97,32 @@ func TestRefreshOrderExpirationPreservesStoredPrecision(t *testing.T) {
 	}
 }
 
+func TestRefreshOrderExpirationComparesUTCStoredTimestamps(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+	previousLocal := time.Local
+	defer func() { time.Local = previousLocal }()
+	order := &mdb.Orders{
+		TradeId: "utc-renewal-order", OrderId: "utc-renewal-order",
+		Network: mdb.NetworkTron, Token: "USDT", ReceiveAddress: "utc-renewal-wallet",
+		ActualAmount: 1.23, Status: mdb.StatusWaitPay, PayProvider: mdb.PaymentProviderOnChain,
+	}
+	if err := dao.Mdb.Create(order).Error; err != nil {
+		t.Fatal(err)
+	}
+	createdAt := time.Now().UTC().Add(-time.Minute)
+	if err := dao.Mdb.Model(order).UpdateColumn("created_at", createdAt.Format(time.RFC3339Nano)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := LockTransaction(order.Network, order.ReceiveAddress, order.Token, order.TradeId, order.ActualAmount, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	time.Local = time.FixedZone("Asia/Shanghai", 8*60*60)
+	if err := RefreshOrderExpiration(order.TradeId); err != nil {
+		t.Fatalf("refresh a fresh UTC order in a non-UTC timezone: %v", err)
+	}
+}
+
 func TestRefreshOrderExpirationFailsClosed(t *testing.T) {
 	for _, scenario := range []string{"missing", "expired", "reassigned", "wrong-amount", "paid", "closed", "timed-out"} {
 		t.Run(scenario, func(t *testing.T) {

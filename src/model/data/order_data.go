@@ -121,6 +121,27 @@ func GetOrderInfoByTradeId(tradeId string) (*mdb.Orders, error) {
 	return order, err
 }
 
+// SQLiteTimestampUTCExpr converts supported SQLite timestamp formats to UTC.
+func SQLiteTimestampUTCExpr(column string) string {
+	plusPos := "instr(" + column + ", ' +')"
+	minusPos := "instr(" + column + ", ' -')"
+	formatOffset := func(pos string) string {
+		return "CASE WHEN substr(" + column + ", " + pos + " + 4, 1) = ':' " +
+			"THEN datetime(substr(" + column + ", 1, 19) || substr(" + column + ", " + pos + " + 1, 6)) " +
+			"ELSE datetime(substr(" + column + ", 1, 19) || substr(" + column + ", " + pos + " + 1, 3) || ':' || substr(" + column + ", " + pos + " + 4, 2)) END"
+	}
+	return "CASE " +
+		"WHEN " + plusPos + " > 0 THEN " + formatOffset(plusPos) + " " +
+		"WHEN " + minusPos + " > 0 THEN " + formatOffset(minusPos) + " " +
+		"ELSE datetime(" + column + ") END"
+}
+
+var orderCreatedAtUTCExpr = SQLiteTimestampUTCExpr("created_at")
+
+func orderTimeUTC(t time.Time) string {
+	return t.UTC().Format("2006-01-02 15:04:05")
+}
+
 // CreateOrderWithTransaction creates an order in the active database transaction.
 func CreateOrderWithTransaction(tx *gorm.DB, order *mdb.Orders) error {
 	return tx.Model(order).Create(order).Error
@@ -240,7 +261,7 @@ func UpdateOrderIsExpirationById(id uint64, expirationCutoff time.Time) (bool, e
 	result := dao.Mdb.Model(mdb.Orders{}).
 		Where("id = ?", id).
 		Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusWaitSelect}).
-		Where("created_at <= ?", expirationCutoff).
+		Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(expirationCutoff)).
 		Update("status", mdb.StatusExpired)
 	return result.RowsAffected > 0, result.Error
 }
@@ -499,11 +520,11 @@ func refreshOrderExpirationWithTransaction(tx *gorm.DB, tradeID string, updates 
 		}
 	}
 
-	updates["created_at"] = now
+	updates["created_at"] = now.UTC()
 	result := tx.Model(&mdb.Orders{}).
 		Where("trade_id = ?", tradeID).
 		Where("status = ?", order.Status).
-		Where("created_at > ?", now.Add(-expiration)).
+		Where(orderCreatedAtUTCExpr+" > ?", orderTimeUTC(now.Add(-expiration))).
 		Updates(updates)
 	return result.RowsAffected > 0, result.Error
 }
@@ -628,7 +649,7 @@ func GetOnChainOrderByWalletAddressAndAmountAndTokenBeforeTime(network string, a
 		Where("network = ?", network).
 		Where("token = ?", token).
 		Where("actual_amount = ?", amount).
-		Where("created_at <= ?", before).
+		Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(before)).
 		Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusExpired, mdb.StatusConfirming}).
 		Where("(pay_provider = ? OR pay_provider = '')", mdb.PaymentProviderOnChain)
 	query = applyOrderReceiveAddressFilter(query, network, address)

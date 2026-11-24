@@ -70,8 +70,8 @@ func queryOrderStats(start, end time.Time, hourly bool) ([]DailyStat, error) {
             SUM(CASE WHEN status = ? THEN amount ELSE 0 END) AS total_amount,
             SUM(CASE WHEN status = ? THEN actual_amount ELSE 0 END) AS actual_amount`, bucket),
 			mdb.StatusPaySuccess, mdb.StatusPaySuccess, mdb.StatusPaySuccess).
-		Where("created_at >= ?", start).
-		Where("created_at <= ?", end).
+		Where(orderCreatedAtUTCExpr+" >= ?", orderTimeUTC(start)).
+		Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(end)).
 		Group(bucket).
 		Order("day ASC").
 		Scan(&rows).Error
@@ -150,8 +150,8 @@ func queryAssetByAddress(start, end time.Time, hourly bool) ([]AddressDailyStat,
             receive_address AS address,
             SUM(actual_amount) AS actual_amount`, bucket)).
 		Where("status = ?", mdb.StatusPaySuccess).
-		Where("created_at >= ?", start).
-		Where("created_at <= ?", end).
+		Where(orderCreatedAtUTCExpr+" >= ?", orderTimeUTC(start)).
+		Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(end)).
 		Group(bucket).
 		Group("receive_address").
 		Order("day ASC, address ASC").
@@ -235,8 +235,8 @@ func PaidStatsInRange(start, end time.Time) (int64, int64, float64, error) {
             SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS success_count,
             SUM(CASE WHEN status = ? THEN actual_amount ELSE 0 END) AS actual_sum`,
 			mdb.StatusPaySuccess, mdb.StatusPaySuccess).
-		Where("created_at >= ?", start).
-		Where("created_at <= ?", end).
+		Where(orderCreatedAtUTCExpr+" >= ?", orderTimeUTC(start)).
+		Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(end)).
 		Scan(&r).Error
 	return r.OrderCount, r.SuccessCount, r.ActualSum, err
 }
@@ -246,8 +246,8 @@ func PaidStatsInRange(start, end time.Time) (int64, int64, float64, error) {
 func ActiveAddressCountInRange(start, end time.Time) (int64, error) {
 	var count int64
 	err := merchantOrders().
-		Where("created_at >= ?", start).
-		Where("created_at <= ?", end).
+		Where(orderCreatedAtUTCExpr+" >= ?", orderTimeUTC(start)).
+		Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(end)).
 		Distinct("receive_address").
 		Count(&count).Error
 	return count, err
@@ -269,8 +269,8 @@ func AveragePaymentDurationSeconds(start, end time.Time) (float64, error) {
 	err := merchantOrders().
 		Select("created_at, updated_at").
 		Where("status = ?", mdb.StatusPaySuccess).
-		Where("created_at >= ?", start).
-		Where("created_at <= ?", end).
+		Where(orderCreatedAtUTCExpr+" >= ?", orderTimeUTC(start)).
+		Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(end)).
 		Scan(&pairs).Error
 	if err != nil {
 		return 0, err
@@ -291,8 +291,8 @@ func CountExpiredInRange(start, end time.Time) (int64, error) {
 	var n int64
 	err := merchantOrders().
 		Where("status = ?", mdb.StatusExpired).
-		Where("created_at >= ?", start).
-		Where("created_at <= ?", end).
+		Where(orderCreatedAtUTCExpr+" >= ?", orderTimeUTC(start)).
+		Where(orderCreatedAtUTCExpr+" <= ?", orderTimeUTC(end)).
 		Count(&n).Error
 	return n, err
 }

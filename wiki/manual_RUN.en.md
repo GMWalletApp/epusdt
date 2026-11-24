@@ -23,6 +23,8 @@ For a configured service behind an HTTPS proxy, set these entries in `.env` and 
 ```dotenv
 app_uri=https://pay.example.com
 http_listen=127.0.0.1:8000
+# Set proxy IPs/CIDRs only when using a reverse proxy; separate multiple values with commas.
+http_trusted_proxies=127.0.0.1/32
 runtime_root_path=./runtime
 sqlite_database_filename=epusdt.db
 install=false

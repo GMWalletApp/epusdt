@@ -16,8 +16,9 @@ const DefaultExpiration = 24 * time.Hour
 
 // AdminClaims is the JWT payload for admin sessions.
 type AdminClaims struct {
-	AdminUserID uint64 `json:"uid"`
-	Username    string `json:"usr"`
+	AdminUserID    uint64 `json:"uid"`
+	Username       string `json:"usr"`
+	SessionVersion uint64 `json:"ver"`
 	jwt.RegisteredClaims
 }
 
@@ -41,14 +42,15 @@ func EnsureSecret() (string, error) {
 }
 
 // Sign returns a signed JWT for the given admin user.
-func Sign(userID uint64, username string) (string, error) {
+func Sign(userID uint64, username string, sessionVersion uint64) (string, error) {
 	secret, err := EnsureSecret()
 	if err != nil {
 		return "", err
 	}
 	claims := AdminClaims{
-		AdminUserID: userID,
-		Username:    username,
+		AdminUserID:    userID,
+		Username:       username,
+		SessionVersion: sessionVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(DefaultExpiration)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
