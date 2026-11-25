@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
+	"slices"
 	"time"
 
 	"github.com/GMWalletApp/ChainScanner/internal/chains"
@@ -30,61 +30,30 @@ func (r *NodeRegistry) transactionHandler(configured map[string]chains.Network) 
 		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(45 * time.Second))
 		q := req.URL.Query()
 		sources, err := r.scanSources(ctx, network, hash)
-		if err != nil || q.Get("observed") == "true" && len(sources.all) == 0 {
+		if err != nil || q.Get("observed") == "true" && len(sources) == 0 {
 			http.Error(w, "scan source unavailable", 503)
 			return
-		}
-		if q.Has("observed_height") {
-			height, err := strconv.ParseInt(q.Get("observed_height"), 10, 64)
-			if err != nil || height < 0 || q.Get("observed") != "true" {
-				http.Error(w, "invalid observed_height", 400)
-				return
-			}
-			sources.height = max(sources.height, height)
 		}
 		candidates, err := r.lookupCandidates(ctx, network, q.Get("manual") == "true")
 		if err != nil {
 			http.Error(w, errCapacity.Error(), 503)
 			return
 		}
-		eligible := candidates[:0]
-		for _, c := range candidates {
-			if q.Get("fallback_only") == "true" && !c.fallback {
-				continue
-			}
-			c.sourceStatus = "unobserved"
-			if len(sources.all) > 0 {
-				c.sourceStatus = "excluded"
-				if chains.SharesScanSource(c.cfg, sources.all) {
-					if !c.fallback || chains.SharesScanSource(c.cfg, sources.regular) {
-						continue
-					}
-					c.sourceStatus = "fallback_reused"
-				}
-			}
-			eligible = append(eligible, c)
+		candidates = slices.DeleteFunc(candidates, func(c lookupCandidate) bool {
+			return q.Get("fallback_only") == "true" && !c.fallback || chains.SharesScanSource(c.cfg, sources)
+		})
+		sourceStatus := "unobserved"
+		if len(sources) > 0 {
+			sourceStatus = "excluded"
 		}
-		r.lookup.prioritize(eligible)
-		var trace *[]LookupAttempt
-		if req.Header.Get("X-ChainScanner-Lookup-Trace") == "1" {
-			trace = new([]LookupAttempt)
-		}
-		raw, source, err := r.lookupHash(ctx, eligible, hash, sources.height, trace)
-		if trace != nil && len(*trace) > 0 {
-			b, _ := json.Marshal(*trace)
-			w.Header().Set("X-ChainScanner-Lookup-Trace", string(b))
-		}
-		if source != "" {
-			w.Header().Set("X-ChainScanner-Scan-Source", source)
-		}
+		w.Header().Set("X-ChainScanner-Scan-Source", sourceStatus)
+		r.lookup.prioritize(candidates)
+		raw, err := r.lookupHash(ctx, candidates, hash)
 		switch {
 		case err == nil:
 			writeTransactionResult(w, network, hash, raw)
 		case errors.Is(err, chains.ErrTransactionMissing):
 			w.Header().Set("X-ChainScanner-Evidence", "not_found")
-			if source != "unobserved" {
-				w.Header().Set("X-ChainScanner-Height-Checked", "true")
-			}
 			http.Error(w, "transaction not found", 404)
 		case errors.Is(err, errCapacity):
 			http.Error(w, errCapacity.Error(), 503)
@@ -98,54 +67,38 @@ func (r *NodeRegistry) transactionHandler(configured map[string]chains.Network) 
 	return mux
 }
 
-type scanSources struct {
-	all, regular map[string]bool
-	height       int64
-}
-
-func (r *NodeRegistry) scanSources(ctx context.Context, network, hash string) (scanSources, error) {
-	sources := scanSources{all: map[string]bool{}, regular: map[string]bool{}, height: -1}
-	rows, err := r.db.QueryContext(ctx, "SELECT source,height,fallback FROM transaction_sources WHERE network=? AND hash=?", network, hash)
+func (r *NodeRegistry) scanSources(ctx context.Context, network, hash string) (map[string]bool, error) {
+	rows, err := r.db.QueryContext(ctx, "SELECT source FROM transaction_sources WHERE network=? AND hash=?", network, hash)
 	if err != nil {
-		return sources, err
+		return nil, err
 	}
 	defer rows.Close()
+	sources := make(map[string]bool)
 	for rows.Next() {
 		var key string
-		var height int64
-		var fallback bool
-		if err := rows.Scan(&key, &height, &fallback); err != nil {
-			return sources, err
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
 		}
-		sources.height = max(sources.height, height)
-		sources.all[key] = true
-		if !fallback {
-			sources.regular[key] = true
-		}
+		sources[key] = true
 	}
 	return sources, rows.Err()
 }
 
 // Try each available provider before reusing one. With a small pool rotate
 // through alternatives until the initial read and three retries have run.
-func (r *NodeRegistry) lookupHash(ctx context.Context, candidates []lookupCandidate, hash string, height int64, trace *[]LookupAttempt) (json.RawMessage, string, error) {
+func (r *NodeRegistry) lookupHash(ctx context.Context, candidates []lookupCandidate, hash string) (json.RawMessage, error) {
 	attempts := 0
 	lastKey := ""
 	lastErr := errCapacity
 	pending := false
-	missingSource := ""
-	qualifiedMissing := make(map[string]bool)
 	for ctx.Err() == nil {
 		before := attempts
 		seen := map[string]bool{}
 		for _, c := range candidates {
 			if ctx.Err() != nil {
-				return nil, "", ctx.Err()
+				return nil, ctx.Err()
 			}
-			if attempts >= 4 {
-				break
-			}
-			if qualifiedMissing[c.key] || seen[c.key] || c.key == lastKey || !r.lookup.ready(c.version, time.Now()) {
+			if seen[c.key] || c.key == lastKey || !r.lookup.ready(c.version, time.Now()) {
 				continue
 			}
 			release, ok := r.lookup.lanes.tryLookup(c.key, true)
@@ -156,41 +109,24 @@ func (r *NodeRegistry) lookupHash(ctx context.Context, candidates []lookupCandid
 			lastKey = c.key
 			attempts++
 			call, cancel := context.WithTimeout(ctx, 8*time.Second)
-			started := time.Now()
-			var attempt *LookupAttempt
-			if trace != nil && len(*trace) < 32 {
-				attempt = &LookupAttempt{}
-			}
-			raw, err := r.lookupAtObservedHeight(call, c, candidates, hash, height, attempt)
+			raw, err := r.readCandidate(call, c, candidates, hash)
 			cancel()
 			release()
 			if ctx.Err() != nil {
-				return nil, "", ctx.Err()
+				return nil, ctx.Err()
 			}
 			r.lookup.record(c.version, err)
-			allowed := r.lookupAllowed(ctx, c)
-			if attempt != nil {
-				attempt.NodeID = c.version.id
-				attempt.Fallback = c.fallback
-				attempt.Reused = c.sourceStatus == "fallback_reused"
-				attempt.Result = lookupOutcome(err)
-				if !allowed {
-					attempt.Result = "configuration_changed"
-				}
-				attempt.LatencyMS = time.Since(started).Milliseconds()
-				*trace = append(*trace, *attempt)
-			}
-			if !allowed {
+			if !r.lookupAllowed(ctx, c) {
 				lastErr = errLookup
 				continue
 			}
 			if err == nil {
-				return raw, c.sourceStatus, nil
+				return raw, nil
 			}
 			if errors.Is(err, chains.ErrTransactionMissing) {
-				qualifiedMissing[c.key] = true
-				missingSource = c.sourceStatus
-				lastErr = err
+				if !pending {
+					return nil, err
+				}
 				continue
 			}
 			if errors.Is(err, chains.ErrTransactionPending) {
@@ -203,25 +139,9 @@ func (r *NodeRegistry) lookupHash(ctx context.Context, candidates []lookupCandid
 		}
 	}
 	if pending {
-		return nil, "", chains.ErrTransactionPending
+		return nil, chains.ErrTransactionPending
 	}
-	if missingSource != "" {
-		allMissing := len(candidates) > 0
-		for _, c := range candidates {
-			if !qualifiedMissing[c.key] {
-				allMissing = false
-				break
-			}
-		}
-		if allMissing {
-			return nil, missingSource, chains.ErrTransactionMissing
-		}
-		if errors.Is(lastErr, chains.ErrTransactionMissing) {
-			return nil, "", errLookup
-		}
-		return nil, "", lastErr
-	}
-	return nil, "", lastErr
+	return nil, lastErr
 }
 
 func writeTransactionResult(w http.ResponseWriter, network, hash string, result json.RawMessage) {

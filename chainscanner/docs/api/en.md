@@ -52,11 +52,11 @@ Send a consumer bearer token and the configured network ID. No address subscript
 
 For Bitcoin mainnet use `bitcoin` and the 64-character hexadecimal txid. Confirmed lookups return `txid`, the serialized transaction in `hex`, and `blockhash`; unconfirmed transactions are treated as `pending`. Scan deliveries carry the decoded transaction with spent prevouts in `activity.data.transaction` and identify its block in `activity.data.block_hash`.
 
-Hash lookup prefers fallback nodes. An ordinary node that supplied the block is excluded. A fallback that supplied the block can verify it while it still has the fallback role.
+Hash lookup prefers a fallback node and returns the first usable transaction. The scanner excludes the sources that supplied the matching block activity.
 
-For an observed hash, the lookup node must advance beyond the observed height and still report absence on a new read. Other eligible providers are tried before returning a 404 with both `X-ChainScanner-Evidence: not_found` and `X-ChainScanner-Height-Checked: true`. Retry 502 and 503. A reused fallback is identified by `X-ChainScanner-Scan-Source: fallback_reused`.
+HTTP 404 with `X-ChainScanner-Evidence: not_found` means the node answered that the hash is absent. A payment service can suspend the order for review. Retry HTTP 502 and 503 with backoff while the order is confirming. These responses may report `pending` or `incomplete`.
 
-A failed query rotates to other eligible nodes. With alternatives available, the scanner makes at least three retries within its request deadline. Set `?fallback_only=true` to limit the pool. For a previously delivered transaction, `?observed=true` requires a recorded scan source. A 503 keeps the payment pending if the source record or an eligible endpoint is unavailable.
+A failed query rotates to other eligible nodes. With alternatives available, the scanner makes at least three retries within its request deadline. Set `?fallback_only=true` to limit the pool. For a previously delivered transaction, `?observed=true` requires a recorded scan source. A 503 keeps the payment pending if the source record or an independent endpoint is unavailable.
 
 ```sh
 consumer "$BASE/v1/transactions/base/$TX_HASH"

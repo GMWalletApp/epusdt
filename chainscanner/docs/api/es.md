@@ -50,11 +50,11 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 Usa el token del consumidor y una red configurada. No se necesita una suscripción. La respuesta incluye `network`, `hash` y `result`.
 
-La consulta por hash prioriza los respaldos. Se excluye el nodo ordinario que proporcionó el bloque. Un respaldo que lo proporcionó puede verificarlo si conserva ese rol.
+La consulta por hash da prioridad a los respaldos, excluye los nodos que entregaron la actividad observada y devuelve la primera transacción válida.
 
-Para una transacción observada, el nodo debe superar la altura del bloque y repetir la consulta antes de declarar su ausencia. Se prueban los demás proveedores disponibles. Un 404 definitivo incluye `X-ChainScanner-Evidence: not_found` y `X-ChainScanner-Height-Checked: true`. Reintente los errores 502 y 503. Si se reutiliza el respaldo, se devuelve `X-ChainScanner-Scan-Source: fallback_reused`.
+HTTP 404 con `X-ChainScanner-Evidence: not_found` indica que el nodo no encontró la transacción. El pedido puede pasar a revisión manual. Ante 502 o 503, vuelva a intentar la consulta tras una pausa.
 
-Tras un fallo, se prueban otros nodos. Si hay alternativas y queda tiempo, se reintenta al menos tres veces. Use `?fallback_only=true` para restringir la consulta a respaldos. Con `?observed=true` se requiere un origen de escaneo registrado. Si falta el origen o no hay un nodo apto, se devuelve 503.
+Tras un fallo, se prueban otros nodos. Si hay alternativas y queda tiempo, se reintenta al menos tres veces. Use `?fallback_only=true` para restringir la consulta a respaldos. Con `?observed=true` se requiere un origen de escaneo registrado. Si falta el origen o no hay un nodo independiente, se devuelve 503.
 
 ```sh
 consumer "$BASE/v1/transactions/base/$TX_HASH"

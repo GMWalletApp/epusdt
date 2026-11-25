@@ -156,7 +156,7 @@ func NewNodeRegistry(ctx context.Context, s *engine.Store, networks []chains.Net
 		defer pool.Close()
 		return pool.Head(ctx)
 	})
-	r.lookup.probe = chains.LookupHead
+	r.lookup.probe = chains.ProbeLookup
 	r.lookup.read = chains.LookupTransaction
 	engine.SetTransactionHandler(s, r.transactionHandler(enabled))
 	return r, nil

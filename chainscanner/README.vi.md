@@ -16,7 +16,7 @@ ChainScanner quét khối trên từng mạng một lần cho tất cả các d�
 Mỗi ứng dụng tự quản lý logic nghiệp vụ, trạng thái đơn hàng và số dư ví. ChainScanner cung cấp hạ tầng dùng chung để đăng ký theo dõi địa chỉ, quét khối và chuyển sự kiện đến các dịch vụ đã đăng ký.
 
 > [!IMPORTANT]
-> Tra cứu theo mã băm ưu tiên nút dự phòng. Nút thường đã cung cấp khối bị loại. Nút dự phòng đã cung cấp khối có thể xác minh lại nếu vẫn giữ vai trò dự phòng. [So sánh các nhà cung cấp nút dự phòng](#fallback-providers)
+> Tra cứu theo mã băm ưu tiên nút dự phòng, loại các nút đã cung cấp giao dịch khi quét khối và trả giao dịch hợp lệ đầu tiên. [So sánh các nhà cung cấp nút dự phòng](#fallback-providers)
 
 ## Tình huống sử dụng
 

@@ -28,7 +28,6 @@ type Network struct {
 // Activity carries chain evidence, including failed and outgoing transactions.
 // A subscriber is responsible for interpreting it.
 type Activity struct {
-	ScanFallback  bool            `json:"-"` // Role of the endpoint that supplied this block.
 	ScanSources   []string        `json:"-"` // Internal provenance for the committed block read.
 	Confirmations int64           `json:"confirmations"`
 	Network       string          `json:"network"`

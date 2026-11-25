@@ -18,7 +18,7 @@ ChainScanner gives all subscribers on a network a shared block scan. Each servic
 Each application manages its own business logic, order status and wallet balances. ChainScanner provides shared infrastructure for address subscriptions, block scanning and event delivery.
 
 > [!IMPORTANT]
-> Hash lookup prefers fallback nodes. An ordinary node that supplied the block is excluded. A fallback that supplied the block can verify it while it still has the fallback role. [Compare fallback providers](#fallback-providers)
+> Hash lookup prefers a fallback node and returns the first usable transaction. The scanner excludes the sources that supplied the matching block activity. [Compare fallback providers](#fallback-providers)
 
 ## Use cases
 

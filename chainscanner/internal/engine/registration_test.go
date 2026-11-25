@@ -263,7 +263,7 @@ func TestMatchedScanSourcesSurviveAckAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	paired := chains.Network{Name: w.Network, URL: "wss://stream.example", HistoryURL: "https://history.example/api-key"}
-	row := chains.Activity{Height: 10, TxID: "0x" + strings.Repeat("ab", 32), Addresses: []string{wallet}, ScanFallback: true, ScanSources: chains.SourceIDs(paired)}
+	row := chains.Activity{Height: 10, TxID: "0x" + strings.Repeat("ab", 32), Addresses: []string{wallet}, ScanSources: chains.SourceIDs(paired)}
 	if err := completeNext(store, ctx, w.Network, 9, 10, []chains.Activity{row}); err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +282,7 @@ func TestMatchedScanSourcesSurviveAckAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	rows, err := store.db.Query("SELECT source,height,fallback FROM transaction_sources WHERE network=? AND hash=?", w.Network, row.TxID)
+	rows, err := store.db.Query("SELECT source FROM transaction_sources WHERE network=? AND hash=?", w.Network, row.TxID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,10 +290,8 @@ func TestMatchedScanSourcesSurviveAckAndRestart(t *testing.T) {
 	scanned := map[string]bool{}
 	for rows.Next() {
 		var key string
-		var height int64
-		var fallback bool
-		if err := rows.Scan(&key, &height, &fallback); err != nil || height != row.Height || !fallback {
-			t.Fatal(err, height, fallback)
+		if err := rows.Scan(&key); err != nil {
+			t.Fatal(err)
 		}
 		scanned[key] = true
 	}

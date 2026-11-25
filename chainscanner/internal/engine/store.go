@@ -61,10 +61,6 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if err = upgradeScanSources(db); err != nil {
-		db.Close()
-		return nil, err
-	}
 	// A delayed ACK from an earlier stateless instance must not address a
 	// newly-created delivery with a small, reused autoincrement ID.
 	if path == ":memory:" {
@@ -221,27 +217,6 @@ func (s *Store) complete(ctx context.Context, network string, span chains.Span, 
 	return nil
 }
 
-// Older rows retain their source exclusions. Their block height and fallback
-// status were not recorded and cannot establish a height-qualified absence.
-func upgradeScanSources(db *sql.DB) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	var upgraded bool
-	if err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM pragma_table_info('transaction_sources') WHERE name='height')").Scan(&upgraded); err != nil {
-		return err
-	}
-	if !upgraded {
-		if _, err = tx.Exec(`ALTER TABLE transaction_sources ADD COLUMN height INTEGER NOT NULL DEFAULT -1;
-ALTER TABLE transaction_sources ADD COLUMN fallback INTEGER NOT NULL DEFAULT 0`); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
-}
-
 func (s *Store) enqueue(ctx context.Context, tx *sql.Tx, network string, events []chains.Activity, notify map[string]bool) error {
 	watchers, err := s.addressIndex(ctx, tx, network)
 	if err != nil {
@@ -270,8 +245,7 @@ func (s *Store) enqueue(ctx context.Context, tx *sql.Tx, network string, events 
 			hash, err := chains.TransactionHash(network, e.TxID)
 			if err == nil {
 				for _, source := range e.ScanSources {
-					if _, err := tx.ExecContext(ctx, `INSERT INTO transaction_sources(network,hash,source,height,fallback) VALUES(?,?,?,?,?)
-ON CONFLICT(network,hash,source) DO UPDATE SET height=max(height,excluded.height),fallback=min(fallback,excluded.fallback)`, network, hash, source, e.Height, e.ScanFallback); err != nil {
+					if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO transaction_sources(network,hash,source) VALUES(?,?,?)", network, hash, source); err != nil {
 						return err
 					}
 				}

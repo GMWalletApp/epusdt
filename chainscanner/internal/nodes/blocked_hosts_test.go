@@ -197,7 +197,7 @@ func TestStrictLookupDropsNewlyBlacklistedVote(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	r.lookup.probe = func(context.Context, chains.Network, bool) (int64, error) { return 100, nil }
+	r.lookup.probe = func(context.Context, chains.Network, bool) error { return nil }
 	entered := make(chan struct{}, 2)
 	resume := make(chan struct{})
 	r.lookup.read = func(context.Context, chains.Network, string, bool) (json.RawMessage, error) {

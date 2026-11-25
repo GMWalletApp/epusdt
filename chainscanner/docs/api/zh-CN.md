@@ -52,9 +52,9 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 Bitcoin 主网键为 `bitcoin`，哈希使用 64 位十六进制 txid。已入块交易返回 `result.txid`、完整序列化交易 `result.hex` 及 `result.blockhash`，未入块交易视为 `pending`。扫描事件的 `activity.data.transaction` 包含按块取得的交易和前序输出，`activity.data.block_hash` 标明区块。
 
-按哈希复核优先使用兜底节点。普通扫块来源会被排除。当初提供区块的兜底节点若仍为兜底角色，也可以复核同一笔交易。
+按哈希查询优先使用兜底节点，取得可用交易内容即返回。Scanner 排除曾经扫到这笔订阅交易的节点。
 
-对于已观察到的交易，复核节点的高度必须严格超过交易块高，且再次查哈希仍为空，才能认定该节点查无交易。返回查无前会尝试其他可用来源。此时 404 同时带有 `X-ChainScanner-Evidence: not_found` 和 `X-ChainScanner-Height-Checked: true`。遇到 502 或 503 应重试。复用兜底来源时响应标记为 `X-ChainScanner-Scan-Source: fallback_reused`。
+HTTP 404 且响应头为 `X-ChainScanner-Evidence: not_found` 表示节点明确返回查无该交易，支付系统可挂起订单。遇到 502 或 503 时保持确认中，延迟后继续查询。响应头也可能标记 `pending` 或 `incomplete`。
 
 查询失败时轮换可用节点。在请求时限内有其他节点可用时，首次失败后至少重试三次。`?fallback_only=true` 限定只用兜底节点。`?observed=true` 要求 Scanner 有这笔订阅交易的扫块来源记录。缺少来源记录或没有可供复查的节点时返回 503，订单继续等待。
 

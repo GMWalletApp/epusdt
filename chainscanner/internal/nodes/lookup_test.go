@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/tidwall/gjson"
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
@@ -31,10 +30,8 @@ func TestTransactionLookupFailover(t *testing.T) {
 	}{
 		{"rotate two endpoints", 2, 3, 200, 4, errors.New("transient"), ""},
 		{"one available", 1, 0, 200, 1, nil, ""},
-		{"missing", 3, 3, 404, 3, chains.ErrTransactionMissing, "not_found"},
-		{"missing then found", 3, 1, 200, 2, chains.ErrTransactionMissing, ""},
-		{"missing with unqueried node", 5, 4, 502, 4, chains.ErrTransactionMissing, ""},
-		{"four failures then success", 5, 3, 200, 4, errors.New("upstream failure"), ""},
+		{"missing", 3, 1, 404, 1, chains.ErrTransactionMissing, "not_found"},
+		{"four failures then success", 5, 4, 200, 5, errors.New("upstream failure"), ""},
 		{"exhausted", 4, 4, 502, 4, context.DeadlineExceeded, ""},
 		{"pending", 4, 4, 502, 4, chains.ErrTransactionPending, "pending"},
 		{"invalid evidence", 4, 4, 502, 4, nil, "incomplete"},
@@ -59,7 +56,7 @@ func TestTransactionLookupFailover(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			r.lookup.probe = func(context.Context, chains.Network, bool) (int64, error) { return 100, nil }
+			r.lookup.probe = func(context.Context, chains.Network, bool) error { return nil }
 			last := ""
 			calls := 0
 			r.lookup.read = func(_ context.Context, n chains.Network, h string, public bool) (json.RawMessage, error) {
@@ -85,21 +82,8 @@ func TestTransactionLookupFailover(t *testing.T) {
 				t.Fatal(w.Code)
 			}
 			req.Header.Set("Authorization", "Bearer "+token)
-			traceRequested := tc.name == "rotate two endpoints"
-			if traceRequested {
-				req.Header.Set("X-ChainScanner-Lookup-Trace", "1")
-			}
 			w = httptest.NewRecorder()
 			handler.ServeHTTP(w, req)
-			trace := w.Header().Get("X-ChainScanner-Lookup-Trace")
-			if traceRequested {
-				var attempts []LookupAttempt
-				if err := json.Unmarshal([]byte(trace), &attempts); err != nil || len(attempts) != tc.calls || attempts[0].NodeID == 0 || attempts[0].Result != "read_error" || attempts[3].Result != "found" {
-					t.Fatalf("unexpected trace %s", trace)
-				}
-			} else if trace != "" {
-				t.Fatal("unsolicited trace", trace)
-			}
 			if w.Code != tc.status || calls != tc.calls || w.Header().Get("X-ChainScanner-Evidence") != tc.reason {
 				t.Fatal(w.Code, w.Header(), calls, w.Body)
 			}
@@ -145,65 +129,5 @@ func TestOfficialGatewayVotes(t *testing.T) {
 	}
 	if chains.ProviderKey(chains.Network{Name: "monad", URL: "https://rpc2.monad.xyz"}) == chains.ProviderKey(chains.Network{Name: "monad", URL: "wss://rpc3.monad.xyz"}) {
 		t.Fatal("Goldsky and Ankr must be independent")
-	}
-}
-
-func TestTronObservedAbsenceUsesTheLookupNodesConfirmedHeight(t *testing.T) {
-	sample, err := os.ReadFile("../chains/testdata/strict/tron.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	hash := gjson.GetBytes(sample, "transaction.txID").String()
-	for _, tc := range []struct {
-		name                string
-		observed, head      int64
-		visibleOnSecondRead bool
-		wantReads           int
-		wantErr             error
-	}{
-		{"behind", 100, 99, false, 1, chains.ErrTransactionPending},
-		{"equal", 100, 100, false, 1, chains.ErrTransactionPending},
-		{"ahead but absent", 100, 101, false, 2, chains.ErrTransactionMissing},
-		{"indexed between reads", 100, 101, true, 2, nil},
-		{"unknown historical height", -1, 101, false, 1, chains.ErrTransactionPending},
-		{"height unavailable", 100, -1, false, 1, errCapacity},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			reads := 0
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch r.URL.Path {
-				case "/walletsolidity/getblockbynum":
-					fmt.Fprint(w, `{"blockID":"00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc"}`)
-				case "/walletsolidity/getnowblock":
-					if tc.head < 0 {
-						http.Error(w, "offline", 503)
-						return
-					}
-					fmt.Fprintf(w, `{"block_header":{"raw_data":{"number":%d}}}`, tc.head)
-				case "/walletsolidity/gettransactionbyid":
-					reads++
-					if reads == 2 && tc.visibleOnSecondRead {
-						fmt.Fprint(w, gjson.GetBytes(sample, "transaction").Raw)
-					} else {
-						fmt.Fprint(w, "{}")
-					}
-				case "/walletsolidity/gettransactioninfobyid":
-					fmt.Fprint(w, gjson.GetBytes(sample, "receipt").Raw)
-				default:
-					t.Errorf("unexpected TRON method %s", r.URL.Path)
-				}
-			}))
-			defer srv.Close()
-			r := &NodeRegistry{lookup: transactionLookup{read: chains.LookupTransaction, probe: chains.LookupHead}}
-			c := lookupCandidate{cfg: chains.Network{Name: "tron", Protocol: "solidity-http", URL: srv.URL}, healthy: true, sourceStatus: "excluded"}
-			var attempt LookupAttempt
-			_, err := r.lookupAtObservedHeight(t.Context(), c, nil, hash, tc.observed, &attempt)
-			if tc.observed >= 0 && tc.head >= 0 && (attempt.Head == nil || *attempt.Head != tc.head) {
-				t.Fatalf("missing observed head: %+v", attempt)
-			}
-			if !errors.Is(err, tc.wantErr) || reads != tc.wantReads {
-				t.Fatalf("reads=%d, err=%v", reads, err)
-			}
-		})
 	}
 }

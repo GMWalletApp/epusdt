@@ -16,7 +16,7 @@ Con ChainScanner, todas las suscripciones de una red comparten el escaneo de blo
 Cada aplicación gestiona su lógica de negocio, el estado de sus pedidos y los saldos de sus carteras. ChainScanner ofrece una infraestructura compartida para suscribirse a direcciones, escanear bloques y distribuir eventos.
 
 > [!IMPORTANT]
-> La consulta por hash prioriza los respaldos. Se excluye el nodo ordinario que proporcionó el bloque. Un respaldo que lo proporcionó puede verificarlo si conserva ese rol. [Comparar proveedores de respaldo](#fallback-providers)
+> La consulta por hash da prioridad a los respaldos, excluye los nodos que entregaron la actividad observada y devuelve la primera transacción válida. [Comparar proveedores de respaldo](#fallback-providers)
 
 ## Casos de uso
 

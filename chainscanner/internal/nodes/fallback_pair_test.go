@@ -53,7 +53,7 @@ func TestFallbackSelectionThroughAdminAndStrictAPI(t *testing.T) {
 		}
 		call("POST", path, `{"network":"base","url":"https://`+host+`","protocol":"http"}`, admin, 201)
 	}
-	r.lookup.probe = func(context.Context, chains.Network, bool) (int64, error) { return 100, nil }
+	r.lookup.probe = func(context.Context, chains.Network, bool) error { return nil }
 	sample, err := os.ReadFile("../chains/testdata/strict/evm.json")
 	if err != nil {
 		t.Fatal(err)
@@ -111,10 +111,10 @@ func TestFallbackSelectionThroughAdminAndStrictAPI(t *testing.T) {
 			t.Fatal(calls)
 		}
 	}
-	// A legacy or originally regular source stays excluded even if it is now a fallback.
+	// An observed transaction must exclude its original source, including a fallback.
 	fallbackBody, fallbackErr = sample, nil
 	id := chains.SourceIDs(chains.Network{Name: "base", URL: "https://paid-one.example/other-key"})[0]
-	if _, err := r.db.Exec("INSERT INTO transaction_sources(network,hash,source) VALUES(?,?,?)", "base", hash, id); err != nil {
+	if _, err := r.db.Exec("INSERT INTO transaction_sources VALUES(?,?,?)", "base", hash, id); err != nil {
 		t.Fatal(err)
 	}
 	check("?observed=true", 200, 1)
@@ -122,43 +122,6 @@ func TestFallbackSelectionThroughAdminAndStrictAPI(t *testing.T) {
 		t.Fatal(calls)
 	}
 	check("?fallback_only=true&observed=true", 503, 0)
-	// A fallback that actually supplied the block may serve its own recheck.
-	if _, err := r.db.Exec("UPDATE transaction_sources SET height=100,fallback=1 WHERE source=?", id); err != nil {
-		t.Fatal(err)
-	}
-	w := call("GET", path+"?observed=true&fallback_only=true", "", client, 200)
-	if got := w.Header().Get("X-ChainScanner-Scan-Source"); got != "fallback_reused" {
-		t.Fatal(got)
-	}
-	fallbackErr = chains.ErrTransactionMissing
-	for _, tc := range []struct {
-		head          int64
-		status, reads int
-	}{
-		{99, 502, 1}, {100, 502, 1}, {101, 404, 2},
-	} {
-		calls = nil
-		r.lookup.probe = func(_ context.Context, n chains.Network, _ bool) (int64, error) {
-			if !strings.Contains(n.URL, "paid-one") {
-				t.Fatal(n.URL)
-			}
-			return tc.head, nil
-		}
-		w := call("GET", path+"?observed=true&fallback_only=true", "", client, tc.status)
-		if (w.Header().Get("X-ChainScanner-Height-Checked") == "true") != (tc.head > 100) || len(calls) != tc.reads {
-			t.Fatal(tc, w.Header(), calls)
-		}
-	}
-	// A caller cannot lower the stored height, and older confirmation jobs
-	// can supply the height of the scan event that was persisted by EPUSDT.
-	check("?observed=true&observed_height=101&fallback_only=true", 502, 1)
-	if _, err := r.db.Exec("UPDATE transaction_sources SET height=-1 WHERE source=?", id); err != nil {
-		t.Fatal(err)
-	}
-	check("?observed=true&fallback_only=true", 502, 1)
-	check("?observed=true&observed_height=100&fallback_only=true", 404, 2)
-	// A qualified absence still allows another eligible provider to find it.
-	check("?observed=true&observed_height=100", 200, 3)
 	call("GET", path+"/strict", "", client, 404)
 
 }
@@ -199,7 +162,7 @@ func TestTONFallbackIndexEligibleWithoutPublicLocator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.lookup.probe = func(context.Context, chains.Network, bool) (int64, error) { return 100, nil }
+	r.lookup.probe = func(context.Context, chains.Network, bool) error { return nil }
 	for _, c := range nodes {
 		if c.fallback && c.cfg.Protocol == "toncenter-v3" {
 			return

@@ -59,7 +59,6 @@ func (p *SourcePool) fetch(ctx context.Context, n *endpoint, j *segment, oneRead
 			sources := chains.SourceIDs(n.cfg)
 			for i := range rows {
 				rows[i].ScanSources = sources
-				rows[i].ScanFallback = n.fallback
 			}
 		}
 		j.events = append(j.events, rows...)

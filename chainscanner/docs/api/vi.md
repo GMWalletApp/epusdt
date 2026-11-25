@@ -50,11 +50,11 @@ admin() { curl -sS -i -H "Authorization: Bearer $ADMIN" -H 'Content-Type: applic
 
 Gửi mã xác thực của dịch vụ và ID mạng đã cấu hình. Không cần đăng ký địa chỉ. Phản hồi chứa `network`, `hash` và `result`.
 
-Tra cứu theo mã băm ưu tiên nút dự phòng. Nút thường đã cung cấp khối bị loại. Nút dự phòng đã cung cấp khối có thể xác minh lại nếu vẫn giữ vai trò dự phòng.
+Tra cứu theo mã băm ưu tiên nút dự phòng, loại các nút đã cung cấp giao dịch khi quét khối và trả giao dịch hợp lệ đầu tiên.
 
-Với giao dịch đã quan sát, nút phải vượt qua độ cao của khối và tra lại mã băm trước khi xác định giao dịch vắng mặt. Hệ thống thử các nguồn khả dụng khác trước khi trả về 404 với cả `X-ChainScanner-Evidence: not_found` và `X-ChainScanner-Height-Checked: true`. Hãy thử lại khi gặp 502 hoặc 503. Khi dùng lại nút dự phòng, phản hồi có `X-ChainScanner-Scan-Source: fallback_reused`.
+HTTP 404 kèm `X-ChainScanner-Evidence: not_found` nghĩa là nút đã trả lời rằng không tìm thấy giao dịch. Có thể tạm dừng đơn hàng để kiểm tra thủ công. Với 502 hoặc 503, hãy thử lại sau một khoảng chờ.
 
-Nếu truy vấn lỗi, hệ thống chuyển sang nút khác và thử lại ít nhất ba lần khi còn nút thay thế và thời gian. Dùng `?fallback_only=true` để chỉ dùng nút dự phòng. Với `?observed=true`, cần có bản ghi nguồn quét. Nếu thiếu bản ghi hoặc không còn nút đủ điều kiện, API trả về 503.
+Nếu truy vấn lỗi, hệ thống chuyển sang nút khác và thử lại ít nhất ba lần khi còn nút thay thế và thời gian. Dùng `?fallback_only=true` để chỉ dùng nút dự phòng. Với `?observed=true`, cần có bản ghi nguồn quét. Nếu thiếu bản ghi hoặc không còn nút độc lập, API trả về 503.
 
 ```sh
 consumer "$BASE/v1/transactions/base/$TX_HASH"
