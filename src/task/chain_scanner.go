@@ -7,6 +7,7 @@ import (
 	"time"
 
 	scanner "github.com/GMWalletApp/ChainScanner"
+	"github.com/GMWalletApp/epusdt/internal/diagnostics"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/model/service"
@@ -95,7 +96,7 @@ func (p *paymentSubscriptions) ensure(network, address string) error {
 	return nil
 }
 
-func consumeQueue(ctx context.Context, feed scanner.Feed, next func() (*scanner.Delivery, error)) {
+func consumeQueue(ctx context.Context, network string, feed scanner.Feed, next func() (*scanner.Delivery, error)) {
 	for ctx.Err() == nil {
 		d, err := next()
 		if err == nil && d != nil {
@@ -108,6 +109,7 @@ func consumeQueue(ctx context.Context, feed scanner.Feed, next func() (*scanner.
 			}
 		}
 		if err != nil {
+			diagnostics.Record(diagnostics.Event{Event: "scanner.delivery", Outcome: "retry", Network: network})
 			log.Sugar.Warnf("[ChainScanner] delivery pending: %v", err)
 		}
 		select {
@@ -126,9 +128,12 @@ func processScannerActivity(ctx context.Context, e scanner.Activity) error {
 	if chain.ID == 0 || !chain.Enabled {
 		return nil
 	}
+	diagnostics.Record(diagnostics.Event{Event: "scan.observed", Network: e.Network, Hash: e.TxID, Height: e.Height, Confirmations: e.Confirmations})
 	err = service.ApplyChainActivity(ctx, e)
 	if err == nil {
 		data.RecordRpcBlockHeight(e.Network, e.Height)
+	} else {
+		diagnostics.Record(diagnostics.Event{Event: "scan.process", Outcome: "failed", Network: e.Network, Hash: e.TxID, Height: e.Height})
 	}
 	return err
 }

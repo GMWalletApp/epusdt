@@ -13,6 +13,7 @@ import (
 
 	scanner "github.com/GMWalletApp/ChainScanner"
 	api "github.com/GMWalletApp/ChainScanner/api/activity/v1"
+	"github.com/GMWalletApp/epusdt/internal/diagnostics"
 	"github.com/GMWalletApp/epusdt/util/log"
 	"github.com/gorilla/websocket"
 	"google.golang.org/grpc"
@@ -24,10 +25,13 @@ import (
 
 func runScannerFeed(ctx context.Context, c scanner.Client, network, transport string) {
 	if transport == "http" {
-		consumeQueue(ctx, c, func() (*scanner.Delivery, error) {
+		consumeQueue(ctx, network, c, func() (*scanner.Delivery, error) {
 			return c.PendingNetwork(ctx, paymentConsumer, network, 15*time.Second)
 		})
 		return
+	}
+	if transport == "" {
+		transport = "ws"
 	}
 	delay := time.Second
 	for ctx.Err() == nil {
@@ -41,6 +45,7 @@ func runScannerFeed(ctx context.Context, c scanner.Client, network, transport st
 		if ctx.Err() != nil {
 			return
 		}
+		diagnostics.Record(diagnostics.Event{Event: "scanner.stream", Outcome: "disconnected", Network: network, Mode: transport})
 		log.Sugar.Warnf("[ChainScanner] %s event stream: %v", network, err)
 		select {
 		case <-ctx.Done():

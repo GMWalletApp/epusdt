@@ -83,8 +83,21 @@ func TestTransactionLookupFailover(t *testing.T) {
 				t.Fatal(w.Code)
 			}
 			req.Header.Set("Authorization", "Bearer "+token)
+			traceRequested := tc.name == "rotate two endpoints"
+			if traceRequested {
+				req.Header.Set("X-ChainScanner-Lookup-Trace", "1")
+			}
 			w = httptest.NewRecorder()
 			handler.ServeHTTP(w, req)
+			trace := w.Header().Get("X-ChainScanner-Lookup-Trace")
+			if traceRequested {
+				var attempts []LookupAttempt
+				if err := json.Unmarshal([]byte(trace), &attempts); err != nil || len(attempts) != tc.calls || attempts[0].NodeID == 0 || attempts[0].Result != "read_error" || attempts[3].Result != "found" {
+					t.Fatalf("unexpected trace %s", trace)
+				}
+			} else if trace != "" {
+				t.Fatal("unsolicited trace", trace)
+			}
 			if w.Code != tc.status || calls != tc.calls || w.Header().Get("X-ChainScanner-Evidence") != tc.reason {
 				t.Fatal(w.Code, w.Header(), calls, w.Body)
 			}
@@ -181,7 +194,11 @@ func TestTronObservedAbsenceUsesTheLookupNodesConfirmedHeight(t *testing.T) {
 			defer srv.Close()
 			r := &NodeRegistry{lookup: transactionLookup{read: chains.LookupTransaction, probe: chains.LookupHead}}
 			c := lookupCandidate{cfg: chains.Network{Name: "tron", Protocol: "solidity-http", URL: srv.URL}, healthy: true, sourceStatus: "excluded"}
-			_, err := r.lookupAtObservedHeight(t.Context(), c, nil, hash, tc.observed)
+			var attempt LookupAttempt
+			_, err := r.lookupAtObservedHeight(t.Context(), c, nil, hash, tc.observed, &attempt)
+			if tc.observed >= 0 && tc.head >= 0 && (attempt.Head == nil || *attempt.Head != tc.head) {
+				t.Fatalf("missing observed head: %+v", attempt)
+			}
 			if !errors.Is(err, tc.wantErr) || reads != tc.wantReads {
 				t.Fatalf("reads=%d, err=%v", reads, err)
 			}

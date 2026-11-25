@@ -359,6 +359,7 @@ func registerAdminRoutes(e *echo.Echo, connection config.ScannerConnection) {
 	authed.GET("/dashboard/recent-orders", admin.Ctrl.RecentOrders)
 
 	// Settings
+	authed.GET("/diagnostics/export", admin.Ctrl.ExportDiagnostics)
 	authed.GET("/settings", admin.Ctrl.ListSettings)
 	authed.GET("/settings/rate/status", admin.Ctrl.RateStatus)
 	authed.POST("/settings/rate/refresh", admin.Ctrl.RefreshRates)
