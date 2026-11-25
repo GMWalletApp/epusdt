@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/GMWalletApp/epusdt/model/request"
 	"github.com/GMWalletApp/epusdt/util/constant"
 	"github.com/GMWalletApp/epusdt/util/log"
+	"github.com/tidwall/gjson"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -247,16 +249,22 @@ func ConfirmPayment(ctx context.Context, feed scanner.Feed, lookup ObservedTrans
 			return errWaitingBlockDepth
 		}
 	}
+	creditActivity := e
 	if !job.SkipStrict {
 		if lookup == nil {
 			return errors.New("transaction recheck unavailable")
 		}
-		if _, err := lookup(ctx, e.Network, e.TxID, e.Height); err != nil {
+		result, err := lookup(ctx, e.Network, e.TxID, e.Height)
+		if err != nil {
 			return err
 		}
+		creditActivity, err = verifyIndependentEVMReceipt(e, result)
+		if err != nil {
+			return fmt.Errorf("%w: %v", errPaymentMismatch, err)
+		}
 	}
-	// The hash lookup confirms existence. The matched scan event supplies the credit.
-	blockID, err := verifiedOrderCredit(ctx, &order, e)
+	// Settlement uses the independently verified evidence when strict checking is enabled.
+	blockID, err := verifiedOrderCredit(ctx, &order, creditActivity)
 	if err != nil {
 		return err
 	}
@@ -269,6 +277,57 @@ func ConfirmPayment(ctx context.Context, feed scanner.Feed, lookup ObservedTrans
 	}
 	sendPaymentNotification(&order)
 	return nil
+}
+
+func verifyIndependentEVMReceipt(observed scanner.Activity, raw json.RawMessage) (scanner.Activity, error) {
+	if !scanner.IsEVM(observed.Network) {
+		return observed, nil
+	}
+	tx := gjson.GetBytes(raw, "transaction")
+	receipt := gjson.GetBytes(raw, "receipt")
+	if !tx.IsObject() || !receipt.IsObject() || !strings.EqualFold(tx.Get("hash").String(), observed.TxID) ||
+		!strings.EqualFold(receipt.Get("transactionHash").String(), observed.TxID) || receipt.Get("status").String() != "0x1" {
+		return observed, errors.New("independent EVM transaction did not succeed")
+	}
+	height, err := strconv.ParseInt(receipt.Get("blockNumber").String(), 0, 64)
+	if err != nil || height != observed.Height {
+		return observed, errors.New("independent EVM receipt block differs from the scanned block")
+	}
+	blockHash := receipt.Get("blockHash").String()
+	if blockHash == "" || !strings.EqualFold(tx.Get("blockHash").String(), blockHash) {
+		return observed, errors.New("independent EVM transaction and receipt block hashes differ")
+	}
+	var scanned scanner.Evidence
+	if err := json.Unmarshal(observed.Data, &scanned); err != nil {
+		return observed, err
+	}
+	scannedBlock := gjson.GetBytes(scanned.Transaction, "blockHash").String()
+	if scannedBlock == "" && len(scanned.Logs) > 0 {
+		scannedBlock = gjson.GetBytes(scanned.Logs[0], "blockHash").String()
+	}
+	if scannedBlock == "" || !strings.EqualFold(scannedBlock, blockHash) {
+		return observed, errors.New("independent EVM receipt block differs from the scanned evidence")
+	}
+	logs := receipt.Get("logs")
+	if !logs.IsArray() {
+		return observed, errors.New("independent EVM receipt has no log list")
+	}
+	verified := scanner.Evidence{Transaction: json.RawMessage(tx.Raw), Receipt: json.RawMessage(receipt.Raw)}
+	for _, log := range logs.Array() {
+		if id := log.Get("transactionHash"); id.Exists() && !strings.EqualFold(id.String(), observed.TxID) {
+			return observed, errors.New("independent EVM receipt contains a log from another transaction")
+		}
+		if id := log.Get("blockHash"); id.Exists() && !strings.EqualFold(id.String(), blockHash) {
+			return observed, errors.New("independent EVM receipt contains a log from another block")
+		}
+		verified.Logs = append(verified.Logs, json.RawMessage(log.Raw))
+	}
+	encoded, err := json.Marshal(verified)
+	if err != nil {
+		return observed, err
+	}
+	observed.Data = encoded
+	return observed, nil
 }
 
 func verifiedOrderCredit(ctx context.Context, order *mdb.Orders, e scanner.Activity) (string, error) {

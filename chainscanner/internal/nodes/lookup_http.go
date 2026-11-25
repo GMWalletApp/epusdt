@@ -142,6 +142,9 @@ func (r *NodeRegistry) lookupHash(ctx context.Context, candidates []lookupCandid
 			if ctx.Err() != nil {
 				return nil, "", ctx.Err()
 			}
+			if attempts >= 4 {
+				break
+			}
 			if qualifiedMissing[c.key] || seen[c.key] || c.key == lastKey || !r.lookup.ready(c.version, time.Now()) {
 				continue
 			}
@@ -185,11 +188,9 @@ func (r *NodeRegistry) lookupHash(ctx context.Context, candidates []lookupCandid
 				return raw, c.sourceStatus, nil
 			}
 			if errors.Is(err, chains.ErrTransactionMissing) {
-				if c.sourceStatus == "unobserved" && !pending {
-					return nil, c.sourceStatus, err
-				}
 				qualifiedMissing[c.key] = true
 				missingSource = c.sourceStatus
+				lastErr = err
 				continue
 			}
 			if errors.Is(err, chains.ErrTransactionPending) {
@@ -205,7 +206,20 @@ func (r *NodeRegistry) lookupHash(ctx context.Context, candidates []lookupCandid
 		return nil, "", chains.ErrTransactionPending
 	}
 	if missingSource != "" {
-		return nil, missingSource, chains.ErrTransactionMissing
+		allMissing := len(candidates) > 0
+		for _, c := range candidates {
+			if !qualifiedMissing[c.key] {
+				allMissing = false
+				break
+			}
+		}
+		if allMissing {
+			return nil, missingSource, chains.ErrTransactionMissing
+		}
+		if errors.Is(lastErr, chains.ErrTransactionMissing) {
+			return nil, "", errLookup
+		}
+		return nil, "", lastErr
 	}
 	return nil, "", lastErr
 }
