@@ -16,11 +16,19 @@ jobs:
       - name: Propose upstream update
         env:
           GH_TOKEN: ${{ github.token }}
+          CHAINSCANNER_API_REPOSITORY: GMWalletApp/ChainScanner
         shell: bash
         run: |
           set -euo pipefail
           if git diff --quiet -- chainscanner.rev; then exit 0; fi
+          previous=$(git show HEAD:chainscanner.rev)
           revision=$(cat chainscanner.rev)
+          if [[ "$previous" == "$revision" ]]; then exit 0; fi
+          compare_status=$(gh api "repos/${CHAINSCANNER_API_REPOSITORY}/compare/${previous}...${revision}" --jq .status 2>/dev/null || true)
+          if [[ "$compare_status" != "ahead" ]]; then
+            echo "Skipping ChainScanner sync: ${revision} is not newer than ${previous} (compare status: ${compare_status:-unknown})"
+            exit 0
+          fi
           branch="sync/chainscanner-$revision"
           if ! git ls-remote --exit-code --heads origin "$branch" > /dev/null; then
             git switch -c "$branch"
