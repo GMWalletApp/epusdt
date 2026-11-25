@@ -296,6 +296,13 @@ func TestAdminChangePassword(t *testing.T) {
 	}, token)
 	t.Logf("ChangePassword response: %s", rec.Body.String())
 	assertOK(t, rec)
+	if rec := doGetAdmin(e, "/admin/api/v1/api-keys", token); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("old token remained valid after password change: HTTP %d", rec.Code)
+	}
+	newToken := adminLogin(t, e, testAdminUsername, "new-pass-456")
+	if rec := doGetAdmin(e, "/admin/api/v1/api-keys", newToken); rec.Code != http.StatusOK {
+		t.Fatalf("new token was rejected after password change: HTTP %d", rec.Code)
+	}
 
 	// Verify old password no longer works.
 	rec2 := doPost(e, "/admin/api/v1/auth/login", map[string]interface{}{
@@ -369,6 +376,10 @@ func TestAdminInitialPasswordMetadataFlow(t *testing.T) {
 		"new_password": "new-pass-789",
 	}, token)
 	assertOK(t, recChange)
+	if rec := doGetAdmin(e, "/admin/api/v1/auth/me", token); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("old token remained valid after initial password change: HTTP %d", rec.Code)
+	}
+	token = adminLogin(t, e, testAdminUsername, "new-pass-789")
 
 	recHash2 := doGet(e, "/admin/api/v1/auth/init-password-hash")
 	respHash2 := assertOK(t, recHash2)

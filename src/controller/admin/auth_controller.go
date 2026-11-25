@@ -61,7 +61,7 @@ func (c *BaseAdminController) Login(ctx echo.Context) error {
 	if user.Status != mdb.AdminUserStatusEnable {
 		return c.FailJson(ctx, constant.AdminUserDisabledErr)
 	}
-	token, err := appjwt.Sign(user.ID, user.Username)
+	token, err := appjwt.Sign(user.ID, user.Username, user.SessionVersion)
 	if err != nil {
 		return c.FailJson(ctx, err)
 	}

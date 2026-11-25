@@ -87,7 +87,7 @@ func activeLocksForAddress(tx *gorm.DB, network, address, token string, now time
 	query := tx.Model(&mdb.TransactionLock{}).
 		Where("network = ?", normalizeLockNetwork(network)).
 		Where("token = ?", normalizeLockToken(token)).
-		Where("expires_at > ?", now)
+		Where(SQLiteTimestampUTCExpr("expires_at")+" > ?", orderTimeUTC(now))
 	return applyLockAddressFilter(query, network, address)
 }
 
@@ -633,8 +633,8 @@ func renewOrderTransactionLock(order *mdb.Orders, now, expiresAt time.Time) (boo
 			continue
 		}
 		result := dao.RuntimeDB.Model(&mdb.TransactionLock{}).
-			Where("id = ? AND trade_id = ? AND expires_at > ?", lock.ID, order.TradeId, time.Now()).
-			Update("expires_at", gorm.Expr("CASE WHEN expires_at < ? THEN ? ELSE expires_at END", expiresAt, expiresAt))
+			Where("id = ? AND trade_id = ? AND "+SQLiteTimestampUTCExpr("expires_at")+" > ?", lock.ID, order.TradeId, orderTimeUTC(time.Now())).
+			Update("expires_at", gorm.Expr("CASE WHEN "+SQLiteTimestampUTCExpr("expires_at")+" < ? THEN ? ELSE expires_at END", expiresAt.UTC(), expiresAt.UTC()))
 		return result.RowsAffected > 0, result.Error
 	}
 	return false, nil
@@ -755,7 +755,7 @@ func LockTransaction(network, address, token, tradeID string, amount float64, ex
 	return dao.RuntimeDB.Transaction(func(tx *gorm.DB) error {
 		expiredQuery := tx.Where("network = ?", network).
 			Where("token = ?", normalizedToken).
-			Where("expires_at <= ?", now)
+			Where(SQLiteTimestampUTCExpr("expires_at")+" <= ?", orderTimeUTC(now))
 		expiredQuery = applyLockAddressFilter(expiredQuery, network, address)
 		if err := expiredQuery.Delete(&mdb.TransactionLock{}).Error; err != nil {
 			return err
@@ -794,5 +794,5 @@ func UnLockTransactionByTradeId(tradeID string) error {
 }
 
 func CleanupExpiredTransactionLocks() error {
-	return dao.RuntimeDB.Where("expires_at <= ?", time.Now()).Delete(&mdb.TransactionLock{}).Error
+	return dao.RuntimeDB.Where(SQLiteTimestampUTCExpr("expires_at")+" <= ?", orderTimeUTC(time.Now())).Delete(&mdb.TransactionLock{}).Error
 }

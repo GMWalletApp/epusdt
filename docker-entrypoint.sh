@@ -91,6 +91,9 @@ prepare_epusdt_config() {
   if [ -n "${HTTP_LISTEN:-}" ]; then
     set_env_key "${target_env}" "http_listen" "${HTTP_LISTEN}"
   fi
+  if [ -n "${HTTP_TRUSTED_PROXIES:-}" ]; then
+    set_env_key "${target_env}" "http_trusted_proxies" "${HTTP_TRUSTED_PROXIES}"
+  fi
   if [ -n "${API_RATE_URL:-}" ]; then
     set_env_key "${target_env}" "api_rate_url" "${API_RATE_URL}"
   fi
