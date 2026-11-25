@@ -1991,6 +1991,38 @@
                 }
             }
         },
+        "/admin/api/v1/diagnostics/export": {
+            "get": {
+                "security": [
+                    {
+                        "AdminJWT": []
+                    }
+                ],
+                "produces": [
+                    "application/x-ndjson"
+                ],
+                "tags": [
+                    "Admin Settings"
+                ],
+                "summary": "Download detailed diagnostic events (JSON Lines)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Exact gateway trade ID, merchant order ID or transaction hash",
+                        "name": "reference",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/api/v1/notification-channels": {
             "get": {
                 "security": [

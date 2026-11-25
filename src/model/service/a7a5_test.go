@@ -85,7 +85,7 @@ func TestA7A5Payment(t *testing.T) {
 			if err := dao.Mdb.Take(&job).Error; err != nil {
 				t.Fatal(err)
 			}
-			if err := ConfirmPayment(t.Context(), nil, func(context.Context, string, string) (json.RawMessage, error) { return event.Data, nil }, job); err != nil {
+			if err := ConfirmPayment(t.Context(), nil, func(context.Context, string, string, int64) (json.RawMessage, error) { return event.Data, nil }, job); err != nil {
 				t.Fatal(err)
 			}
 			paid, err := data.GetOrderInfoByTradeId(order.TradeId)

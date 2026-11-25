@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/GMWalletApp/epusdt/model/data"
+	"github.com/GMWalletApp/epusdt/model/mdb"
 	appjwt "github.com/GMWalletApp/epusdt/util/jwt"
 	"github.com/labstack/echo/v4"
 )
@@ -36,6 +38,10 @@ func CheckAdminJWT() echo.MiddlewareFunc {
 			}
 			claims, err := appjwt.Parse(token)
 			if err != nil {
+				return echo.NewHTTPError(http.StatusUnauthorized, "invalid token")
+			}
+			user, err := data.GetAdminUserByID(claims.AdminUserID)
+			if err != nil || user.ID == 0 || user.Status != mdb.AdminUserStatusEnable || user.SessionVersion != claims.SessionVersion || user.Username != claims.Username {
 				return echo.NewHTTPError(http.StatusUnauthorized, "invalid token")
 			}
 			ctx.Set(AdminUserIDKey, claims.AdminUserID)

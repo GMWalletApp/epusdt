@@ -59,7 +59,10 @@ func TestAdditionalNetworkSettlement(t *testing.T) {
 						status = "0x1"
 					}
 					var err error
-					e.Data, err = json.Marshal(scanner.Evidence{Transaction: json.RawMessage(fmt.Sprintf(`{"hash":"digest","from":"0x1111111111111111111111111111111111111111","to":%q,"value":"0xde0b6b3a7640000"}`, address)), Receipt: json.RawMessage(fmt.Sprintf(`{"transactionHash":"digest","status":%q}`, status))})
+					e.Data, err = json.Marshal(scanner.Evidence{
+						Transaction: json.RawMessage(fmt.Sprintf(`{"hash":"digest","from":"0x1111111111111111111111111111111111111111","to":%q,"value":"0xde0b6b3a7640000","blockHash":"block","blockNumber":"0x11"}`, address)),
+						Receipt:     json.RawMessage(fmt.Sprintf(`{"transactionHash":"digest","blockHash":"block","blockNumber":"0x11","status":%q,"logs":[]}`, status)),
+					})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -94,7 +97,7 @@ func TestAdditionalNetworkSettlement(t *testing.T) {
 			} else {
 				result = json.RawMessage(fmt.Sprintf(`{"transaction":{"hash":"digest","from":"0x1111111111111111111111111111111111111111","to":%q,"value":"0xde0b6b3a7640000","blockHash":"block"},"receipt":{"transactionHash":"digest","blockHash":"block","blockNumber":"0x11","status":"0x1","logs":[]}}`, address))
 			}
-			if err := ConfirmPayment(t.Context(), nil, func(context.Context, string, string) (json.RawMessage, error) { return result, nil }, job); err != nil {
+			if err := ConfirmPayment(t.Context(), nil, func(context.Context, string, string, int64) (json.RawMessage, error) { return result, nil }, job); err != nil {
 				t.Fatal(err)
 			}
 			got, err := data.GetOrderInfoByTradeId(order.TradeId)

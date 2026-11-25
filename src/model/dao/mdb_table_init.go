@@ -191,6 +191,7 @@ func seedDefaultSettings() {
 		{Group: mdb.SettingGroupBrand, Key: mdb.SettingKeyBrandWithdrawalReminder, Value: "false", Type: mdb.SettingTypeBool},
 		{Group: mdb.SettingGroupSystem, Key: mdb.SettingKeyAmountPrecision, Value: "2", Type: mdb.SettingTypeInt},
 		{Group: mdb.SettingGroupSystem, Key: mdb.SettingKeyStrictPayment, Value: "true", Type: mdb.SettingTypeBool},
+		{Group: mdb.SettingGroupSystem, Key: mdb.SettingKeyDetailedDiagnostics, Value: "true", Type: mdb.SettingTypeBool},
 		{Group: mdb.SettingGroupSystem, Key: mdb.SettingKeySystemLogLevel, Value: mdb.SettingDefaultSystemLogLevel, Type: mdb.SettingTypeString},
 		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateForcedRateList, Value: mdb.SettingDefaultRateForcedRateList, Type: mdb.SettingTypeJSON},
 		{Group: mdb.SettingGroupRate, Key: mdb.SettingKeyRateMode, Value: defaultRateMode, Type: mdb.SettingTypeString},

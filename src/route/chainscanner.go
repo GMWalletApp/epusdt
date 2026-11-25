@@ -264,7 +264,7 @@ func scannerForward(template string, connection config.ScannerConnection) echo.H
 		if res.StatusCode == http.StatusUnauthorized {
 			return echo.NewHTTPError(http.StatusBadGateway, "ChainScanner rejected its configured credential")
 		}
-		for _, key := range []string{"Content-Type", "X-ChainScanner-Evidence", "X-ChainScanner-Scan-Source", "Retry-After"} {
+		for _, key := range []string{"Content-Type", "X-ChainScanner-Evidence", "X-ChainScanner-Scan-Source", "X-ChainScanner-Height-Checked", "Retry-After"} {
 			if v := res.Header.Get(key); v != "" {
 				c.Response().Header().Set(key, v)
 			}

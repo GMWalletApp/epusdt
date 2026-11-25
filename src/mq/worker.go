@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/GMWalletApp/epusdt/config"
+	"github.com/GMWalletApp/epusdt/internal/diagnostics"
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
@@ -22,6 +23,8 @@ const batchSize = 100
 const sqliteBusyRetryAttempts = 3
 
 type expirableOrder struct {
+	OrderId        string
+	ParentTradeId  string
 	ID             uint64  `gorm:"column:id"`
 	TradeId        string  `gorm:"column:trade_id"`
 	Status         int     `gorm:"column:status"`
@@ -71,7 +74,7 @@ func processExpiredOrders() {
 		var orders []expirableOrder
 		err := withSQLiteBusyRetry(func() error {
 			return dao.Mdb.Model(&mdb.Orders{}).
-				Select("id", "trade_id", "status", "network", "receive_address", "token", "actual_amount", "pay_provider").
+				Select("id", "trade_id", "parent_trade_id", "order_id", "status", "network", "receive_address", "token", "actual_amount", "pay_provider").
 				Where("status IN ?", []int{mdb.StatusWaitPay, mdb.StatusWaitSelect}).
 				Where(data.SQLiteTimestampUTCExpr("created_at")+" <= ?", expirationCutoff.UTC().Format("2006-01-02 15:04:05")).
 				Order("id asc").
@@ -95,6 +98,7 @@ func processExpiredOrders() {
 			if !expired {
 				continue
 			}
+			diagnostics.Record(diagnostics.Event{Event: "order.expired", Status: mdb.StatusExpired, Trade: order.TradeId, MerchantOrder: order.OrderId, Parent: order.ParentTradeId, Order: order.ID, Network: order.Network, Token: order.Token})
 			// StatusWaitSelect placeholders have not reserved a wallet or
 			// amount yet, so there is no transaction lock to release.
 			if order.Status == mdb.StatusWaitSelect {
@@ -173,11 +177,15 @@ func processCallback(tradeID string, limiter <-chan struct{}) {
 	}
 
 	if err = data.SaveCallBackOrdersResp(freshOrder); err != nil {
+		diagnostics.Record(diagnostics.Event{Event: "callback.persist", Trade: tradeID, Outcome: "failed"})
 		log.Sugar.Errorf("[mq] save callback result failed, trade_id=%s, err=%v", freshOrder.TradeId, err)
 	}
 }
 
 func sendOrderCallback(order *mdb.Orders) error {
+	event := diagnostics.Event{Event: "callback.attempt", Order: order.ID, Trade: order.TradeId, MerchantOrder: order.OrderId, Hash: order.BlockTransactionId, Network: order.Network, Attempt: order.CallbackNum + 1, Outcome: "prepare_failed"}
+	started := time.Now()
+	defer func() { event.Latency = time.Since(started).Milliseconds(); diagnostics.Record(event) }()
 	apiKeyRow, err := service.ResolveOrderApiKey(order)
 	if err != nil {
 		return err
@@ -190,16 +198,20 @@ func sendOrderCallback(order *mdb.Orders) error {
 			return err
 		}
 
+		event.Outcome = "transport_error"
 		epayResp, err := http_client.GetCallbackHttpClient().R().SetQueryParams(formData).Get(order.NotifyUrl)
 		if err != nil {
 			// HTTP errors can include the full signed callback URL.
 			return errors.New("EPay callback request failed")
 		}
 		log.Sugar.Infof("[mq] epay notify_url response status: %d", epayResp.StatusCode())
+		event.HTTP = epayResp.StatusCode()
+		event.Outcome = "http_error"
 		if epayResp.StatusCode() != http.StatusOK {
 			return errors.New(epayResp.Status())
 		}
 		if !isCallbackAck(epayResp.Body()) {
+			event.Outcome = "invalid_ack"
 			return errors.New("not ok")
 		}
 
@@ -213,6 +225,8 @@ func sendOrderCallback(order *mdb.Orders) error {
 				return err
 			}
 			settled = &child
+			event.Network = child.Network
+			event.Hash = child.BlockTransactionId
 		}
 		client := http_client.GetCallbackHttpClient()
 		orderResp := response.OrderNotifyResponse{
@@ -235,6 +249,7 @@ func sendOrderCallback(order *mdb.Orders) error {
 		}
 		orderResp.Signature = signature
 
+		event.Outcome = "transport_error"
 		resp, err := client.R().
 			SetHeader("powered-by", "Epusdt(https://github.com/GMwalletApp/epusdt)").
 			SetBody(orderResp).
@@ -242,14 +257,18 @@ func sendOrderCallback(order *mdb.Orders) error {
 		if err != nil {
 			return err
 		}
+		event.HTTP = resp.StatusCode()
+		event.Outcome = "http_error"
 		if resp.StatusCode() != http.StatusOK {
 			return errors.New(resp.Status())
 		}
 		if !isCallbackAck(resp.Body()) {
+			event.Outcome = "invalid_ack"
 			return errors.New("not ok")
 		}
 	}
 
+	event.Outcome = "acknowledged"
 	return nil
 }
 

@@ -23,6 +23,8 @@ cp -n .env.example .env
 ```dotenv
 app_uri=https://pay.example.com
 http_listen=127.0.0.1:8000
+# 仅当应用前方有反向代理时填写代理 IP/CIDR，多个值用逗号分隔。
+http_trusted_proxies=127.0.0.1/32
 runtime_root_path=./runtime
 sqlite_database_filename=epusdt.db
 install=false

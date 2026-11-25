@@ -3034,6 +3034,25 @@ paths:
       summary: RPC runtime statistics
       tags:
       - Admin Dashboard
+  /admin/api/v1/diagnostics/export:
+    get:
+      parameters:
+      - description: Exact gateway trade ID, merchant order ID or transaction hash
+        in: query
+        name: reference
+        type: string
+      produces:
+      - application/x-ndjson
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      security:
+      - AdminJWT: []
+      summary: Download detailed diagnostic events (JSON Lines)
+      tags:
+      - Admin Settings
   /admin/api/v1/notification-channels:
     get:
       description: Returns notification channels, optionally filtered by type

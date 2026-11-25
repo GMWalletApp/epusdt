@@ -9,7 +9,9 @@ import (
 
 	scanner "github.com/GMWalletApp/ChainScanner"
 	"github.com/GMWalletApp/epusdt/config"
+	"github.com/GMWalletApp/epusdt/internal/diagnostics"
 	"github.com/GMWalletApp/epusdt/model/data"
+	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/GMWalletApp/epusdt/model/service"
 	"github.com/GMWalletApp/epusdt/util/log"
 )
@@ -17,12 +19,19 @@ import (
 func Start() (config.ScannerConnection, func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var workers sync.WaitGroup
+	stopDiagnostics, diagErr := diagnostics.Start(context.Background(), filepath.Join(config.RuntimePath, "diagnostics"), func() bool { return data.GetSettingBool(mdb.SettingKeyDetailedDiagnostics, true) })
+	if diagErr != nil {
+		log.Sugar.Error("[diagnostics] unable to open support log store")
+	}
 	var closeEmbedded func()
 	stop := func() {
 		cancel()
 		workers.Wait()
 		if closeEmbedded != nil {
 			closeEmbedded()
+		}
+		if stopDiagnostics != nil {
+			stopDiagnostics()
 		}
 	}
 	// Hosted OKX payments settle independently of the on-chain scanner.
@@ -44,6 +53,10 @@ func Start() (config.ScannerConnection, func()) {
 		connection, closeEmbedded, err = startLocalScanner(ctx)
 	}
 	data.UseScannerNodes(connection)
+	diagnostics.Record(diagnostics.Event{Event: "gateway.start", Version: config.GetAppVersion()})
+	if err == nil {
+		workers.Go(func() { recordNodeHealth(ctx, connection) })
+	}
 	if err == nil && connection.Embedded {
 		if _, migrationErr := data.MigrateScannerNodes(ctx, connection, true, nil); migrationErr != nil {
 			log.Sugar.Errorf("[ChainScanner] node migration: %v", migrationErr)
@@ -53,6 +66,7 @@ func Start() (config.ScannerConnection, func()) {
 		err = startPaymentFeed(ctx, &workers, connection)
 	}
 	if err != nil {
+		diagnostics.Record(diagnostics.Event{Event: "scanner.start", Outcome: "unavailable"})
 		service.EnsurePaymentWatch = func(string, string) error { return err }
 		log.Sugar.Errorf("[ChainScanner] %v", err)
 	}
@@ -104,6 +118,7 @@ func startPaymentFeed(ctx context.Context, workers *sync.WaitGroup, connection c
 		defer ticker.Stop()
 		for ctx.Err() == nil {
 			if err := subscriptions.refresh(ctx); err != nil && ctx.Err() == nil {
+				diagnostics.Record(diagnostics.Event{Event: "scanner.subscription", Outcome: "refresh_failed"})
 				log.Sugar.Errorf("[ChainScanner] subscribe: %v", err)
 			}
 			select {

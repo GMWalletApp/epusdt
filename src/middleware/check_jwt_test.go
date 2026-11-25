@@ -6,10 +6,12 @@ import (
 	"testing"
 
 	"github.com/GMWalletApp/epusdt/internal/testutil"
+	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	appjwt "github.com/GMWalletApp/epusdt/util/jwt"
 	"github.com/labstack/echo/v4"
+	"gorm.io/gorm"
 )
 
 func TestAdminTokenFromAuthorization(t *testing.T) {
@@ -72,7 +74,11 @@ func TestCheckAdminJWTAcceptsBearerAndBareTokens(t *testing.T) {
 	if err := data.SetSetting(mdb.SettingGroupSystem, mdb.SettingKeyJwtSecret, "test-jwt-secret", mdb.SettingTypeString); err != nil {
 		t.Fatalf("seed jwt secret: %v", err)
 	}
-	token, err := appjwt.Sign(42, "admin")
+	user := &mdb.AdminUser{Username: "admin", Status: mdb.AdminUserStatusEnable}
+	if err := dao.Mdb.Create(user).Error; err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+	token, err := appjwt.Sign(user.ID, user.Username, user.SessionVersion)
 	if err != nil {
 		t.Fatalf("sign jwt: %v", err)
 	}
@@ -96,8 +102,8 @@ func TestCheckAdminJWTAcceptsBearerAndBareTokens(t *testing.T) {
 			e := echo.New()
 			e.Use(CheckAdminJWT())
 			e.GET("/", func(ctx echo.Context) error {
-				if got := ctx.Get(AdminUserIDKey); got != uint64(42) {
-					t.Fatalf("%s = %v, want 42", AdminUserIDKey, got)
+				if got := ctx.Get(AdminUserIDKey); got != user.ID {
+					t.Fatalf("%s = %v, want %d", AdminUserIDKey, got, user.ID)
 				}
 				if got := ctx.Get(AdminUsernameKey); got != "admin" {
 					t.Fatalf("%s = %v, want admin", AdminUsernameKey, got)
@@ -114,5 +120,51 @@ func TestCheckAdminJWTAcceptsBearerAndBareTokens(t *testing.T) {
 				t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNoContent, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestCheckAdminJWTRejectsRevokedAndDisabledUsers(t *testing.T) {
+	cleanup := testutil.SetupTestDatabases(t)
+	defer cleanup()
+	if err := data.SetSetting(mdb.SettingGroupSystem, mdb.SettingKeyJwtSecret, "test-jwt-secret", mdb.SettingTypeString); err != nil {
+		t.Fatal(err)
+	}
+	user := &mdb.AdminUser{Username: "admin", Status: mdb.AdminUserStatusEnable}
+	if err := dao.Mdb.Create(user).Error; err != nil {
+		t.Fatal(err)
+	}
+	token, err := appjwt.Sign(user.ID, user.Username, user.SessionVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := echo.New()
+	e.Use(CheckAdminJWT())
+	e.GET("/", func(ctx echo.Context) error { return ctx.NoContent(http.StatusNoContent) })
+	request := func() int {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set(echo.HeaderAuthorization, "Bearer "+token)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if got := request(); got != http.StatusNoContent {
+		t.Fatalf("valid token status=%d", got)
+	}
+	if err := dao.Mdb.Model(user).Update("session_version", gorm.Expr("session_version + 1")).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got := request(); got != http.StatusUnauthorized {
+		t.Fatalf("revoked token status=%d", got)
+	}
+	user.SessionVersion++
+	token, err = appjwt.Sign(user.ID, user.Username, user.SessionVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := dao.Mdb.Model(user).Update("status", mdb.AdminUserStatusDisable).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got := request(); got != http.StatusUnauthorized {
+		t.Fatalf("disabled user's token status=%d", got)
 	}
 }

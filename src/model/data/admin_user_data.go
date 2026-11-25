@@ -275,10 +275,17 @@ func UpdateAdminUserPassword(id uint64, newPlain string) error {
 	clearedPlaintext := false
 	changedCacheValue := ""
 	err = dao.Mdb.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&mdb.AdminUser{}).
+		result := tx.Model(&mdb.AdminUser{}).
 			Where("id = ?", id).
-			Update("password_hash", hash).Error; err != nil {
-			return err
+			Updates(map[string]any{
+				"password_hash":   hash,
+				"session_version": gorm.Expr("session_version + 1"),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
 		}
 
 		var plainRow mdb.Setting

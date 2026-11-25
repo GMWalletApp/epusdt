@@ -15,6 +15,7 @@ import (
 
 	scanner "github.com/GMWalletApp/ChainScanner"
 	"github.com/GMWalletApp/epusdt/config"
+	"github.com/GMWalletApp/epusdt/internal/diagnostics"
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
@@ -193,7 +194,25 @@ func replayAfterCreateError(requested *mdb.Orders, createErr error) (*response.C
 }
 
 // CreateTransaction creates a new payment order.
-func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey) (*response.CreateTransactionResponse, error) {
+func CreateTransaction(req *request.CreateTransactionRequest, apiKey *mdb.ApiKey) (result *response.CreateTransactionResponse, createErr error) {
+	defer func() {
+		if req == nil || !diagnostics.Enabled() {
+			return
+		}
+		e := diagnostics.Event{Event: "order.create", MerchantOrder: req.OrderId}
+		if createErr != nil {
+			e.Outcome = "failed"
+			e.Code, _ = constant.ResolveErrno(createErr)
+		} else if result != nil {
+			e.Outcome = "accepted"
+			e.Trade = result.TradeId
+			e.Status = result.Status
+			e.Token = result.Token
+			e.Network = strings.ToLower(strings.TrimSpace(req.Network))
+			e.Amount = result.ActualAmount
+		}
+		diagnostics.Record(e)
+	}()
 	if req == nil || stdmath.IsNaN(req.Amount) || stdmath.IsInf(req.Amount, 0) {
 		return nil, constant.PayAmountErr
 	}
@@ -341,6 +360,7 @@ func orderProcessingWithAllowedStatuses(req *request.OrderProcessingRequest, all
 	gOrderProcessingLock.Lock()
 	defer gOrderProcessingLock.Unlock()
 	var release []mdb.Orders
+	var paid diagnostics.Event
 	err := dao.Mdb.Transaction(func(tx *gorm.DB) error {
 		var order mdb.Orders
 		if err := tx.Where("trade_id = ?", req.TradeId).Take(&order).Error; err != nil {
@@ -401,6 +421,7 @@ func orderProcessingWithAllowedStatuses(req *request.OrderProcessingRequest, all
 			}
 			release = append(release, sub)
 		}
+		paid = diagnostics.Event{Event: "order.settle", Outcome: "paid", Trade: order.TradeId, Parent: order.ParentTradeId, MerchantOrder: head.OrderId, Order: order.ID, Hash: req.BlockTransactionId, Network: order.Network, Token: order.Token, Amount: order.ActualAmount, Status: mdb.StatusPaySuccess}
 		release = append(release, order)
 		if head.ID != order.ID {
 			release = append(release, head)
@@ -410,6 +431,7 @@ func orderProcessingWithAllowedStatuses(req *request.OrderProcessingRequest, all
 	if err != nil {
 		return err
 	}
+	diagnostics.Record(paid)
 	for _, o := range release {
 		if hasTransactionLock(&o) {
 			if err := data.UnLockTransactionByTradeId(o.TradeId); err != nil {
@@ -574,6 +596,7 @@ func submitManualPaymentForOrder(order *mdb.Orders, blockTransactionId string, a
 
 	verifiedBlockTransactionID, err := ValidateManualOrderPayment(order, blockTransactionId)
 	if err != nil {
+		diagnostics.Record(diagnostics.Event{Event: "order.manual_verify", Trade: order.TradeId, Order: order.ID, Network: order.Network, Outcome: "verification_failed", MerchantOrder: order.OrderId, Parent: order.ParentTradeId})
 		var rspErr *constant.RspError
 		if errors.As(err, &rspErr) {
 			return nil, err
