@@ -25,6 +25,8 @@ import (
 
 type TransactionLookup func(context.Context, string, string) (json.RawMessage, error)
 
+type ObservedTransactionLookup func(ctx context.Context, network, hash string, height int64) (json.RawMessage, error)
+
 // Installed during startup for subscription and manual on-chain payment checks.
 var LookupPaymentTransaction TransactionLookup
 
@@ -95,7 +97,7 @@ var errInactiveCandidate = errors.New("payment candidate no longer active")
 
 // Each worker claims one due transfer. A crash releases the claim at its deadline.
 // Failed lookups leave other orders and subsequent feed deliveries free to proceed.
-func RunPaymentConfirmations(ctx context.Context, feed scanner.Feed, lookup TransactionLookup) {
+func RunPaymentConfirmations(ctx context.Context, feed scanner.Feed, lookup ObservedTransactionLookup) {
 	for ctx.Err() == nil {
 		worked, err := processDueConfirmation(ctx, feed, lookup)
 		if err != nil && ctx.Err() == nil {
@@ -112,7 +114,7 @@ func RunPaymentConfirmations(ctx context.Context, feed scanner.Feed, lookup Tran
 	}
 }
 
-func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup TransactionLookup) (bool, error) {
+func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup ObservedTransactionLookup) (bool, error) {
 	db := dao.Mdb.WithContext(ctx)
 	var job mdb.PaymentConfirmation
 	now := time.Now()
@@ -134,11 +136,11 @@ func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup Trans
 		return db.Model(&mdb.PaymentConfirmation{}).Where("id = ? AND retry_at = ?", job.ID, lease)
 	}
 	var lookupFailed bool
-	err = ConfirmPayment(call, feed, func(ctx context.Context, network, hash string) (json.RawMessage, error) {
+	err = ConfirmPayment(call, feed, func(ctx context.Context, network, hash string, height int64) (json.RawMessage, error) {
 		if job.VerifiedResult != "" {
 			return json.RawMessage(job.VerifiedResult), nil
 		}
-		v, err := lookup(ctx, network, hash)
+		v, err := lookup(ctx, network, hash, height)
 		if err != nil {
 			lookupFailed = true
 			return nil, err
@@ -176,7 +178,7 @@ func processDueConfirmation(ctx context.Context, feed scanner.Feed, lookup Trans
 	return err == nil, err
 }
 
-func ConfirmPayment(ctx context.Context, feed scanner.Feed, lookup TransactionLookup, job mdb.PaymentConfirmation) error {
+func ConfirmPayment(ctx context.Context, feed scanner.Feed, lookup ObservedTransactionLookup, job mdb.PaymentConfirmation) error {
 	var order mdb.Orders
 	if err := dao.Mdb.WithContext(ctx).Where("id = ?", job.OrderID).Take(&order).Error; err != nil {
 		return err
@@ -226,7 +228,7 @@ func ConfirmPayment(ctx context.Context, feed scanner.Feed, lookup TransactionLo
 		if lookup == nil {
 			return errors.New("transaction recheck unavailable")
 		}
-		if _, err := lookup(ctx, e.Network, e.TxID); err != nil {
+		if _, err := lookup(ctx, e.Network, e.TxID, e.Height); err != nil {
 			return err
 		}
 	}

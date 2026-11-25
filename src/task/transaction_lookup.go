@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,12 +25,12 @@ func newTransactionClient(client scanner.Client) *transactionClient {
 	return &transactionClient{client, transport}
 }
 func (c *transactionClient) full(ctx context.Context, network, hash string) (json.RawMessage, error) {
-	return c.query(ctx, network, hash, true)
+	return c.query(ctx, network, hash, true, 0)
 }
-func (c *transactionClient) automatic(ctx context.Context, network, hash string) (json.RawMessage, error) {
-	return c.query(ctx, network, hash, false)
+func (c *transactionClient) automatic(ctx context.Context, network, hash string, height int64) (json.RawMessage, error) {
+	return c.query(ctx, network, hash, false, height)
 }
-func (c *transactionClient) query(ctx context.Context, network, hash string, manual bool) (json.RawMessage, error) {
+func (c *transactionClient) query(ctx context.Context, network, hash string, manual bool, height int64) (json.RawMessage, error) {
 	if !scanner.Supported(network) || hash == "" || strings.ContainsAny(hash, "/?#") {
 		return nil, errors.New("invalid transaction lookup")
 	}
@@ -37,7 +38,7 @@ func (c *transactionClient) query(ctx context.Context, network, hash string, man
 	if manual {
 		target += "?manual=true"
 	} else {
-		target += "?observed=true"
+		target += "?observed=true&observed_height=" + strconv.FormatInt(height, 10)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
@@ -50,15 +51,17 @@ func (c *transactionClient) query(ctx context.Context, network, hash string, man
 	}
 	defer res.Body.Close()
 	source := res.Header.Get("X-ChainScanner-Scan-Source")
-	independent := source == "excluded" || manual && source == "unobserved"
-	if res.StatusCode == http.StatusNotFound && independent && res.Header.Get("X-ChainScanner-Evidence") == "not_found" {
+	observed := source == "excluded" || source == "fallback_reused"
+	accepted := observed || manual && source == "unobserved"
+	heightChecked := res.Header.Get("X-ChainScanner-Height-Checked") == "true"
+	if res.StatusCode == http.StatusNotFound && accepted && res.Header.Get("X-ChainScanner-Evidence") == "not_found" && (heightChecked || !observed) {
 		return nil, service.ErrTransactionNotFound
 	}
 	if res.StatusCode != 200 {
 		return nil, fmt.Errorf("ChainScanner transaction lookup HTTP %d", res.StatusCode)
 	}
-	if !independent {
-		return nil, errors.New("ChainScanner did not confirm scan-source exclusion")
+	if !accepted {
+		return nil, errors.New("ChainScanner did not confirm an eligible lookup source")
 	}
 	var body struct {
 		Network, Hash string

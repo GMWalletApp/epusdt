@@ -17,15 +17,16 @@ var errCapacity = errors.New("insufficient available transaction nodes")
 var errLookup = errors.New("transaction lookup failed")
 
 type lookupCandidate struct {
-	weight     int
-	healthy    bool
-	fallback   bool
-	peerID     string
-	primaryURL string
-	cfg        chains.Network
-	public     bool
-	version    nodeVersion
-	key        string
+	sourceStatus string
+	weight       int
+	healthy      bool
+	fallback     bool
+	peerID       string
+	primaryURL   string
+	cfg          chains.Network
+	public       bool
+	version      nodeVersion
+	key          string
 }
 type lookupPenalty struct {
 	streak                   failureStreak
@@ -36,7 +37,7 @@ type transactionLookup struct {
 	mu        sync.Mutex
 	penalties map[nodeVersion]lookupPenalty
 	nextSweep time.Time
-	probe     func(context.Context, chains.Network, bool) error
+	probe     func(context.Context, chains.Network, bool) (int64, error)
 	read      func(context.Context, chains.Network, string, bool) (json.RawMessage, error)
 }
 
@@ -140,7 +141,7 @@ func (r *NodeRegistry) readCandidate(ctx context.Context, c lookupCandidate, can
 	r.lookup.mu.Unlock()
 	if !healthy {
 		probe, cancel := context.WithTimeout(ctx, 2*time.Second)
-		err := r.lookup.probe(probe, c.cfg, c.public)
+		_, err := r.lookup.probe(probe, c.cfg, c.public)
 		cancel()
 		if err != nil {
 			return nil, errCapacity
@@ -161,6 +162,26 @@ func (r *NodeRegistry) readCandidate(ctx context.Context, c lookupCandidate, can
 		return nil, err
 	}
 	return raw, nil
+}
+
+// A node can catch up between the empty reply and the height query. Only
+// accept absence from a new read after that same route has passed the block.
+func (r *NodeRegistry) lookupAtObservedHeight(ctx context.Context, c lookupCandidate, candidates []lookupCandidate, hash string, height int64) (json.RawMessage, error) {
+	raw, err := r.readCandidate(ctx, c, candidates, hash)
+	if c.sourceStatus == "unobserved" || !errors.Is(err, chains.ErrTransactionMissing) {
+		return raw, err
+	}
+	if height < 0 {
+		return nil, chains.ErrTransactionPending
+	}
+	head, err := r.lookup.probe(ctx, c.cfg, c.public)
+	if err != nil {
+		return nil, errCapacity
+	}
+	if head <= height {
+		return nil, chains.ErrTransactionPending
+	}
+	return r.readCandidate(ctx, c, candidates, hash)
 }
 
 type transactionReader func(context.Context, chains.Network, string, bool) (json.RawMessage, error)
