@@ -4547,6 +4547,129 @@
                 }
             }
         },
+        "admin.AdminOrder": {
+            "type": "object",
+            "properties": {
+                "actual_amount": {
+                    "type": "number",
+                    "example": 14.2857
+                },
+                "amount": {
+                    "type": "number",
+                    "example": 100
+                },
+                "api_key_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "block_transaction_id": {
+                    "type": "string",
+                    "example": "0xabc123..."
+                },
+                "callback_confirm": {
+                    "description": "回调确认状态 1=回调成功 2=未回调/回调失败",
+                    "type": "integer",
+                    "enum": [
+                        1,
+                        2
+                    ],
+                    "example": 2
+                },
+                "callback_num": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-11-25 14:29:28"
+                },
+                "currency": {
+                    "type": "string",
+                    "example": "CNY"
+                },
+                "deleted_at": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "is_selected": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "name": {
+                    "type": "string",
+                    "example": "VIP月卡"
+                },
+                "network": {
+                    "type": "string",
+                    "example": "tron"
+                },
+                "notify_url": {
+                    "type": "string",
+                    "example": "https://example.com/notify"
+                },
+                "order_id": {
+                    "type": "string",
+                    "example": "ORD20260416001"
+                },
+                "parent_trade_id": {
+                    "type": "string"
+                },
+                "pay_by_sub_id": {
+                    "description": "PayBySubId holds the primary-key ID of the sub-order that settled this parent order.\nZero when the parent order was paid directly (no sub-order involved).",
+                    "type": "integer",
+                    "example": 0
+                },
+                "pay_provider": {
+                    "description": "PayProvider identifies how this specific order row is collected.\n\nSemantics:\n  - chain parent orders and regular chain child orders use on_chain\n  - third-party hosted checkout rows use their provider name\n    (for example okpay)\n\nExisting rows default to on_chain for backward compatibility so upgrades\ncan rely on AutoMigrate without rewriting old orders.",
+                    "type": "string",
+                    "example": "on_chain"
+                },
+                "payment_type": {
+                    "description": "PaymentType is not a channel selector. \"Epay\" changes callback format\nto legacy EPay case-insensitively; \"Gmpay\" uses GMPay JSON.",
+                    "type": "string",
+                    "example": "Epay"
+                },
+                "receive_address": {
+                    "type": "string",
+                    "example": "TTestTronAddress001"
+                },
+                "redirect_url": {
+                    "type": "string",
+                    "example": "https://example.com/success"
+                },
+                "review_transaction_hash": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核",
+                    "type": "integer",
+                    "enum": [
+                        1,
+                        2,
+                        3,
+                        4,
+                        5,
+                        6
+                    ],
+                    "example": 1
+                },
+                "token": {
+                    "type": "string",
+                    "example": "USDT"
+                },
+                "trade_id": {
+                    "type": "string",
+                    "example": "3nQ9pL2xV7sK1mR8cT4yB_aZ"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-11-25 14:30:31"
+                }
+            }
+        },
         "admin.AdminUpdateWalletRequest": {
             "type": "object",
             "properties": {
@@ -4835,7 +4958,7 @@
                 "list": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/mdb.Orders"
+                        "$ref": "#/definitions/admin.AdminOrder"
                     }
                 },
                 "page": {
@@ -4911,7 +5034,7 @@
                 },
                 "created_at": {
                     "type": "string",
-                    "example": "2026-04-16 12:00:00"
+                    "example": "2026-11-25 14:29:28"
                 },
                 "currency": {
                     "type": "string",
@@ -4989,7 +5112,7 @@
                 "sub_orders": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/mdb.Orders"
+                        "$ref": "#/definitions/admin.AdminOrder"
                     }
                 },
                 "token": {
@@ -5002,7 +5125,7 @@
                 },
                 "updated_at": {
                     "type": "string",
-                    "example": "2026-04-16 12:00:00"
+                    "example": "2026-11-25 14:30:31"
                 }
             }
         },

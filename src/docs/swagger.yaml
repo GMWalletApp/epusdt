@@ -43,6 +43,112 @@ definitions:
         example: 1
         type: integer
     type: object
+  admin.AdminOrder:
+    properties:
+      actual_amount:
+        example: 14.2857
+        type: number
+      amount:
+        example: 100
+        type: number
+      api_key_id:
+        example: 1
+        type: integer
+      block_transaction_id:
+        example: 0xabc123...
+        type: string
+      callback_confirm:
+        description: 回调确认状态 1=回调成功 2=未回调/回调失败
+        enum:
+        - 1
+        - 2
+        example: 2
+        type: integer
+      callback_num:
+        example: 0
+        type: integer
+      created_at:
+        example: "2026-11-25 14:29:28"
+        type: string
+      currency:
+        example: CNY
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      id:
+        example: 1
+        type: integer
+      is_selected:
+        example: false
+        type: boolean
+      name:
+        example: VIP月卡
+        type: string
+      network:
+        example: tron
+        type: string
+      notify_url:
+        example: https://example.com/notify
+        type: string
+      order_id:
+        example: ORD20260416001
+        type: string
+      parent_trade_id:
+        type: string
+      pay_by_sub_id:
+        description: |-
+          PayBySubId holds the primary-key ID of the sub-order that settled this parent order.
+          Zero when the parent order was paid directly (no sub-order involved).
+        example: 0
+        type: integer
+      pay_provider:
+        description: |-
+          PayProvider identifies how this specific order row is collected.
+
+          Semantics:
+            - chain parent orders and regular chain child orders use on_chain
+            - third-party hosted checkout rows use their provider name
+              (for example okpay)
+
+          Existing rows default to on_chain for backward compatibility so upgrades
+          can rely on AutoMigrate without rewriting old orders.
+        example: on_chain
+        type: string
+      payment_type:
+        description: |-
+          PaymentType is not a channel selector. "Epay" changes callback format
+          to legacy EPay case-insensitively; "Gmpay" uses GMPay JSON.
+        example: Epay
+        type: string
+      receive_address:
+        example: TTestTronAddress001
+        type: string
+      redirect_url:
+        example: https://example.com/success
+        type: string
+      review_transaction_hash:
+        type: string
+      status:
+        description: 订单状态 1=等待支付 2=支付成功 3=已过期 4=等待选择支付网络/币种 5=链上确认中 6=待人工复核
+        enum:
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+        - 6
+        example: 1
+        type: integer
+      token:
+        example: USDT
+        type: string
+      trade_id:
+        example: 3nQ9pL2xV7sK1mR8cT4yB_aZ
+        type: string
+      updated_at:
+        example: "2026-11-25 14:30:31"
+        type: string
+    type: object
   admin.AdminUpdateWalletRequest:
     properties:
       remark:
@@ -251,7 +357,7 @@ definitions:
     properties:
       list:
         items:
-          $ref: '#/definitions/mdb.Orders'
+          $ref: '#/definitions/admin.AdminOrder'
         type: array
       page:
         example: 1
@@ -306,7 +412,7 @@ definitions:
         example: 0
         type: integer
       created_at:
-        example: "2026-04-16 12:00:00"
+        example: "2026-11-25 14:29:28"
         type: string
       currency:
         example: CNY
@@ -379,7 +485,7 @@ definitions:
         type: integer
       sub_orders:
         items:
-          $ref: '#/definitions/mdb.Orders'
+          $ref: '#/definitions/admin.AdminOrder'
         type: array
       token:
         example: USDT
@@ -388,7 +494,7 @@ definitions:
         example: 3nQ9pL2xV7sK1mR8cT4yB_aZ
         type: string
       updated_at:
-        example: "2026-04-16 12:00:00"
+        example: "2026-11-25 14:30:31"
         type: string
     type: object
   admin.OrderWithSubListResponse:

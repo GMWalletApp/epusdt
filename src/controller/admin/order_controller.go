@@ -14,12 +14,44 @@ import (
 	"github.com/GMWalletApp/epusdt/model/service"
 	"github.com/GMWalletApp/epusdt/util/constant"
 	"github.com/GMWalletApp/epusdt/util/log"
+	"github.com/dromara/carbon/v2"
 	"github.com/labstack/echo/v4"
 )
 
+// AdminOrder keeps the order fields unchanged except for timestamps, which
+// are returned as full local date-times instead of time-only strings.
+type AdminOrder struct {
+	mdb.Orders
+	CreatedAt string `json:"created_at" example:"2026-11-25 14:29:28"`
+	UpdatedAt string `json:"updated_at" example:"2026-11-25 14:30:31"`
+}
+
+func formatAdminOrderTime(t carbon.Time) string {
+	if t.IsNil() || t.IsZero() {
+		return ""
+	}
+	return t.ToDateTimeString(carbon.HongKong)
+}
+
+func newAdminOrder(order mdb.Orders) AdminOrder {
+	return AdminOrder{
+		Orders:    order,
+		CreatedAt: formatAdminOrderTime(order.CreatedAt),
+		UpdatedAt: formatAdminOrderTime(order.UpdatedAt),
+	}
+}
+
+func newAdminOrders(orders []mdb.Orders) []AdminOrder {
+	out := make([]AdminOrder, 0, len(orders))
+	for _, order := range orders {
+		out = append(out, newAdminOrder(order))
+	}
+	return out
+}
+
 // OrderListResponse wraps the paginated order list.
 type OrderListResponse struct {
-	List     []mdb.Orders `json:"list"`
+	List     []AdminOrder `json:"list"`
 	Total    int64        `json:"total" example:"100"`
 	Page     int          `json:"page" example:"1"`
 	PageSize int          `json:"page_size" example:"20"`
@@ -27,8 +59,8 @@ type OrderListResponse struct {
 
 // OrderWithSub embeds a parent order together with its child orders.
 type OrderWithSub struct {
-	mdb.Orders
-	SubOrders []mdb.Orders `json:"sub_orders"`
+	AdminOrder
+	SubOrders []AdminOrder `json:"sub_orders"`
 }
 
 // OrderWithSubListResponse wraps the paginated list-with-sub result.
@@ -64,7 +96,7 @@ func (c *BaseAdminController) ListOrders(ctx echo.Context) error {
 		return c.FailJson(ctx, err)
 	}
 	return c.SucJson(ctx, map[string]interface{}{
-		"list":      rows,
+		"list":      newAdminOrders(rows),
 		"total":     total,
 		"page":      f.Page,
 		"page_size": f.PageSize,
@@ -90,7 +122,7 @@ func (c *BaseAdminController) GetOrder(ctx echo.Context) error {
 	if order.ID == 0 {
 		return c.FailJson(ctx, constant.OrderNotExists)
 	}
-	return c.SucJson(ctx, order)
+	return c.SucJson(ctx, newAdminOrder(*order))
 }
 
 // CloseOrder flips a waiting order to expired and releases its lock.
@@ -275,7 +307,7 @@ func (c *BaseAdminController) ExportOrders(ctx echo.Context) error {
 			r.ReceiveAddress,
 			strconv.Itoa(r.Status),
 			r.BlockTransactionId,
-			r.CreatedAt.ToDateTimeString(),
+			formatAdminOrderTime(r.CreatedAt),
 		})
 	}
 	w.Flush()
@@ -379,7 +411,7 @@ func (c *BaseAdminController) ListOrdersWithSub(ctx echo.Context) error {
 		if children == nil {
 			children = []mdb.Orders{}
 		}
-		list = append(list, OrderWithSub{Orders: r, SubOrders: children})
+		list = append(list, OrderWithSub{AdminOrder: newAdminOrder(r), SubOrders: newAdminOrders(children)})
 	}
 
 	return c.SucJson(ctx, OrderWithSubListResponse{
@@ -427,5 +459,5 @@ func (c *BaseAdminController) GetOrderWithSub(ctx echo.Context) error {
 	if subOrders == nil {
 		subOrders = []mdb.Orders{}
 	}
-	return c.SucJson(ctx, OrderWithSub{Orders: *order, SubOrders: subOrders})
+	return c.SucJson(ctx, OrderWithSub{AdminOrder: newAdminOrder(*order), SubOrders: newAdminOrders(subOrders)})
 }

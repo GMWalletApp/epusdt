@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/GMWalletApp/epusdt/config"
+	"github.com/GMWalletApp/epusdt/controller/admin"
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
@@ -652,6 +653,62 @@ func TestAdminOrders_List(t *testing.T) {
 	rec := doGetAdmin(e, "/admin/api/v1/orders", token)
 	t.Logf("ListOrders: %s", rec.Body.String())
 	assertOK(t, rec)
+}
+
+// TestAdminOrders_TimestampsUseHongKongTime verifies admin order responses
+// expose full local date-times even when the database contains mixed offsets.
+func TestAdminOrders_TimestampsUseHongKongTime(t *testing.T) {
+	e, token := setupAdminTestEnv(t)
+	order := &mdb.Orders{
+		TradeId:        "trade-admin-time",
+		OrderId:        "order-admin-time",
+		Amount:         2,
+		Currency:       "CNY",
+		ActualAmount:   0.29,
+		ReceiveAddress: "0x1111111111111111111111111111111111111111",
+		Token:          "USDT",
+		Network:        mdb.NetworkBsc,
+		Status:         mdb.StatusPaySuccess,
+	}
+	if err := dao.Mdb.Create(order).Error; err != nil {
+		t.Fatalf("create order: %v", err)
+	}
+
+	hkt := time.FixedZone("HKT", 8*60*60)
+	created := time.Date(2026, 11, 25, 14, 29, 28, 0, hkt)
+	updated := created.Add(time.Minute)
+	if err := dao.Mdb.Model(order).Updates(map[string]interface{}{
+		"created_at": created.UTC(),
+		"updated_at": updated,
+	}).Error; err != nil {
+		t.Fatalf("set order timestamps: %v", err)
+	}
+
+	rec := doGetAdmin(e, "/admin/api/v1/orders/"+order.TradeId, token)
+	var detail struct {
+		Data admin.AdminOrder
+	}
+	assertOK(t, rec)
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("decode order detail: %v", err)
+	}
+	if detail.Data.CreatedAt != "2026-11-25 14:29:28" || detail.Data.UpdatedAt != "2026-11-25 14:30:28" {
+		t.Fatalf("detail timestamps = %q / %q", detail.Data.CreatedAt, detail.Data.UpdatedAt)
+	}
+
+	rec = doGetAdmin(e, "/admin/api/v1/orders?keyword="+order.TradeId, token)
+	var list struct {
+		Data struct {
+			List []admin.AdminOrder
+		}
+	}
+	assertOK(t, rec)
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode order list: %v", err)
+	}
+	if len(list.Data.List) != 1 || list.Data.List[0].CreatedAt != "2026-11-25 14:29:28" || list.Data.List[0].UpdatedAt != "2026-11-25 14:30:28" {
+		t.Fatalf("list timestamps = %+v", list.Data.List)
+	}
 }
 
 // TestAdminOrders_Export verifies the export endpoint is accessible.
@@ -2567,7 +2624,7 @@ func TestAdminOrders_SettledFamily(t *testing.T) {
 		var response struct {
 			Data struct {
 				Total int
-				List  []mdb.Orders
+				List  []admin.AdminOrder
 			}
 		}
 		assertOK(t, rec)
@@ -2582,8 +2639,8 @@ func TestAdminOrders_SettledFamily(t *testing.T) {
 		rec := doGetAdmin(e, base+"/"+id+"/with-sub", token)
 		var response struct {
 			Data struct {
-				mdb.Orders
-				Attempts []mdb.Orders `json:"sub_orders"`
+				admin.AdminOrder
+				Attempts []admin.AdminOrder `json:"sub_orders"`
 			}
 		}
 		assertOK(t, rec)

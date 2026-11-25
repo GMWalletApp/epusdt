@@ -465,7 +465,7 @@ func (c *BaseAdminController) RecentOrders(ctx echo.Context) error {
 	if err != nil {
 		return c.FailJson(ctx, err)
 	}
-	return c.SucJson(ctx, rows)
+	return c.SucJson(ctx, newAdminOrders(rows))
 }
 
 // parseRange maps the ?range=... shorthand to a concrete [start, end].
