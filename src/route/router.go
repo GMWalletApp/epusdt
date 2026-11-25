@@ -104,6 +104,7 @@ func RegisterRouteWithScanner(e *echo.Echo, connection config.ScannerConnection)
 	// removed — the default seeded api_key is always available, and
 	// having two sources of truth led to inbound/outbound sig mismatch.
 	epayV1 := paymentRoute.Group("/epay/v1")
+	epayV1.Match([]string{http.MethodGet, http.MethodPost}, "/order/create-transaction/api.php", epayOrderQuery)
 	epayV1.Match([]string{http.MethodPost, http.MethodGet}, "/order/create-transaction/submit.php", func(ctx echo.Context) error {
 		params := make(map[string]interface{})
 		copyParams := func(values map[string][]string) {
