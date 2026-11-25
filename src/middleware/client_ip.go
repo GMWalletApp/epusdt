@@ -33,5 +33,10 @@ func NewClientIPExtractor(trustedProxies string) (echo.IPExtractor, error) {
 	if len(options) == 0 {
 		return echo.ExtractIPDirect(), nil
 	}
+	options = append(options,
+		echo.TrustLoopback(false),
+		echo.TrustLinkLocal(false),
+		echo.TrustPrivateNet(false),
+	)
 	return echo.ExtractIPFromXFFHeader(options...), nil
 }

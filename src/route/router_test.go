@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/GMWalletApp/epusdt/config"
+	"github.com/GMWalletApp/epusdt/middleware"
 	"github.com/GMWalletApp/epusdt/model/dao"
 	"github.com/GMWalletApp/epusdt/model/data"
 	"github.com/GMWalletApp/epusdt/model/mdb"
@@ -434,6 +435,56 @@ func TestCreateOrderGmpayWhitelistUsesDirectPeerByDefault(t *testing.T) {
 	e.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("forged X-Forwarded-For passed merchant IP whitelist: HTTP %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateOrderGmpayWhitelistWithTrustedProxy(t *testing.T) {
+	e := setupTestEnv(t)
+	useRspErrorHTTPStatuses(e)
+	extract, err := middleware.NewClientIPExtractor("192.0.2.10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.IPExtractor = extract
+	if err := dao.Mdb.Model(&mdb.ApiKey{}).Where("pid = ?", testAPIToken).Update("ip_whitelist", "198.51.100.8").Error; err != nil {
+		t.Fatal(err)
+	}
+	for i, tt := range []struct {
+		name       string
+		peer       string
+		forwarded  string
+		invalidSig bool
+		want       int
+	}{
+		{"unlisted private peer", "10.20.30.40:43120", "198.51.100.8", false, http.StatusUnauthorized},
+		{"unlisted loopback peer", "127.0.0.1:43120", "198.51.100.8", false, http.StatusUnauthorized},
+		{"unlisted intermediate proxy", "192.0.2.10:43120", "198.51.100.8, 10.20.30.40", false, http.StatusUnauthorized},
+		{"trusted proxy", "192.0.2.10:43120", "198.51.100.8", false, http.StatusOK},
+		{"trusted proxy invalid signature", "192.0.2.10:43120", "198.51.100.8", true, http.StatusUnauthorized},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := signBody(map[string]interface{}{
+				"order_id": fmt.Sprintf("proxy-whitelist-%d", i), "amount": 1.0,
+				"token": "usdt", "currency": "cny", "network": "solana",
+				"notify_url": "https://93.184.216.34/notify",
+			})
+			if tt.invalidSig {
+				payload["signature"] = "invalid"
+			}
+			body, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/payments/gmpay/v1/order/create-transaction", strings.NewReader(string(body)))
+			req.RemoteAddr = tt.peer
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			req.Header.Set(echo.HeaderXForwardedFor, tt.forwarded)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			if rec.Code != tt.want {
+				t.Fatalf("HTTP %d, want %d: %s", rec.Code, tt.want, rec.Body.String())
+			}
+		})
 	}
 }
 

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"net"
 	"net/http/httptest"
 	"testing"
 )
@@ -31,6 +32,41 @@ func TestClientIPExtractorTrustsOnlyConfiguredProxies(t *testing.T) {
 	req.Header.Set("X-Forwarded-For", "198.51.100.8")
 	if got := trusted(req); got != "203.0.113.50" {
 		t.Fatalf("untrusted peer IP = %q", got)
+	}
+}
+
+func TestClientIPExtractorRequiresExplicitTrust(t *testing.T) {
+	for _, peer := range []string{
+		"10.20.30.40", "172.16.0.1", "192.168.1.1", "127.0.0.1", "169.254.1.1",
+		"fd00::1", "::1", "fe80::1",
+	} {
+		t.Run(peer, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			req.RemoteAddr = net.JoinHostPort(peer, "43120")
+			req.Header.Set("X-Forwarded-For", "198.51.100.8")
+			for _, configured := range []string{"", "192.0.2.10", peer} {
+				extract, err := NewClientIPExtractor(configured)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := peer
+				if configured == peer {
+					want = "198.51.100.8"
+				}
+				if got := extract(req); got != want {
+					t.Errorf("configured=%q: client IP = %q, want %q", configured, got, want)
+				}
+				if configured == "192.0.2.10" {
+					req.RemoteAddr = "192.0.2.10:43120"
+					req.Header.Set("X-Forwarded-For", "198.51.100.8, "+peer)
+					if got := extract(req); got != peer {
+						t.Errorf("untrusted intermediate proxy: client IP = %q, want %q", got, peer)
+					}
+					req.RemoteAddr = net.JoinHostPort(peer, "43120")
+					req.Header.Set("X-Forwarded-For", "198.51.100.8")
+				}
+			}
+		})
 	}
 }
 
