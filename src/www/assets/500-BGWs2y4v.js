@@ -1,0 +1,1 @@
+import{t as e}from"./general-error-D23yzeKU.js";var t=e;export{t as component};
