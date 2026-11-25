@@ -121,7 +121,9 @@ func TestSwitchNetworkExtendsParentAndItsReservation(t *testing.T) {
 	}
 
 	// Cleanup at the original deadline must leave the renewed reservation intact.
-	if err := dao.RuntimeDB.Where("expires_at <= ?", oldExpiry).Delete(&mdb.TransactionLock{}).Error; err != nil {
+	// Compare normalized UTC values: stored lock expiries may carry mixed offsets.
+	if err := dao.RuntimeDB.Where(data.SQLiteTimestampUTCExpr("expires_at")+" <= ?", oldExpiry.UTC().Format("2006-01-02 15:04:05")).
+		Delete(&mdb.TransactionLock{}).Error; err != nil {
 		t.Fatal(err)
 	}
 	next, err := CreateTransaction(newCreateTransactionRequest("audit-next", 1), nil)
