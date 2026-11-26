@@ -2,19 +2,25 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	scanner "github.com/GMWalletApp/ChainScanner"
 	"github.com/GMWalletApp/epusdt/model/mdb"
 	"github.com/gagliardetto/solana-go"
 	"github.com/tidwall/gjson"
+	"github.com/xssnick/tonutils-go/address"
+	"github.com/xssnick/tonutils-go/tlb"
+	"github.com/xssnick/tonutils-go/tvm/cell"
 )
 
-// Rebuild the transfer from the scanner result for manual order matching.
+// Rebuild transfer evidence from an independent transaction lookup.
 func manualLookupActivity(e scanner.Activity, raw json.RawMessage) (scanner.Activity, error) {
 	v := gjson.ParseBytes(raw)
 	invalid := errors.New("transaction is unsuccessful or inconsistent")
@@ -64,6 +70,64 @@ func manualLookupActivity(e scanner.Activity, raw json.RawMessage) (scanner.Acti
 		if v.Get("transaction.signatures.0").String() != e.TxID || v.Get("meta.err").Raw != "null" || v.Get("slot").Int() != e.Height || v.Get("blockTime").Int()*1000 != e.TimeMS {
 			return e, invalid
 		}
+	case e.Network == "ton":
+		var observed scanner.TONData
+		var independent struct {
+			Hash           string          `json:"hash"`
+			Account        string          `json:"account"`
+			LT             json.RawMessage `json:"lt"`
+			Now            uint32          `json:"now"`
+			MasterSeq      uint32          `json:"mc_block_seqno"`
+			TransactionBOC []byte          `json:"transaction_boc"`
+			MasterRootHash string          `json:"mc_block_root_hash"`
+		}
+		if json.Unmarshal(e.Data, &observed) != nil || json.Unmarshal(raw, &independent) != nil || observed.Account == "" {
+			return e, invalid
+		}
+		independentHash, err := base64.StdEncoding.DecodeString(independent.Hash)
+		if err != nil || len(independentHash) != 32 {
+			independentHash, err = hex.DecodeString(strings.TrimPrefix(independent.Hash, "0x"))
+		}
+		account, accountErr := scanner.Canonical(e.Network, independent.Account)
+		observedAccount, observedErr := scanner.Canonical(e.Network, observed.Account)
+		lt, ltErr := strconv.ParseUint(strings.Trim(string(independent.LT), `"`), 10, 64)
+		if err != nil || accountErr != nil || observedErr != nil || account != observedAccount ||
+			!strings.EqualFold(hex.EncodeToString(independentHash), e.TxID) || ltErr != nil ||
+			int64(independent.Now)*1000 != e.TimeMS || int64(independent.MasterSeq) != e.Height {
+			return e, invalid
+		}
+		parsedAccount, err := address.ParseRawAddr(account)
+		if err != nil {
+			return e, invalid
+		}
+		boc := observed.BOC
+		if len(independent.TransactionBOC) > 0 {
+			boc = independent.TransactionBOC
+		}
+		c, err := cell.FromBOC(boc)
+		if err != nil {
+			return e, invalid
+		}
+		var tx tlb.Transaction
+		if err = tlb.LoadFromCell(&tx, c.BeginParse()); err != nil ||
+			!strings.EqualFold(hex.EncodeToString(c.Hash()), e.TxID) ||
+			!strings.EqualFold(hex.EncodeToString(tx.AccountAddr), hex.EncodeToString(parsedAccount.Data())) ||
+			tx.LT != lt || tx.Now != independent.Now {
+			return e, invalid
+		}
+		if independent.MasterRootHash != "" && observed.Master != nil {
+			rootHash, decodeErr := base64.StdEncoding.DecodeString(independent.MasterRootHash)
+			if decodeErr != nil || hex.EncodeToString(rootHash) != hex.EncodeToString(observed.Master.RootHash) {
+				return e, invalid
+			}
+		}
+		observed.Account = account
+		observed.BOC = boc
+		e.Data, err = json.Marshal(observed)
+		if err != nil {
+			return e, err
+		}
+		return e, nil
 	default:
 		return e, fmt.Errorf("unsupported payment network %s", e.Network)
 	}
