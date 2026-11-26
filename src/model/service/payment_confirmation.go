@@ -258,7 +258,11 @@ func ConfirmPayment(ctx context.Context, feed scanner.Feed, lookup ObservedTrans
 		if err != nil {
 			return err
 		}
-		creditActivity, err = verifyIndependentEVMReceipt(e, result)
+		if scanner.IsEVM(e.Network) {
+			creditActivity, err = verifyIndependentEVMReceipt(e, result)
+		} else {
+			creditActivity, err = manualLookupActivity(e, result)
+		}
 		if err != nil {
 			return fmt.Errorf("%w: %v", errPaymentMismatch, err)
 		}
